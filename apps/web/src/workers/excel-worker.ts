@@ -163,7 +163,9 @@ if (typeof self !== 'undefined' && 'addEventListener' in self) {
         self.postMessage({ id, type: 'PARSE_XLSX_SUCCESS', payload: workbook });
       } else if (type === 'EXPORT_XLSX') {
         const buffer = exportXlsxInternal(payload.workbook);
-        (self as any).postMessage({ id, type: 'EXPORT_XLSX_SUCCESS', payload: buffer }, [buffer.buffer]);
+        (
+          self as unknown as { postMessage: (message: unknown, transfer: Transferable[]) => void }
+        ).postMessage({ id, type: 'EXPORT_XLSX_SUCCESS', payload: buffer }, [buffer.buffer]);
       } else if (type === 'EVALUATE_FORMULA') {
         const { formula, activeSheet, sheetData } = payload;
         const ctx: FormulaContext = {

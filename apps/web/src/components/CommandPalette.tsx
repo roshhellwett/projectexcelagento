@@ -180,7 +180,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Type a command, transformation, or audit query... (Esc to close)"
+            placeholder="Type a command, transformation, or audit query… (Esc to close)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{

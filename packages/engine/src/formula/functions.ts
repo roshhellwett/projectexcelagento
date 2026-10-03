@@ -93,107 +93,110 @@ function matchesCriteria(val: unknown, criteria: unknown): boolean {
   return toString(val).toLowerCase() === critStr.toLowerCase();
 }
 
-export type FormulaFunction = (...args: any[]) => FormulaValue;
+export type FormulaFunction = (...args: unknown[]) => FormulaValue;
 
 export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   // Math & Statistics
-  SUM: (...args: any[]) => {
+  SUM: (...args: unknown[]) => {
     const nums = flatten(args).filter(isNumeric).map(toNumber);
     return nums.reduce((a, b) => a + b, 0);
   },
-  AVERAGE: (...args: any[]) => {
+  AVERAGE: (...args: unknown[]) => {
     const nums = flatten(args).filter(isNumeric).map(toNumber);
     return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
   },
-  MIN: (...args: any[]) => {
+  MIN: (...args: unknown[]) => {
     const nums = flatten(args).filter(isNumeric).map(toNumber);
     return nums.length > 0 ? Math.min(...nums) : 0;
   },
-  MAX: (...args: any[]) => {
+  MAX: (...args: unknown[]) => {
     const nums = flatten(args).filter(isNumeric).map(toNumber);
     return nums.length > 0 ? Math.max(...nums) : 0;
   },
-  COUNT: (...args: any[]) => {
+  COUNT: (...args: unknown[]) => {
     return flatten(args).filter(isNumeric).length;
   },
-  COUNTA: (...args: any[]) => {
+  COUNTA: (...args: unknown[]) => {
     return flatten(args).filter((v) => v !== null && v !== undefined && v !== '').length;
   },
-  COUNTBLANK: (range: any) => {
+  COUNTBLANK: (range: unknown) => {
     return flatten([range]).filter((v) => v === null || v === undefined || v === '').length;
   },
-  MEDIAN: (...args: any[]) => {
-    const nums = flatten(args).filter(isNumeric).map(toNumber).sort((a, b) => a - b);
+  MEDIAN: (...args: unknown[]) => {
+    const nums = flatten(args)
+      .filter(isNumeric)
+      .map(toNumber)
+      .sort((a, b) => a - b);
     if (nums.length === 0) return 0;
     const mid = Math.floor(nums.length / 2);
     return nums.length % 2 !== 0 ? nums[mid]! : (nums[mid - 1]! + nums[mid]!) / 2;
   },
-  ROUND: (num: any, digits: any = 0) => {
+  ROUND: (num: unknown, digits: unknown = 0) => {
     const factor = Math.pow(10, toNumber(digits));
     return Math.round(toNumber(num) * factor) / factor;
   },
-  ROUNDUP: (num: any, digits: any = 0) => {
+  ROUNDUP: (num: unknown, digits: unknown = 0) => {
     const factor = Math.pow(10, toNumber(digits));
     return (Math.ceil(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1);
   },
-  ROUNDDOWN: (num: any, digits: any = 0) => {
+  ROUNDDOWN: (num: unknown, digits: unknown = 0) => {
     const factor = Math.pow(10, toNumber(digits));
     return (Math.floor(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1);
   },
-  ABS: (num: any) => Math.abs(toNumber(num)),
-  SQRT: (num: any) => Math.sqrt(Math.max(0, toNumber(num))),
-  POWER: (base: any, exp: any) => Math.pow(toNumber(base), toNumber(exp)),
-  MOD: (n: any, d: any) => (toNumber(d) === 0 ? 0 : toNumber(n) % toNumber(d)),
-  INT: (n: any) => Math.floor(toNumber(n)),
-  TRUNC: (n: any, digits: any = 0) => {
+  ABS: (num: unknown) => Math.abs(toNumber(num)),
+  SQRT: (num: unknown) => Math.sqrt(Math.max(0, toNumber(num))),
+  POWER: (base: unknown, exp: unknown) => Math.pow(toNumber(base), toNumber(exp)),
+  MOD: (n: unknown, d: unknown) => (toNumber(d) === 0 ? 0 : toNumber(n) % toNumber(d)),
+  INT: (n: unknown) => Math.floor(toNumber(n)),
+  TRUNC: (n: unknown, digits: unknown = 0) => {
     const factor = Math.pow(10, toNumber(digits));
     return Math.trunc(toNumber(n) * factor) / factor;
   },
-  CEILING: (n: any, significance: any = 1) => {
+  CEILING: (n: unknown, significance: unknown = 1) => {
     const sig = toNumber(significance);
     if (sig === 0) return 0;
     return Math.ceil(toNumber(n) / sig) * sig;
   },
-  FLOOR: (n: any, significance: any = 1) => {
+  FLOOR: (n: unknown, significance: unknown = 1) => {
     const sig = toNumber(significance);
     if (sig === 0) return 0;
     return Math.floor(toNumber(n) / sig) * sig;
   },
-  EXP: (n: any) => Math.exp(toNumber(n)),
-  LN: (n: any) => Math.log(toNumber(n)),
-  LOG: (n: any, base: any = 10) => Math.log(toNumber(n)) / Math.log(toNumber(base)),
-  LOG10: (n: any) => Math.log10(toNumber(n)),
+  EXP: (n: unknown) => Math.exp(toNumber(n)),
+  LN: (n: unknown) => Math.log(toNumber(n)),
+  LOG: (n: unknown, base: unknown = 10) => Math.log(toNumber(n)) / Math.log(toNumber(base)),
+  LOG10: (n: unknown) => Math.log10(toNumber(n)),
 
   // Conditionals
-  IF: (cond: any, trueVal: any, falseVal: any = false) => {
-    return toBoolean(cond) ? trueVal : falseVal;
+  IF: (cond: unknown, trueVal: unknown, falseVal: unknown = false) => {
+    return (toBoolean(cond) ? trueVal : falseVal) as FormulaValue;
   },
-  IFS: (...args: any[]) => {
+  IFS: (...args: unknown[]) => {
     for (let i = 0; i < args.length; i += 2) {
-      if (toBoolean(args[i])) return args[i + 1] ?? null;
+      if (toBoolean(args[i])) return (args[i + 1] ?? null) as FormulaValue;
     }
     return null;
   },
-  IFERROR: (val: any, fallback: any) => {
-    if (val === null || val === undefined) return fallback;
-    if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) return fallback;
-    if (typeof val === 'string' && val.startsWith('#')) return fallback;
-    return val;
+  IFERROR: (val: unknown, fallback: unknown) => {
+    if (val === null || val === undefined) return fallback as FormulaValue;
+    if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) return fallback as FormulaValue;
+    if (typeof val === 'string' && val.startsWith('#')) return fallback as FormulaValue;
+    return val as FormulaValue;
   },
-  AND: (...args: any[]) => {
+  AND: (...args: unknown[]) => {
     return flatten(args).every(toBoolean);
   },
-  OR: (...args: any[]) => {
+  OR: (...args: unknown[]) => {
     return flatten(args).some(toBoolean);
   },
-  NOT: (val: any) => !toBoolean(val),
-  XOR: (...args: any[]) => {
+  NOT: (val: unknown) => !toBoolean(val),
+  XOR: (...args: unknown[]) => {
     const count = flatten(args).filter(toBoolean).length;
     return count % 2 === 1;
   },
 
   // Conditional Aggregations
-  SUMIF: (range: any[], criteria: any, sumRange?: any[]) => {
+  SUMIF: (range: unknown, criteria: unknown, sumRange?: unknown) => {
     const flatRange = flatten([range]);
     const flatSum = sumRange ? flatten([sumRange]) : flatRange;
     let sum = 0;
@@ -204,11 +207,11 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return sum;
   },
-  COUNTIF: (range: any[], criteria: any) => {
+  COUNTIF: (range: unknown, criteria: unknown) => {
     const flatRange = flatten([range]);
     return flatRange.filter((val) => matchesCriteria(val, criteria)).length;
   },
-  AVERAGEIF: (range: any[], criteria: any, avgRange?: any[]) => {
+  AVERAGEIF: (range: unknown, criteria: unknown, avgRange?: unknown) => {
     const flatRange = flatten([range]);
     const flatAvg = avgRange ? flatten([avgRange]) : flatRange;
     let sum = 0;
@@ -221,9 +224,9 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return count > 0 ? sum / count : 0;
   },
-  SUMIFS: (sumRange: any[], ...criteriaPairs: any[]) => {
+  SUMIFS: (sumRange: unknown, ...criteriaPairs: unknown[]) => {
     const flatSum = flatten([sumRange]);
-    const pairs: { range: any[]; crit: any }[] = [];
+    const pairs: { range: unknown[]; crit: unknown }[] = [];
     for (let i = 0; i < criteriaPairs.length; i += 2) {
       pairs.push({ range: flatten([criteriaPairs[i]]), crit: criteriaPairs[i + 1] });
     }
@@ -234,8 +237,8 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return sum;
   },
-  COUNTIFS: (...criteriaPairs: any[]) => {
-    const pairs: { range: any[]; crit: any }[] = [];
+  COUNTIFS: (...criteriaPairs: unknown[]) => {
+    const pairs: { range: unknown[]; crit: unknown }[] = [];
     for (let i = 0; i < criteriaPairs.length; i += 2) {
       pairs.push({ range: flatten([criteriaPairs[i]]), crit: criteriaPairs[i + 1] });
     }
@@ -249,9 +252,9 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return count;
   },
-  AVERAGEIFS: (avgRange: any[], ...criteriaPairs: any[]) => {
+  AVERAGEIFS: (avgRange: unknown, ...criteriaPairs: unknown[]) => {
     const flatAvg = flatten([avgRange]);
-    const pairs: { range: any[]; crit: any }[] = [];
+    const pairs: { range: unknown[]; crit: unknown }[] = [];
     for (let i = 0; i < criteriaPairs.length; i += 2) {
       pairs.push({ range: flatten([criteriaPairs[i]]), crit: criteriaPairs[i + 1] });
     }
@@ -267,7 +270,7 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   },
 
   // Lookup & Reference
-  VLOOKUP: (lookupVal: any, table: any, colIdx: any, exact: any = true) => {
+  VLOOKUP: (lookupVal: unknown, table: unknown, colIdx: unknown, exact: unknown = true) => {
     if (!Array.isArray(table) || table.length === 0) return '#N/A';
     const cIdx = toNumber(colIdx) - 1; // 1-indexed in Excel
     const isExact = exact === undefined || toBoolean(exact);
@@ -277,36 +280,41 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
       if (Array.isArray(row) && row.length > 0) {
         const key = toString(row[0]).trim().toLowerCase();
         if (isExact ? key === targetStr : key.includes(targetStr)) {
-          return row[cIdx] ?? null;
+          return (row[cIdx] ?? null) as FormulaValue;
         }
       }
     }
     return '#N/A';
   },
-  XLOOKUP: (lookupVal: any, lookupArray: any[], returnArray: any[], notFound: any = '#N/A') => {
+  XLOOKUP: (
+    lookupVal: unknown,
+    lookupArray: unknown,
+    returnArray: unknown,
+    notFound: unknown = '#N/A',
+  ) => {
     const flatLookup = flatten([lookupArray]);
     const flatReturn = flatten([returnArray]);
     const target = toString(lookupVal).trim().toLowerCase();
 
     for (let i = 0; i < flatLookup.length; i++) {
       if (toString(flatLookup[i]).trim().toLowerCase() === target) {
-        return flatReturn[i] ?? null;
+        return (flatReturn[i] ?? null) as FormulaValue;
       }
     }
-    return notFound;
+    return notFound as FormulaValue;
   },
-  INDEX: (array: any, rowNum: any, colNum: any = 1) => {
+  INDEX: (array: unknown, rowNum: unknown, colNum: unknown = 1) => {
     const r = toNumber(rowNum) - 1;
     const c = toNumber(colNum) - 1;
     if (Array.isArray(array)) {
       if (Array.isArray(array[0])) {
-        return array[r]?.[c] ?? '#REF!';
+        return (array[r]?.[c] ?? '#REF!') as FormulaValue;
       }
-      return array[r] ?? '#REF!';
+      return (array[r] ?? '#REF!') as FormulaValue;
     }
-    return array;
+    return array as FormulaValue;
   },
-  MATCH: (lookupVal: any, lookupArray: any[], _matchType: any = 0) => {
+  MATCH: (lookupVal: unknown, lookupArray: unknown, _matchType: unknown = 0) => {
     const flat = flatten([lookupArray]);
     const target = toString(lookupVal).trim().toLowerCase();
     for (let i = 0; i < flat.length; i++) {
@@ -316,47 +324,47 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return '#N/A';
   },
-  CHOOSE: (index: any, ...choices: any[]) => {
+  CHOOSE: (index: unknown, ...choices: unknown[]) => {
     const idx = toNumber(index) - 1;
-    return choices[idx] ?? '#VALUE!';
+    return (choices[idx] ?? '#VALUE!') as FormulaValue;
   },
 
   // Text
-  CONCAT: (...args: any[]) => {
+  CONCAT: (...args: unknown[]) => {
     return flatten(args).map(toString).join('');
   },
-  CONCATENATE: (...args: any[]) => {
+  CONCATENATE: (...args: unknown[]) => {
     return flatten(args).map(toString).join('');
   },
-  TEXTJOIN: (delimiter: any, ignoreEmpty: any, ...args: any[]) => {
+  TEXTJOIN: (delimiter: unknown, ignoreEmpty: unknown, ...args: unknown[]) => {
     const sep = toString(delimiter);
     const skip = toBoolean(ignoreEmpty);
     const flat = flatten(args).map(toString);
     const filtered = skip ? flat.filter((s) => s.trim().length > 0) : flat;
     return filtered.join(sep);
   },
-  LEFT: (text: any, numChars: any = 1) => {
+  LEFT: (text: unknown, numChars: unknown = 1) => {
     return toString(text).slice(0, Math.max(0, toNumber(numChars)));
   },
-  RIGHT: (text: any, numChars: any = 1) => {
+  RIGHT: (text: unknown, numChars: unknown = 1) => {
     const str = toString(text);
     const n = Math.max(0, toNumber(numChars));
     return str.slice(Math.max(0, str.length - n));
   },
-  MID: (text: any, start: any, length: any) => {
+  MID: (text: unknown, start: unknown, length: unknown) => {
     const str = toString(text);
     const s = Math.max(1, toNumber(start)) - 1;
     const len = Math.max(0, toNumber(length));
     return str.slice(s, s + len);
   },
-  LEN: (text: any) => toString(text).length,
-  UPPER: (text: any) => toString(text).toUpperCase(),
-  LOWER: (text: any) => toString(text).toLowerCase(),
-  PROPER: (text: any) => {
+  LEN: (text: unknown) => toString(text).length,
+  UPPER: (text: unknown) => toString(text).toUpperCase(),
+  LOWER: (text: unknown) => toString(text).toLowerCase(),
+  PROPER: (text: unknown) => {
     return toString(text).replace(/\b\w/g, (c) => c.toUpperCase());
   },
-  TRIM: (text: any) => toString(text).trim().replace(/\s+/g, ' '),
-  SUBSTITUTE: (text: any, oldText: any, newText: any, instanceNum?: any) => {
+  TRIM: (text: unknown) => toString(text).trim().replace(/\s+/g, ' '),
+  SUBSTITUTE: (text: unknown, oldText: unknown, newText: unknown, instanceNum?: unknown) => {
     const str = toString(text);
     const target = toString(oldText);
     const rep = toString(newText);
@@ -371,45 +379,45 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return str.replaceAll(target, rep);
   },
-  REPLACE: (oldText: any, startNum: any, numChars: any, newText: any) => {
+  REPLACE: (oldText: unknown, startNum: unknown, numChars: unknown, newText: unknown) => {
     const str = toString(oldText);
     const start = Math.max(1, toNumber(startNum)) - 1;
     const len = Math.max(0, toNumber(numChars));
     return str.slice(0, start) + toString(newText) + str.slice(start + len);
   },
-  FIND: (findText: any, withinText: any, startNum: any = 1) => {
+  FIND: (findText: unknown, withinText: unknown, startNum: unknown = 1) => {
     const start = Math.max(1, toNumber(startNum)) - 1;
     const idx = toString(withinText).indexOf(toString(findText), start);
     return idx >= 0 ? idx + 1 : '#VALUE!';
   },
-  SEARCH: (findText: any, withinText: any, startNum: any = 1) => {
+  SEARCH: (findText: unknown, withinText: unknown, startNum: unknown = 1) => {
     const start = Math.max(1, toNumber(startNum)) - 1;
     const idx = toString(withinText).toLowerCase().indexOf(toString(findText).toLowerCase(), start);
     return idx >= 0 ? idx + 1 : '#VALUE!';
   },
-  EXACT: (t1: any, t2: any) => toString(t1) === toString(t2),
-  TEXT: (val: any, _fmt?: any) => {
+  EXACT: (t1: unknown, t2: unknown) => toString(t1) === toString(t2),
+  TEXT: (val: unknown, _fmt?: unknown) => {
     if (val instanceof Date) return val.toISOString().slice(0, 10);
     return toString(val);
   },
-  VALUE: (text: any) => toNumber(text),
+  VALUE: (text: unknown) => toNumber(text),
 
   // Date & Time
   TODAY: () => new Date().toISOString().slice(0, 10),
   NOW: () => new Date().toISOString(),
-  DATE: (y: any, m: any, d: any) => {
+  DATE: (y: unknown, m: unknown, d: unknown) => {
     const date = new Date(Date.UTC(toNumber(y), toNumber(m) - 1, toNumber(d)));
     return date.toISOString().slice(0, 10);
   },
-  YEAR: (dateVal: any) => {
+  YEAR: (dateVal: unknown) => {
     const d = new Date(toString(dateVal));
     return isNaN(d.getTime()) ? 0 : d.getUTCFullYear();
   },
-  MONTH: (dateVal: any) => {
+  MONTH: (dateVal: unknown) => {
     const d = new Date(toString(dateVal));
     return isNaN(d.getTime()) ? 0 : d.getUTCMonth() + 1;
   },
-  DAY: (dateVal: any) => {
+  DAY: (dateVal: unknown) => {
     const d = new Date(toString(dateVal));
     return isNaN(d.getTime()) ? 0 : d.getUTCDate();
   },

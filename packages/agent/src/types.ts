@@ -143,12 +143,7 @@ export interface ExecutionPlan {
 }
 
 export type AgentEventType =
-  | 'thinking'
-  | 'inspecting'
-  | 'planning'
-  | 'tool_call'
-  | 'guardrail_check'
-  | 'status';
+  'thinking' | 'inspecting' | 'planning' | 'tool_call' | 'guardrail_check' | 'status';
 
 export interface AgentActivityEvent {
   id: string;
@@ -223,4 +218,3 @@ export type DecideInput = {
   /** Real-time activity callback for live subagent and tool feedback. */
   onActivity?: (activity: AgentActivityEvent) => void;
 };
-

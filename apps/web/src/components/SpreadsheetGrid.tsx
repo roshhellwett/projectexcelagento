@@ -88,7 +88,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if typing in an input or textarea
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
         return;
       }
 
@@ -103,7 +106,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         setSelectedCell((prev) => ({ ...prev, colIdx: Math.max(0, prev.colIdx - 1) }));
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setSelectedCell((prev) => ({ ...prev, colIdx: Math.min(Math.max(0, totalCols - 1), prev.colIdx + 1) }));
+        setSelectedCell((prev) => ({
+          ...prev,
+          colIdx: Math.min(Math.max(0, totalCols - 1), prev.colIdx + 1),
+        }));
       }
     };
 

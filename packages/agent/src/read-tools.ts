@@ -90,7 +90,10 @@ export function getWorkbookOverview(workbook: Workbook): WorkbookOverviewResult 
 
 function resolveSheet(workbook: Workbook, sheetName?: string): Sheet | undefined {
   if (!sheetName) return workbook.sheets[0];
-  return workbook.sheets.find((s) => s.name.toLowerCase() === sheetName.trim().toLowerCase()) ?? workbook.sheets[0];
+  return (
+    workbook.sheets.find((s) => s.name.toLowerCase() === sheetName.trim().toLowerCase()) ??
+    workbook.sheets[0]
+  );
 }
 
 /** Profile a single column for deep analysis, cardinality, distributions, and aggregates. */
@@ -116,7 +119,13 @@ export function profileColumn(
     sheet: sheet.name,
     column: profile.letter,
     headerName: profile.rawName,
-    inferredType: profile.isNumeric ? 'numeric' : profile.isDate ? 'date' : profile.nonBlankCount === 0 ? 'empty' : 'text',
+    inferredType: profile.isNumeric
+      ? 'numeric'
+      : profile.isDate
+        ? 'date'
+        : profile.nonBlankCount === 0
+          ? 'empty'
+          : 'text',
     totalRows,
     nonBlankCount: profile.nonBlankCount,
     blankCount,
@@ -147,10 +156,16 @@ export function readCellRange(
 
   const startColIdx = columnToIndex(startColumn) ?? 0;
   const maxCol = sheetMaxCols(sheet.rows);
-  const endColIdx = endColumn ? (columnToIndex(endColumn) ?? maxCol - 1) : Math.min(startColIdx + 10, maxCol - 1);
+  const endColIdx = endColumn
+    ? (columnToIndex(endColumn) ?? maxCol - 1)
+    : Math.min(startColIdx + 10, maxCol - 1);
 
   const boundedStartRow = Math.max(1, startRow);
-  const boundedEndRow = Math.min(Math.max(boundedStartRow, endRow), sheet.rows.length, boundedStartRow + 50);
+  const boundedEndRow = Math.min(
+    Math.max(boundedStartRow, endRow),
+    sheet.rows.length,
+    boundedStartRow + 50,
+  );
 
   const headers = (sheet.rows[0] ?? []).map((c, i) => String(c?.value ?? indexToColumn(i)));
 
@@ -162,7 +177,9 @@ export function readCellRange(
       const colLetter = indexToColumn(c);
       const colHeader = headers[c] || colLetter;
       const cell = rowCells[c];
-      record[`${colLetter} (${colHeader})`] = cell?.formula ? `=${cell.formula}` : cell?.value ?? null;
+      record[`${colLetter} (${colHeader})`] = cell?.formula
+        ? `=${cell.formula}`
+        : (cell?.value ?? null);
     }
     rows.push({ rowNumber: r, cells: record });
   }
@@ -287,7 +304,8 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'get_workbook_overview',
-      description: 'Get an overview of all sheets, row counts, and column headers in the current workbook.',
+      description:
+        'Get an overview of all sheets, row counts, and column headers in the current workbook.',
       parameters: {
         type: 'object',
         properties: {},
@@ -298,7 +316,8 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'profile_column',
-      description: 'Get deep statistical profiling on a column: data type, nulls, distinct values, and numerical aggregates (sum, avg, min, max).',
+      description:
+        'Get deep statistical profiling on a column: data type, nulls, distinct values, and numerical aggregates (sum, avg, min, max).',
       parameters: {
         type: 'object',
         properties: {
@@ -346,7 +365,8 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'calculate_aggregate',
-      description: 'Calculate an exact, deterministic aggregate (sum, avg, min, max, count, count_distinct) on a column.',
+      description:
+        'Calculate an exact, deterministic aggregate (sum, avg, min, max, count, count_distinct) on a column.',
       parameters: {
         type: 'object',
         properties: {

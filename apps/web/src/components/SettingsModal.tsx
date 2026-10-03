@@ -32,7 +32,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl ?? '');
   const [showKey, setShowKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [testStatus, setTestStatus] = useState<{ testing: boolean; message?: string; ok?: boolean }>({
+  const [testStatus, setTestStatus] = useState<{
+    testing: boolean;
+    message?: string;
+    ok?: boolean;
+  }>({
     testing: false,
   });
   const [learnedCount, setLearnedCount] = useState(0);
@@ -92,7 +96,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setTestStatus({ testing: false, ok: false, message: 'Please enter an API key first.' });
       return;
     }
-    setTestStatus({ testing: true, message: 'Testing connection...' });
+    setTestStatus({ testing: true, message: 'Testing connection…' });
     try {
       const endpoint =
         provider === 'groq'
@@ -112,7 +116,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       const res = await fetch(endpoint, { method: 'GET', headers });
       if (res.ok) {
-        setTestStatus({ testing: false, ok: true, message: 'Connection successful! Models verified.' });
+        setTestStatus({
+          testing: false,
+          ok: true,
+          message: 'Connection successful! Models verified.',
+        });
       } else {
         const text = await res.text();
         setTestStatus({
@@ -146,8 +154,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="settings-note">
             <strong>Enterprise-Grade, Privacy-Preserving Architecture</strong>
             Excel operations run deterministically inside your browser via{' '}
-            <code>@excel-agent/engine</code>. Only minimal structural column profiles are sent to the AI
-            reasoning model. Your spreadsheet data stays on your machine.
+            <code>@excel-agent/engine</code>. Only minimal structural column profiles are sent to
+            the AI reasoning model. Your spreadsheet data stays on your machine.
           </div>
 
           <div className="form-group">
@@ -179,7 +187,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           <div className="form-group">
-            <label className="form-label">API Key {provider === 'custom' ? '(optional for local)' : ''}</label>
+            <label className="form-label">
+              API Key {provider === 'custom' ? '(optional for local)' : ''}
+            </label>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <input
                 type={showKey ? 'text' : 'password'}
@@ -214,7 +224,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <select
                   className="select-input"
-                  value={modelsForCurrentProvider.some((m) => m.id === model) ? model : 'custom_override'}
+                  value={
+                    modelsForCurrentProvider.some((m) => m.id === model) ? model : 'custom_override'
+                  }
                   onChange={(e) => {
                     if (e.target.value !== 'custom_override') {
                       setModel(e.target.value);
@@ -226,10 +238,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {m.label}
                     </option>
                   ))}
-                  <option value="custom_override">Custom Model ID...</option>
+                  <option value="custom_override">Custom Model ID…</option>
                 </select>
 
-                {(!modelsForCurrentProvider.some((m) => m.id === model) || model === 'custom_override') && (
+                {(!modelsForCurrentProvider.some((m) => m.id === model) ||
+                  model === 'custom_override') && (
                   <input
                     type="text"
                     className="form-input"
@@ -250,14 +263,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: '8px',
+            }}
+          >
             <button
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={handleTestConnection}
               disabled={testStatus.testing}
             >
-              {testStatus.testing ? 'Testing...' : 'Test Connection'}
+              {testStatus.testing ? 'Testing…' : 'Test Connection'}
             </button>
             {testStatus.message && (
               <span
@@ -288,7 +308,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {savedSuccess && (
-            <div style={{ color: 'var(--primary)', fontSize: '13px', fontWeight: 600, marginTop: '8px' }}>
+            <div
+              style={{
+                color: 'var(--primary)',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginTop: '8px',
+              }}
+            >
               ✓ Settings saved to this browser
             </div>
           )}

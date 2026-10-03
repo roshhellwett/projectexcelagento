@@ -1,9 +1,9 @@
 import type { Workbook, FormulaValue } from '@excel-agent/engine';
 
 interface PendingRequest {
-  resolve: (value: any) => void;
-  reject: (reason?: any) => void;
-  timer: any;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 let workerInstance: Worker | null = null;
@@ -65,7 +65,7 @@ function getWorker(): Worker | null {
   }
 }
 
-function postToWorker<T>(type: string, payload?: any, timeoutMs = 60000): Promise<T> {
+function postToWorker<T>(type: string, payload?: unknown, timeoutMs = 60000): Promise<T> {
   const worker = getWorker();
   if (!worker) {
     return Promise.reject(new Error('Web Workers not available in this environment'));
@@ -79,7 +79,7 @@ function postToWorker<T>(type: string, payload?: any, timeoutMs = 60000): Promis
       reject(new Error(`Worker request ${type} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    pendingRequests.set(id, { resolve, reject, timer });
+    pendingRequests.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
 
     try {
       worker.postMessage({ id, type, payload });

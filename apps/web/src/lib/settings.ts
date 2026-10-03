@@ -59,9 +59,7 @@ export const AVAILABLE_MODELS: Record<ProviderName, { id: string; label: string 
     { id: 'gpt-4o', label: 'GPT-4o (Flagship Omni)' },
     { id: 'o3-mini', label: 'o3-mini (High Reasoning)' },
   ],
-  custom: [
-    { id: 'default', label: 'Default / Configured on host' },
-  ],
+  custom: [{ id: 'default', label: 'Default / Configured on host' }],
 };
 
 export function isDemoKey(apiKey: string | undefined | null): boolean {

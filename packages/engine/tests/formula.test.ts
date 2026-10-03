@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateFormula, tokenize, FORMULA_FUNCTIONS } from '../src/formula/index.js';
+import { evaluateFormula, tokenize } from '../src/formula/index.js';
 import type { FormulaContext, FormulaValue } from '../src/formula/types.js';
 
 describe('Formula Evaluator Engine', () => {
@@ -111,7 +111,9 @@ describe('Formula Evaluator Engine', () => {
     });
 
     it('evaluates IFS', () => {
-      expect(evaluateFormula('=IFS(A1 = 5, "Five", A1 = 10, "Ten", TRUE, "Other")', context)).toBe('Ten');
+      expect(evaluateFormula('=IFS(A1 = 5, "Five", A1 = 10, "Ten", TRUE, "Other")', context)).toBe(
+        'Ten',
+      );
     });
 
     it('evaluates AND, OR, NOT', () => {
@@ -168,7 +170,9 @@ describe('Formula Evaluator Engine', () => {
     it('evaluates XLOOKUP', () => {
       // XLOOKUP(lookup_value, lookup_array, return_array, if_not_found)
       expect(evaluateFormula('=XLOOKUP("P100", Sales!A1:A3, Sales!B1:B3)', context)).toBe('Widget');
-      expect(evaluateFormula('=XLOOKUP("P999", Sales!A1:A3, Sales!B1:B3, "Not Found")', context)).toBe('Not Found');
+      expect(
+        evaluateFormula('=XLOOKUP("P999", Sales!A1:A3, Sales!B1:B3, "Not Found")', context),
+      ).toBe('Not Found');
     });
   });
 
@@ -188,7 +192,9 @@ describe('Formula Evaluator Engine', () => {
       expect(evaluateFormula('=PROPER("john doe")', context)).toBe('John Doe');
       expect(evaluateFormula('=TRIM("   spaced   out   ")', context)).toBe('spaced out');
       expect(evaluateFormula('=SUBSTITUTE("Banana", "a", "o")', context)).toBe('Bonono');
-      expect(evaluateFormula('=REPLACE("Hello World", 7, 5, "Agent")', context)).toBe('Hello Agent');
+      expect(evaluateFormula('=REPLACE("Hello World", 7, 5, "Agent")', context)).toBe(
+        'Hello Agent',
+      );
     });
   });
 

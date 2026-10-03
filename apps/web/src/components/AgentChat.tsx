@@ -77,7 +77,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const handleActivateKey = (e: React.FormEvent) => {
     e.preventDefault();
     if (!setupKey.trim() && setupProvider !== 'custom') return;
-    onSaveApiKey(setupProvider, setupKey.trim() || 'local-no-key', setupBaseUrl.trim() || undefined);
+    onSaveApiKey(
+      setupProvider,
+      setupKey.trim() || 'local-no-key',
+      setupBaseUrl.trim() || undefined,
+    );
   };
 
   const handleDemoKey = () => {
@@ -153,14 +157,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
             <h3 className="byok-gate-title">Activate Excel Agent</h3>
             <p className="byok-gate-desc">
-              Connect your AI provider to unlock conversational data engineering, multi-step planning,
-              and deterministic Excel transformations directly in your browser.
+              Connect your AI provider to unlock conversational data engineering, multi-step
+              planning, and deterministic Excel transformations directly in your browser.
             </p>
 
             <form onSubmit={handleActivateKey} className="byok-gate-form">
               <div className="form-group">
                 <label className="form-label">Select AI Provider</label>
-                <div className="provider-chips" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '4px' }}>
+                <div
+                  className="provider-chips"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+                    gap: '4px',
+                  }}
+                >
                   <button
                     type="button"
                     className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
@@ -323,7 +334,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           </span>
                         </div>
                         {msg.plan ? (
-                          <span className="op-badge" style={{ background: '#faf5ff', color: '#7e22ce', borderColor: '#e9d5ff' }}>
+                          <span
+                            className="op-badge"
+                            style={{
+                              background: '#faf5ff',
+                              color: '#7e22ce',
+                              borderColor: '#e9d5ff',
+                            }}
+                          >
                             {msg.plan.steps.length} Steps Plan
                           </span>
                         ) : msg.proposedAction ? (
@@ -341,7 +359,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       {msg.activities && msg.activities.length > 0 && (
                         <div className="activity-timeline">
                           {msg.activities.map((act, actIdx) => (
-                            <div key={act.id || actIdx} className={`activity-pill activity-${act.type}`}>
+                            <div
+                              key={act.id || actIdx}
+                              className={`activity-pill activity-${act.type}`}
+                            >
                               <span>{getActivityIcon(act.type)}</span>
                               <span>{act.summary}</span>
                             </div>
@@ -367,7 +388,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
                             <span
                               className="activity-pulse-dot"
-                              style={{ display: 'inline-block', marginLeft: '4px', verticalAlign: 'middle' }}
+                              style={{
+                                display: 'inline-block',
+                                marginLeft: '4px',
+                                verticalAlign: 'middle',
+                              }}
                             />
                           </div>
                         ) : (
@@ -395,13 +420,28 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 <div className="plan-step-body">
                                   <div className="plan-step-desc">{step.description}</div>
                                   <div className="plan-step-meta">
-                                    <span className="op-badge" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
+                                    <span
+                                      className="op-badge"
+                                      style={{ fontSize: '9.5px', padding: '1px 5px' }}
+                                    >
                                       {step.operation}
                                     </span>
-                                    <span className="plan-step-status" style={{
-                                      color: step.status === 'completed' ? 'var(--accent-emerald)' : step.status === 'error' ? 'var(--accent-rose)' : 'var(--text-dim)'
-                                    }}>
-                                      {step.status === 'completed' ? '✓ Applied' : step.status === 'error' ? '✕ Failed' : 'Pending'}
+                                    <span
+                                      className="plan-step-status"
+                                      style={{
+                                        color:
+                                          step.status === 'completed'
+                                            ? 'var(--accent-emerald)'
+                                            : step.status === 'error'
+                                              ? 'var(--accent-rose)'
+                                              : 'var(--text-dim)',
+                                      }}
+                                    >
+                                      {step.status === 'completed'
+                                        ? '✓ Applied'
+                                        : step.status === 'error'
+                                          ? '✕ Failed'
+                                          : 'Pending'}
                                     </span>
                                   </div>
 
@@ -409,9 +449,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                     <div className="plan-diff-preview">
                                       {step.preview.changes.slice(0, 2).map((ch, chIdx) => (
                                         <div key={chIdx}>
-                                          <strong>{ch.location.column}{ch.location.row}:</strong>{' '}
-                                          <span className="diff-del">{String(ch.before.value ?? '')}</span> →{' '}
-                                          <span className="diff-ins">{String(ch.after.value ?? '')}</span>
+                                          <strong>
+                                            {ch.location.column}
+                                            {ch.location.row}:
+                                          </strong>{' '}
+                                          <span className="diff-del">
+                                            {String(ch.before.value ?? '')}
+                                          </span>{' '}
+                                          →{' '}
+                                          <span className="diff-ins">
+                                            {String(ch.after.value ?? '')}
+                                          </span>
                                         </div>
                                       ))}
                                     </div>
@@ -549,7 +597,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             <input
               type="text"
               className="chat-input"
-              placeholder="Ask ExcelAgento (e.g. 'Format dates in col C to YYYY-MM-DD')..."
+              placeholder="Ask ExcelAgento (e.g. 'Format dates in col C to YYYY-MM-DD')…"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               disabled={isProcessing}

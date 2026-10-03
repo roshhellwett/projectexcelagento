@@ -423,12 +423,10 @@ export const App: React.FC = () => {
 
     try {
       // Build conversation history for multi-turn reasoning context
-      const conversationHistory: LLMChatMessage[] = messages
-        .slice(-10)
-        .map((m) => ({
-          role: m.sender === 'user' ? 'user' : 'assistant',
-          content: m.text,
-        }));
+      const conversationHistory: LLMChatMessage[] = messages.slice(-10).map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
 
       const callbacks = {
         onToken: (chunk: string) => {
@@ -448,9 +446,7 @@ export const App: React.FC = () => {
       const onActivity = (activity: AgentActivityEvent) => {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistMsgId
-              ? { ...m, activities: [...(m.activities || []), activity] }
-              : m,
+            m.id === assistMsgId ? { ...m, activities: [...(m.activities || []), activity] } : m,
           ),
         );
       };
@@ -537,7 +533,8 @@ export const App: React.FC = () => {
                 text: m.text || 'An error occurred while answering your request.',
                 isStreaming: false,
                 status: 'error',
-                errorMessage: error instanceof Error ? error.message : 'The agent could not respond.',
+                errorMessage:
+                  error instanceof Error ? error.message : 'The agent could not respond.',
               }
             : m,
         ),

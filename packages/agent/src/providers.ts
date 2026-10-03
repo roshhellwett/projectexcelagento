@@ -330,8 +330,7 @@ function openAiCompatibleAdapter(
       let fullThought = '';
       let reportedModel = model;
       let reportedUsage:
-        | { promptTokens?: number; completionTokens?: number; totalTokens?: number }
-        | undefined;
+        { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
       const toolCallMap = new Map<number, { id: string; name: string; args: string }>();
 
       try {
@@ -364,7 +363,11 @@ function openAiCompatibleAdapter(
                     }[];
                   };
                 }[];
-                usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+                usage?: {
+                  prompt_tokens?: number;
+                  completion_tokens?: number;
+                  total_tokens?: number;
+                };
               };
 
               if (parsed.model) reportedModel = parsed.model;
@@ -412,7 +415,7 @@ function openAiCompatibleAdapter(
 
       const toolCalls: ToolCall[] = Array.from(toolCallMap.entries())
         .sort(([a], [b]) => a - b)
-        .map(([_, tc]) => ({
+        .map(([, tc]) => ({
           id: tc.id,
           type: 'function',
           function: {

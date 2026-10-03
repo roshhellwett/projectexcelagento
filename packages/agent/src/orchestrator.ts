@@ -17,12 +17,7 @@ import {
   READ_TOOL_DEFINITIONS,
   searchSheet,
 } from './read-tools.js';
-import {
-  complete,
-  completeStream,
-  FALLBACK_MODELS,
-  ProviderError,
-} from './providers.js';
+import { complete, completeStream, FALLBACK_MODELS, ProviderError } from './providers.js';
 import { buildToolCatalog, type ToolDescriptor } from './tools.js';
 import type {
   AgentActivityEvent,
@@ -88,7 +83,10 @@ export class ExcelAgentOrchestrator {
         function: {
           name: tool.name,
           description: tool.description,
-          parameters: (tool.jsonSchema as Record<string, unknown>) ?? { type: 'object', properties: {} },
+          parameters: (tool.jsonSchema as Record<string, unknown>) ?? {
+            type: 'object',
+            properties: {},
+          },
         },
       });
     }
@@ -97,7 +95,8 @@ export class ExcelAgentOrchestrator {
       type: 'function',
       function: {
         name: 'create_execution_plan',
-        description: 'Create an ordered multi-step execution plan when a user request requires multiple operations in sequence.',
+        description:
+          'Create an ordered multi-step execution plan when a user request requires multiple operations in sequence.',
         parameters: {
           type: 'object',
           properties: {
@@ -108,9 +107,18 @@ export class ExcelAgentOrchestrator {
               items: {
                 type: 'object',
                 properties: {
-                  operation: { type: 'string', description: 'Operation name, e.g. "format_dates", "sort_range"' },
-                  args: { type: 'object', description: 'Arguments object matching the operation schema' },
-                  description: { type: 'string', description: 'Explanation of what this step achieves' },
+                  operation: {
+                    type: 'string',
+                    description: 'Operation name, e.g. "format_dates", "sort_range"',
+                  },
+                  args: {
+                    type: 'object',
+                    description: 'Arguments object matching the operation schema',
+                  },
+                  description: {
+                    type: 'string',
+                    description: 'Explanation of what this step achieves',
+                  },
                 },
                 required: ['operation', 'args', 'description'],
               },
@@ -129,7 +137,12 @@ export class ExcelAgentOrchestrator {
     const trace: TraceStep[] = [];
     const activities: AgentActivityEvent[] = [];
 
-    const emitActivity = (type: AgentActivityEvent['type'], agent: string, summary: string, detail?: unknown) => {
+    const emitActivity = (
+      type: AgentActivityEvent['type'],
+      agent: string,
+      summary: string,
+      detail?: unknown,
+    ) => {
       const event: AgentActivityEvent = {
         id: `act-${Date.now()}-${activities.length}`,
         type,
@@ -216,7 +229,12 @@ export class ExcelAgentOrchestrator {
     sheet: Sheet | undefined,
     trace: TraceStep[],
     activities: AgentActivityEvent[],
-    emitActivity: (type: AgentActivityEvent['type'], agent: string, summary: string, detail?: unknown) => void,
+    emitActivity: (
+      type: AgentActivityEvent['type'],
+      agent: string,
+      summary: string,
+      detail?: unknown,
+    ) => void,
   ): Promise<AgentDecision> {
     // Layer 3 - Heuristic Fast Path
     const heuristic = analyzeSpreadsheetIntentAndData(input.query, input.workbook, sheetName);
@@ -259,10 +277,9 @@ export class ExcelAgentOrchestrator {
       messages.push({ role: 'user', content: input.query });
 
       // Build model retry & fallback list
-      const candidateModels = [
-        config.model,
-        ...(FALLBACK_MODELS[config.provider] ?? []),
-      ].filter((m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i);
+      const candidateModels = [config.model, ...(FALLBACK_MODELS[config.provider] ?? [])].filter(
+        (m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i,
+      );
 
       let response: ProviderResponse | undefined;
       let lastError: unknown;
@@ -292,10 +309,18 @@ export class ExcelAgentOrchestrator {
             msg.includes('does not exist') ||
             msg.includes('Request too large') ||
             msg.includes('rate_limit') ||
-            (err instanceof ProviderError && (err.status === 404 || err.status === 413 || err.status === 429));
+            (err instanceof ProviderError &&
+              (err.status === 404 || err.status === 413 || err.status === 429));
 
-          if (isQuotaOrModelUnavailable && candidateModel !== candidateModels[candidateModels.length - 1]) {
-            emitActivity('status', 'Conductor', `Model ${candidateModel} quota/rate limit reached; falling back to alternative model...`);
+          if (
+            isQuotaOrModelUnavailable &&
+            candidateModel !== candidateModels[candidateModels.length - 1]
+          ) {
+            emitActivity(
+              'status',
+              'Conductor',
+              `Model ${candidateModel} quota/rate limit reached; falling back to alternative model...`,
+            );
             continue;
           }
           break;
@@ -331,7 +356,12 @@ export class ExcelAgentOrchestrator {
           ].includes(fnName);
 
           if (isReadTool) {
-            emitActivity('inspecting', 'Data Analyst', `Reading sheet data via ${fnName}...`, fnArgs);
+            emitActivity(
+              'inspecting',
+              'Data Analyst',
+              `Reading sheet data via ${fnName}...`,
+              fnArgs,
+            );
             const toolOutput = this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
 
             messages.push({
@@ -355,7 +385,8 @@ export class ExcelAgentOrchestrator {
               );
               finalResponseContent = followUp.content;
               currentToolCalls = followUp.toolCalls;
-              if (followUp.thought) llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
+              if (followUp.thought)
+                llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
               continue;
             } catch {
               break;
@@ -364,7 +395,11 @@ export class ExcelAgentOrchestrator {
 
           // Check if create_execution_plan was called
           if (fnName === 'create_execution_plan') {
-            emitActivity('planning', 'Planner', `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`);
+            emitActivity(
+              'planning',
+              'Planner',
+              `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`,
+            );
             const plan = this.buildExecutionPlan(input.workbook, sheetName, fnArgs);
             if (plan) {
               llmPlan = plan;
@@ -378,11 +413,16 @@ export class ExcelAgentOrchestrator {
 
           // Check if a single engine write operation was called directly
           if (this.registry.get(fnName)) {
-            emitActivity('guardrail_check', 'Guardrail', `Validating proposed operation "${fnName}"...`);
+            emitActivity(
+              'guardrail_check',
+              'Guardrail',
+              `Validating proposed operation "${fnName}"...`,
+            );
             llmAction = {
               name: fnName,
               args: { ...fnArgs, sheet: fnArgs.sheet ?? sheetName },
-              explanation: typeof fnArgs.explanation === 'string' ? fnArgs.explanation : `Execute ${fnName}`,
+              explanation:
+                typeof fnArgs.explanation === 'string' ? fnArgs.explanation : `Execute ${fnName}`,
               category: 'transform',
             };
             break;
@@ -407,7 +447,8 @@ export class ExcelAgentOrchestrator {
           llmMessage = finalResponseContent;
         }
 
-        const summed = (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0);
+        const summed =
+          (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0);
         telemetry = {
           provider: response.provider,
           model: response.model,
@@ -448,7 +489,11 @@ export class ExcelAgentOrchestrator {
 
     // Layer 5 - Guardrail verification for multi-step plan
     if (llmPlan) {
-      emitActivity('guardrail_check', 'Guardrail', `Verifying plan: ${llmPlan.steps.length} steps...`);
+      emitActivity(
+        'guardrail_check',
+        'Guardrail',
+        `Verifying plan: ${llmPlan.steps.length} steps...`,
+      );
       return {
         message: llmMessage || `Plan prepared with ${llmPlan.steps.length} steps.`,
         thought: llmThought,
@@ -600,7 +645,8 @@ export class ExcelAgentOrchestrator {
     return {
       id: `plan-${Date.now()}`,
       title: typeof args.title === 'string' ? args.title : 'Spreadsheet Execution Plan',
-      description: typeof args.description === 'string' ? args.description : 'Multi-step transformation plan',
+      description:
+        typeof args.description === 'string' ? args.description : 'Multi-step transformation plan',
       steps,
       status: 'pending',
       totalAffectedCells: totalAffected,

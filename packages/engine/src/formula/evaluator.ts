@@ -1,8 +1,20 @@
 import { FORMULA_FUNCTIONS } from './functions.js';
 import type { FormulaContext, FormulaValue } from './types.js';
 
+type ParsedValue = FormulaValue | FormulaValue[][];
+
 interface Token {
-  type: 'NUMBER' | 'STRING' | 'BOOLEAN' | 'IDENT' | 'CELL' | 'RANGE' | 'OP' | 'LPAREN' | 'RPAREN' | 'COMMA';
+  type:
+    | 'NUMBER'
+    | 'STRING'
+    | 'BOOLEAN'
+    | 'IDENT'
+    | 'CELL'
+    | 'RANGE'
+    | 'OP'
+    | 'LPAREN'
+    | 'RPAREN'
+    | 'COMMA';
   value: string;
   sheet?: string;
 }
@@ -133,35 +145,43 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
 
     let cursor = 0;
 
-    function parseExpression(): any {
+    function parseExpression(): ParsedValue {
       return parseLogicalOr();
     }
 
-    function parseLogicalOr(): any {
-      let left = parseComparison();
+    function parseLogicalOr(): ParsedValue {
+      const left = parseComparison();
       // In Excel, OR is usually a function, but handle infix comparison / logical
       return left;
     }
 
-    function parseComparison(): any {
+    function parseComparison(): ParsedValue {
       let left = parseAdditive();
-      while (cursor < tokens.length && tokens[cursor]?.type === 'OP' && ['=', '<>', '<', '>', '<=', '>='].includes(tokens[cursor]!.value)) {
+      while (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        ['=', '<>', '<', '>', '<=', '>='].includes(tokens[cursor]!.value)
+      ) {
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parseAdditive();
         if (op === '=') left = left === right;
         else if (op === '<>') left = left !== right;
-        else if (op === '<') left = left < right;
-        else if (op === '>') left = left > right;
-        else if (op === '<=') left = left <= right;
-        else if (op === '>=') left = left >= right;
+        else if (op === '<') left = (left as number | string) < (right as number | string);
+        else if (op === '>') left = (left as number | string) > (right as number | string);
+        else if (op === '<=') left = (left as number | string) <= (right as number | string);
+        else if (op === '>=') left = (left as number | string) >= (right as number | string);
       }
       return left;
     }
 
-    function parseAdditive(): any {
+    function parseAdditive(): ParsedValue {
       let left = parseMultiplicative();
-      while (cursor < tokens.length && tokens[cursor]?.type === 'OP' && ['+', '-', '&'].includes(tokens[cursor]!.value)) {
+      while (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        ['+', '-', '&'].includes(tokens[cursor]!.value)
+      ) {
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parseMultiplicative();
@@ -172,9 +192,13 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       return left;
     }
 
-    function parseMultiplicative(): any {
+    function parseMultiplicative(): ParsedValue {
       let left = parsePower();
-      while (cursor < tokens.length && tokens[cursor]?.type === 'OP' && ['*', '/', '%'].includes(tokens[cursor]!.value)) {
+      while (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        ['*', '/', '%'].includes(tokens[cursor]!.value)
+      ) {
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parsePower();
@@ -185,9 +209,13 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       return left;
     }
 
-    function parsePower(): any {
+    function parsePower(): ParsedValue {
       let left = parseUnary();
-      while (cursor < tokens.length && tokens[cursor]?.type === 'OP' && tokens[cursor]!.value === '^') {
+      while (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        tokens[cursor]!.value === '^'
+      ) {
         cursor++;
         const right = parseUnary();
         left = Math.pow(Number(left), Number(right));
@@ -195,8 +223,12 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       return left;
     }
 
-    function parseUnary(): any {
-      if (cursor < tokens.length && tokens[cursor]?.type === 'OP' && ['+', '-'].includes(tokens[cursor]!.value)) {
+    function parseUnary(): ParsedValue {
+      if (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        ['+', '-'].includes(tokens[cursor]!.value)
+      ) {
         const op = tokens[cursor]!.value;
         cursor++;
         const val = parseUnary();
@@ -205,7 +237,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       return parsePrimary();
     }
 
-    function parsePrimary(): any {
+    function parsePrimary(): ParsedValue {
       if (cursor >= tokens.length) return null;
       const t = tokens[cursor]!;
 
@@ -272,7 +304,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
 
         if (cursor < tokens.length && tokens[cursor]?.type === 'LPAREN') {
           cursor++; // consume '('
-          const args: any[] = [];
+          const args: ParsedValue[] = [];
 
           if (cursor < tokens.length && tokens[cursor]?.type !== 'RPAREN') {
             while (cursor < tokens.length) {
@@ -303,8 +335,8 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       return null;
     }
 
-    return parseExpression();
-  } catch (err) {
+    return parseExpression() as FormulaValue;
+  } catch {
     return '#ERROR!';
   }
 }

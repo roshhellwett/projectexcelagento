@@ -14,7 +14,12 @@ function sampleWorkbook(): Workbook {
       {
         name: 'Sales',
         rows: [
-          [createCell('Order ID'), createCell('Customer'), createCell('Revenue'), createCell('Date')],
+          [
+            createCell('Order ID'),
+            createCell('Customer'),
+            createCell('Revenue'),
+            createCell('Date'),
+          ],
           [createCell('ORD-1'), createCell('Alice'), createCell(100), createCell('2026-01-01')],
           [createCell('ORD-2'), createCell('Bob'), createCell(250), createCell('2026-01-05')],
           [createCell('ORD-3'), createCell('Charlie'), createCell(150), createCell('2026-01-10')],

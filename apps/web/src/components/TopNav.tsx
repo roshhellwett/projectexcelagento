@@ -78,7 +78,12 @@ export const TopNav: React.FC<TopNavProps> = ({
       <div className="top-nav-left">
         <div className="logo-badge">
           <div className="logo-icon">X</div>
-          <span>Excel Agent</span>
+          <h1
+            className="logo-title"
+            style={{ fontSize: 'inherit', fontWeight: 'inherit', margin: 0 }}
+          >
+            Excel Agent
+          </h1>
         </div>
 
         <div className="file-meta-pill">
@@ -118,7 +123,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               width: '160px',
               background: 'var(--bg-elevated)',
             }}
-            placeholder="Find in sheet..."
+            placeholder="Find in sheet…"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
           />

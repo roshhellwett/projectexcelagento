@@ -24,12 +24,7 @@ import {
   validResult,
 } from './operation-utils.js';
 import { runInvariants } from './invariants.js';
-import {
-  columnToIndex,
-  createCell,
-  getSheet,
-  indexToColumn,
-} from './workbook.js';
+import { columnToIndex, createCell, getSheet, indexToColumn } from './workbook.js';
 
 function operationReport(
   before: Workbook,
@@ -60,7 +55,11 @@ function invalidPreview(
   return previewForTransition(workbook, workbook, ranges, [], errors);
 }
 
-const rangeColumn = z.string().trim().min(1).regex(/^[A-Za-z]+$/, 'Columns must be letters');
+const rangeColumn = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[A-Za-z]+$/, 'Columns must be letters');
 const headerRowSchema = z.number().int().positive().default(1);
 
 function columnRange(
@@ -221,7 +220,10 @@ function addComputedColumnTarget(workbook: Workbook, args: AddComputedColumnArgs
   return [columnRange(workbook, args.sheet, 1, col, maxColumn(workbook, args.sheet) + 1)];
 }
 
-function validateAddComputedColumn(workbook: Workbook, args: AddComputedColumnArgs): ValidationResult {
+function validateAddComputedColumn(
+  workbook: Workbook,
+  args: AddComputedColumnArgs,
+): ValidationResult {
   const errors = validateSheet(workbook, args.sheet);
   if (args.afterColumn) {
     errors.push(...validateColumn(workbook, args.sheet, args.afterColumn));
@@ -285,12 +287,15 @@ function evaluateRowExpression(
   });
 
   // 4. Resolve math functions: round(x, decimals), floor(x), ceil(x), abs(x)
-  expr = expr.replace(/round\(\s*([^,]+)\s*,\s*(\d+)\s*\)/gi, (_, numStr: string, decStr: string) => {
-    const num = safeEvalArithmetic(numStr);
-    const decimals = parseInt(decStr, 10);
-    const factor = Math.pow(10, decimals);
-    return String(Math.round(num * factor) / factor);
-  });
+  expr = expr.replace(
+    /round\(\s*([^,]+)\s*,\s*(\d+)\s*\)/gi,
+    (_, numStr: string, decStr: string) => {
+      const num = safeEvalArithmetic(numStr);
+      const decimals = parseInt(decStr, 10);
+      const factor = Math.pow(10, decimals);
+      return String(Math.round(num * factor) / factor);
+    },
+  );
   expr = expr.replace(/floor\(\s*([^)]+)\s*\)/gi, (_, numStr: string) => {
     return String(Math.floor(safeEvalArithmetic(numStr)));
   });
@@ -315,7 +320,11 @@ function evaluateRowExpression(
   return isNaN(num) ? null : Math.round(num * 10000) / 10000;
 }
 
-function resolveColValue(colIdentifier: string, row: Cell[], headerMap: Map<string, number>): string {
+function resolveColValue(
+  colIdentifier: string,
+  row: Cell[],
+  headerMap: Map<string, number>,
+): string {
   let idx = headerMap.get(colIdentifier.toLowerCase().trim());
   if (idx === undefined) {
     const directIdx = columnToIndex(colIdentifier);
@@ -350,7 +359,7 @@ function applyAddComputedColumn(workbook: Workbook, args: AddComputedColumnArgs)
   if (sheet) {
     const insertionCol = args.afterColumn
       ? (columnToIndex(args.afterColumn) ?? sheet.rows[0]?.length ?? 0) + 1
-      : sheet.rows[0]?.length ?? 0;
+      : (sheet.rows[0]?.length ?? 0);
 
     // Build header map
     const headerRowIdx = args.headerRow - 1;
@@ -451,9 +460,7 @@ function applySplitColumn(workbook: Workbook, args: SplitColumnArgs): OperationR
       } else if (r > headerRowIdx) {
         const cellVal = row[colIdx]?.value;
         const parts =
-          cellVal !== null && cellVal !== undefined
-            ? String(cellVal).split(args.delimiter)
-            : [];
+          cellVal !== null && cellVal !== undefined ? String(cellVal).split(args.delimiter) : [];
         const p0 = parts[0]?.trim();
         row[colIdx] = createCell(p0 ? p0 : null);
         for (let i = 1; i < partsCount; i++) {
@@ -472,7 +479,9 @@ function applySplitColumn(workbook: Workbook, args: SplitColumnArgs): OperationR
   return transitionResult(
     before,
     after,
-    operationReport(before, after, ranges, [], { addedColumns: (args.newColumnNames?.length ?? 2) - 1 }),
+    operationReport(before, after, ranges, [], {
+      addedColumns: (args.newColumnNames?.length ?? 2) - 1,
+    }),
   );
 }
 

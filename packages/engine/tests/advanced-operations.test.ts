@@ -73,12 +73,7 @@ describe('advanced operations', () => {
     });
 
     it('fills numeric column blanks with mean', () => {
-      const before = workbook([
-        row('ID', 'Score'),
-        row(1, 10),
-        row(2, null),
-        row(3, 30),
-      ]);
+      const before = workbook([row('ID', 'Score'), row(1, 10), row(2, null), row(3, 30)]);
 
       const args = fillBlanksOperation.schema.parse({
         sheet: 'Data',
@@ -92,11 +87,7 @@ describe('advanced operations', () => {
     });
 
     it('fills blanks with static value', () => {
-      const before = workbook([
-        row('Name', 'Note'),
-        row('Alice', 'VIP'),
-        row('Bob', null),
-      ]);
+      const before = workbook([row('Name', 'Note'), row('Alice', 'VIP'), row('Bob', null)]);
 
       const args = fillBlanksOperation.schema.parse({
         sheet: 'Data',
@@ -133,11 +124,7 @@ describe('advanced operations', () => {
     });
 
     it('computes string concatenation with uppercase', () => {
-      const before = workbook([
-        row('First', 'Last'),
-        row('john', 'doe'),
-        row('jane', 'smith'),
-      ]);
+      const before = workbook([row('First', 'Last'), row('john', 'doe'), row('jane', 'smith')]);
 
       const args = addComputedColumnOperation.schema.parse({
         sheet: 'Data',
@@ -214,11 +201,7 @@ describe('advanced operations', () => {
           },
           {
             name: 'Customers',
-            rows: [
-              row('CustID', 'CustName'),
-              row('C1', 'Acme Corp'),
-              row('C2', 'Globex'),
-            ],
+            rows: [row('CustID', 'CustName'), row('C1', 'Acme Corp'), row('C2', 'Globex')],
           },
         ],
       };
@@ -250,11 +233,7 @@ describe('advanced operations', () => {
       expect(reg.names).toContain('merge_columns');
       expect(reg.names).toContain('lookup_merge');
 
-      const before = workbook([
-        row('A', 'B'),
-        row(1, null),
-        row(2, 10),
-      ]);
+      const before = workbook([row('A', 'B'), row(1, null), row(2, 10)]);
 
       const res = applyOperation(
         before,
