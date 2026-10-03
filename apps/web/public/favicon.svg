@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ExcelAgento">
+  <rect width="64" height="64" rx="14" fill="#0f172a" />
+  <rect x="12" y="14" width="40" height="36" rx="4" fill="none" stroke="#e2e8f0" stroke-width="3" />
+  <path d="M12 26h40M12 38h40M27 14v36" stroke="#e2e8f0" stroke-width="3" />
+  <circle cx="47" cy="47" r="12" fill="#2563eb" />
+  <path d="M42 47l3.5 3.5L52 44" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

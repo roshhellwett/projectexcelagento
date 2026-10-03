@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+*.xlsx
+pnpm-lock.yaml
+Excel Agent_ Production Implementation Plan.md
