@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @excel-agent/web dev",
-    "build": "pnpm --filter @excel-agent/web build",
+    "build": "pnpm --filter @excel-agent/web build && node -e \"import('node:fs').then(fs => fs.cpSync('apps/web/dist', 'dist', { recursive: true }))\"",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run",
