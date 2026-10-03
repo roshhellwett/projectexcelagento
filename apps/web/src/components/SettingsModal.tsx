@@ -130,10 +130,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         });
       }
     } catch (err) {
+      const raw = err instanceof Error ? err.message : '';
+      const isNetworkBlock = /failed to fetch|networkerror|load failed/i.test(raw);
       setTestStatus({
         testing: false,
         ok: false,
-        message: err instanceof Error ? err.message : 'Network connection failed.',
+        message: isNetworkBlock
+          ? 'Could not reach the provider. Possible causes: the provider or its firewall blocked your network (try OpenRouter or Gemini), an ad-blocker is interfering, or you are offline.'
+          : raw || 'Network connection failed.',
       });
     }
   };

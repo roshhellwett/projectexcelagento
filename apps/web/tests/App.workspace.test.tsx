@@ -202,4 +202,27 @@ describe('BYOK settings modal', () => {
     // Clearing removes the stored configuration entirely, it does not leave a key behind.
     expect(localStorage.getItem('excel_agent_settings_v2')).toBeNull();
   });
+
+  it('translates a raw fetch failure into an actionable message', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /API Keys & Settings/i }));
+    const card = document.querySelector('.modal-card') as HTMLElement;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+
+    await user.type(within(card).getByPlaceholderText(/gsk_/i), 'gsk_test_123456');
+    await user.click(within(card).getByRole('button', { name: /Test Connection/i }));
+
+    expect(
+      await within(card).findByText(/Could not reach the provider/i),
+    ).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
 });
