@@ -4,3 +4,6 @@ coverage/
 *.xlsx
 pnpm-lock.yaml
 Excel Agent_ Production Implementation Plan.md
+__agent__/
+.tsbuild/
+design-preview.html
