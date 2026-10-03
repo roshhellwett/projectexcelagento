@@ -47,6 +47,22 @@ intent -> memory -> heuristic -> llm -> guardrail -> execute -> verify -> learn
 6. **Execute / Verify** - transactional apply with forward/inverse patch verification.
 7. **Learn** - successful associations are reinforced; failures decay them.
 
+### Full transparency: the Model & Usage page
+
+Open **Usage** in the nav bar (or deep-link `#/usage`) for a live, auditable record of what the
+workspace has actually done:
+
+- **Active configuration** - provider, the model the provider reported actually serving the
+  request, whether a key is active, the endpoint host, and the key masked
+  (`gsk_••••••cdef`) rather than displayed.
+- **Token usage** - requests, prompt/completion/total tokens, failures, and average latency,
+  all taken from the provider's own usage report rather than estimated. Turns served locally by
+  the deterministic engine are recorded with **zero** tokens, so the ledger doubles as proof that
+  nothing left the browser.
+- **Breakdown** - requests and tokens grouped by provider and by model.
+- **Recent requests** - a per-turn log showing which layer answered (`llm`, `memory`,
+  `heuristic`, `fallback`), the model, token counts, latency, and status.
+
 ## Quick start
 
 ```bash
@@ -63,12 +79,26 @@ with no key at all.
 ```bash
 pnpm lint         # ESLint (flat config, typescript-eslint)
 pnpm typecheck    # tsc -b across all packages
-pnpm test         # unit + property + round-trip tests
+pnpm test         # unit, property, round-trip, jsdom UI, and recorded-fixture tests
 pnpm evals        # golden NL -> action accuracy
 pnpm build        # production bundle
 ```
 
 CI runs all of the above on every push and pull request.
+
+### Test layout
+
+| Suite      | Location                     | Covers                                                                                    |
+| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------- |
+| Engine     | `packages/engine/tests`      | Operations, invariants, and `fast-check` undo/redo property tests                         |
+| Agent      | `packages/agent/tests`       | Planner, guardrail attacks, memory gating, and provider adapters vs recorded API payloads |
+| Evals      | `packages/evals/tests`       | Golden NL -> action accuracy plus guardrail precision                                     |
+| Web (unit) | `apps/web/src/lib/*.test.ts` | Settings and usage stores, workbook import/export round-trip fidelity                     |
+| Web (UI)   | `apps/web/tests/*.test.tsx`  | Real jsdom renders: upload, export, apply/undo, BYOK settings, and the usage page         |
+
+The provider adapters are exercised against recorded request/response payloads for Groq,
+OpenRouter, and Gemini - including 401/429/5xx handling, retry and backoff, caller aborts, and
+timeouts - so no network call is needed and no key is required in CI.
 
 ## Deploy to Vercel
 

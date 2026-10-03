@@ -16,6 +16,8 @@ export interface AgentResponse {
   source?: AgentDecision['source'];
   guardrail?: AgentDecision['guardrail'];
   trace?: AgentDecision['trace'];
+  /** Token/latency record, present only when the model layer was invoked. */
+  telemetry?: AgentDecision['telemetry'];
 }
 
 /**
@@ -51,5 +53,6 @@ export async function askExcelAgent(
     source: decision.source,
     ...(decision.guardrail ? { guardrail: decision.guardrail } : {}),
     trace: decision.trace,
+    ...(decision.telemetry ? { telemetry: decision.telemetry } : {}),
   };
 }

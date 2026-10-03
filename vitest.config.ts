@@ -18,10 +18,13 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    globals: true,
+    setupFiles: [path.resolve(root, 'apps/web/tests/setup.ts')],
     include: [
-      'packages/*/tests/**/*.test.ts',
-      'apps/*/src/**/*.test.ts',
-      'apps/*/src/**/**/*.test.ts',
+      'packages/*/tests/**/*.test.{ts,tsx}',
+      'apps/*/tests/**/*.test.{ts,tsx}',
+      'apps/*/src/**/*.test.{ts,tsx}',
+      'apps/*/src/**/**/*.test.{ts,tsx}',
     ],
   },
 });

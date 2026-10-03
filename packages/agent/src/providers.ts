@@ -107,10 +107,26 @@ async function readError(provider: ProviderName, response: Response): Promise<Pr
   );
 }
 
+/**
+ * Parse a success response body. A 200 that is not JSON (captive portal, proxy
+ * error page, truncated body) must surface as a ProviderError with a usable
+ * message rather than a raw SyntaxError.
+ */
+async function readJson<T>(provider: ProviderName, response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ProviderError(provider, 'Provider returned a response that was not valid JSON.', {
+      status: response.status,
+      retryable: false,
+    });
+  }
+}
+
 type OpenAICompatibleShape = {
   choices?: { message?: { content?: string } }[];
   model?: string;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
 function openAiCompatibleAdapter(
@@ -145,7 +161,7 @@ function openAiCompatibleAdapter(
       );
 
       if (!response.ok) throw await readError(name, response);
-      const data = (await response.json()) as OpenAICompatibleShape;
+      const data = await readJson<OpenAICompatibleShape>(name, response);
       return {
         content: data.choices?.[0]?.message?.content ?? '',
         provider: name,
@@ -153,6 +169,7 @@ function openAiCompatibleAdapter(
         usage: {
           promptTokens: data.usage?.prompt_tokens,
           completionTokens: data.usage?.completion_tokens,
+          totalTokens: data.usage?.total_tokens,
         },
       };
     },
@@ -178,7 +195,11 @@ export const openRouterAdapter: ProviderAdapter = openAiCompatibleAdapter(
 
 type GeminiShape = {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
 };
 
 export const geminiAdapter: ProviderAdapter = {
@@ -217,7 +238,7 @@ export const geminiAdapter: ProviderAdapter = {
     );
 
     if (!response.ok) throw await readError('gemini', response);
-    const data = (await response.json()) as GeminiShape;
+    const data = await readJson<GeminiShape>('gemini', response);
     return {
       content: data.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
       provider: 'gemini',
@@ -225,6 +246,7 @@ export const geminiAdapter: ProviderAdapter = {
       usage: {
         promptTokens: data.usageMetadata?.promptTokenCount,
         completionTokens: data.usageMetadata?.candidatesTokenCount,
+        totalTokens: data.usageMetadata?.totalTokenCount,
       },
     };
   },

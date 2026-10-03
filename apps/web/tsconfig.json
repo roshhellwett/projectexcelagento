@@ -2,11 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
-    "rootDir": "src",
-    "outDir": "dist",
+    "rootDir": ".",
+    "outDir": ".tsbuild",
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "references": [{ "path": "../../packages/engine" }],
-  "include": ["src"]
+  "references": [{ "path": "../../packages/engine" }, { "path": "../../packages/agent" }],
+  "include": ["src", "tests"]
 }

@@ -14,6 +14,7 @@ import type {
   AgentDecision,
   DecideInput,
   GuardrailReport,
+  LlmTelemetry,
   MemoryStore,
   OrchestratorOptions,
   TraceStep,
@@ -143,8 +144,10 @@ export class ExcelAgentOrchestrator {
     // Layer 4 - LLM: optional BYOK reasoning layer.
     let llmAction: ProposedAction | undefined;
     let llmMessage: string | undefined;
+    let telemetry: LlmTelemetry | undefined;
     const config = input.config;
     if (config && !isDemoKey(config.apiKey) && sheet) {
+      const startedAt = Date.now();
       try {
         const response = await complete(
           [
@@ -163,14 +166,37 @@ export class ExcelAgentOrchestrator {
           };
         }
         if (parsed.message) llmMessage = parsed.message;
+        const summed =
+          (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0);
+        telemetry = {
+          provider: response.provider,
+          model: response.model,
+          promptTokens: response.usage?.promptTokens,
+          completionTokens: response.usage?.completionTokens,
+          totalTokens: response.usage?.totalTokens ?? (summed > 0 ? summed : undefined),
+          latencyMs: Date.now() - startedAt,
+          ok: true,
+        };
         trace.push({
           layer: 'llm',
           summary: `${response.provider}/${response.model} responded.`,
-          detail: { proposedOperation: llmAction?.name },
+          detail: { proposedOperation: llmAction?.name, totalTokens: telemetry.totalTokens },
+          durationMs: telemetry.latencyMs,
         });
       } catch (error) {
         const reason = error instanceof ProviderError ? error.message : String(error);
-        trace.push({ layer: 'llm', summary: `Provider unavailable: ${reason}` });
+        telemetry = {
+          provider: config.provider,
+          model: config.model ?? 'unknown',
+          latencyMs: Date.now() - startedAt,
+          ok: false,
+          error: reason,
+        };
+        trace.push({
+          layer: 'llm',
+          summary: `Provider unavailable: ${reason}`,
+          durationMs: telemetry.latencyMs,
+        });
       }
     }
 
@@ -193,6 +219,7 @@ export class ExcelAgentOrchestrator {
           guardrail,
           source: llmAction && candidate === llmAction ? 'llm' : 'heuristic',
           trace,
+          ...(telemetry ? { telemetry } : {}),
         };
       }
     }
@@ -203,6 +230,7 @@ export class ExcelAgentOrchestrator {
       message: llmMessage || heuristic.message,
       source: 'fallback',
       trace,
+      ...(telemetry ? { telemetry } : {}),
     };
   }
 

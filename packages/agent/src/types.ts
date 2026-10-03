@@ -27,13 +27,26 @@ export interface ProviderResponse {
   content: string;
   provider: ProviderName;
   model: string;
-  usage?: { promptTokens?: number; completionTokens?: number };
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
 }
 
 export interface ProviderAdapter {
   readonly name: ProviderName;
   readonly defaultModel: string;
   complete(messages: ChatMessage[], config: ProviderConfig): Promise<ProviderResponse>;
+}
+
+/** Machine-readable cost/latency record for one BYOK inference attempt. */
+export interface LlmTelemetry {
+  provider: ProviderName;
+  /** The model the provider reports having actually served the request. */
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  latencyMs: number;
+  ok: boolean;
+  error?: string;
 }
 
 /** Machine-checkable result of the guardrail layer. */
@@ -67,6 +80,8 @@ export interface AgentDecision {
   insights?: string[];
   source: DecisionSource;
   trace: TraceStep[];
+  /** Present only when the BYOK model layer was actually invoked. */
+  telemetry?: LlmTelemetry;
 }
 
 /** A single learned (query -> operation) association. Enables the self-learning layer. */

@@ -16,6 +16,7 @@ import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { CommandPalette } from './components/CommandPalette.js';
+import { ModelUsagePage } from './components/ModelUsagePage.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 
 import {
@@ -27,7 +28,20 @@ import {
 import { auditSheet, searchCellsInSheet, type ProposedAction } from './lib/agent-helper.js';
 
 import { askExcelAgent } from './lib/llm-service.js';
-import { orchestrator, persistMemory, registry } from './lib/agent-runtime.js';
+import {
+  forgetLearnedActions,
+  learnedActionCount,
+  orchestrator,
+  persistMemory,
+  registry,
+} from './lib/agent-runtime.js';
+import {
+  appendUsageEntry,
+  clearUsageLog,
+  createUsageEntry,
+  loadUsageLog,
+  type UsageEntry,
+} from './lib/usage.js';
 import {
   clearSettings,
   loadSettings,
@@ -37,6 +51,18 @@ import {
 } from './lib/settings.js';
 
 const initialWorkbook = createSampleWorkbook();
+
+/** Top-level pages. The usage view is URL-addressable via `#/usage`. */
+export type WorkspaceView = 'workspace' | 'usage';
+
+function readViewFromHash(): WorkspaceView {
+  try {
+    if (typeof window === 'undefined') return 'workspace';
+    return window.location.hash.replace(/^#\/?/, '') === 'usage' ? 'usage' : 'workspace';
+  } catch {
+    return 'workspace';
+  }
+}
 
 export const App: React.FC = () => {
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
@@ -53,6 +79,38 @@ export const App: React.FC = () => {
   // BYOK settings: a single source of truth shared by the chat gate and Settings modal.
   const [settings, setSettings] = useState<AgentSettings>(() => loadSettings());
   const hasApiKey = settings.apiKey.trim().length > 0;
+
+  // Separate Model & Usage page, addressable at #/usage.
+  const [view, setView] = useState<WorkspaceView>(() => readViewFromHash());
+  const [usageEntries, setUsageEntries] = useState<UsageEntry[]>(() => loadUsageLog());
+  const [learnedActions, setLearnedActions] = useState(() => learnedActionCount());
+
+  useEffect(() => {
+    const syncView = () => setView(readViewFromHash());
+    window.addEventListener('hashchange', syncView);
+    return () => window.removeEventListener('hashchange', syncView);
+  }, []);
+
+  const navigate = useCallback((next: WorkspaceView) => {
+    setView(next);
+    try {
+      window.location.hash = next === 'usage' ? '#/usage' : '';
+    } catch {
+      // Hash updates are best-effort; the in-memory view state still switches.
+    }
+  }, []);
+
+  const handleForgetLearned = () => {
+    forgetLearnedActions();
+    setLearnedActions(0);
+    pushToast('info', 'Learned actions cleared from this browser.');
+  };
+
+  const handleClearUsage = () => {
+    clearUsageLog();
+    setUsageEntries([]);
+    pushToast('info', 'Usage history cleared.');
+  };
 
   const handleSaveApiKey = (provider: ProviderName, key: string) => {
     const next: AgentSettings = { provider, apiKey: key };
@@ -178,6 +236,7 @@ export const App: React.FC = () => {
             success: result.ok,
           });
           persistMemory();
+          setLearnedActions(learnedActionCount());
         }
 
         return result;
@@ -376,6 +435,18 @@ export const App: React.FC = () => {
         if (blocked) pushToast('info', blocked.summary);
       }
 
+      // Telemetry ledger: real provider-reported token counts when the model ran,
+      // an explicit zero-token record when the turn was served locally.
+      setUsageEntries(
+        appendUsageEntry(
+          createUsageEntry({
+            query,
+            source: agentRes.source ?? 'heuristic',
+            ...(agentRes.telemetry ? { telemetry: agentRes.telemetry } : {}),
+          }),
+        ),
+      );
+
       setMessages((prev) => [
         ...prev,
         {
@@ -439,6 +510,42 @@ export const App: React.FC = () => {
     });
   };
 
+  // Dedicated Model & Usage page (kept as a separate route-like view).
+  if (view === 'usage') {
+    return (
+      <div className="app-container">
+        <ModelUsagePage
+          settings={settings}
+          entries={usageEntries}
+          learnedActions={learnedActions}
+          engineOperations={registry.names.length}
+          toolCount={orchestrator.tools.length}
+          workbookSummary={{
+            fileName,
+            sheetName: activeSheetName,
+            sheets: workbook.sheets.length,
+            rows: currentSheet.rows.length,
+            cols: Math.max(...currentSheet.rows.map((row) => row.length), 0),
+          }}
+          onBack={() => navigate('workspace')}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onClearUsage={handleClearUsage}
+          onForgetLearned={handleForgetLearned}
+        />
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Top Navigation */}
@@ -464,6 +571,7 @@ export const App: React.FC = () => {
         onOpenOperationModal={() => setIsOpModalOpen(true)}
         onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenUsage={() => navigate('usage')}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
 

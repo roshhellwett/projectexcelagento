@@ -94,12 +94,31 @@ without committing to history.
 
 ## Testing strategy
 
+Five layers, each with a different job:
+
 - **Engine** - unit tests per operation plus `fast-check` property tests for undo/redo.
-- **Agent** - guardrail semantics, memory gating, tool-catalog/registry parity.
-- **Evals** - a golden set of natural-language prompts mapped to expected operations,
-  asserting both accuracy and that 100% of proposed actions clear the guardrail.
-- **Web** - workbook import/export round-trip fidelity (values, formulas, blanks, number
-  formats, sheet-name sanitization, CSV detection).
+- **Agent** - planner behaviour, guardrail rejection of hallucinated and engine-invalid actions,
+  memory gating, and the provider adapters driven by **recorded API payloads** (Groq, OpenRouter,
+  Gemini) covering 401/429/5xx, retry backoff, caller abort, timeout, and malformed bodies.
+- **Evals** - a golden set of natural-language prompts mapped to expected operations, asserting
+  both accuracy and that 100% of proposed actions clear the guardrail.
+- **Web (unit)** - settings/usage stores (including corrupt-storage tolerance) and workbook
+  import/export round-trip fidelity (values, formulas, blanks, number formats, sheet-name
+  sanitization, CSV detection).
+- **Web (UI)** - jsdom + Testing Library renders the real app: upload an actual `.xlsx`, export an
+  actual blob, apply and undo an operation, save/clear a BYOK key, and read the usage ledger.
+
+The UI and provider layers use a real DOM and real payload shapes rather than mocks of our own
+code, so a regression in wiring is caught. CI needs no API key and makes no network request.
+
+## Telemetry & transparency
+
+`apps/web/src/lib/usage.ts` keeps a ring-buffered ledger (200 entries) in `localStorage`.
+`packages/agent/src/orchestrator.ts` attaches an `LlmTelemetry` record - provider, the model the
+provider reported serving, prompt/completion/total tokens, latency, and any error - only when the
+model layer actually ran. The host turns that into a ledger entry, recording locally answered
+turns with zero tokens. This is a diagnostic record, not analytics: nothing is transmitted, and
+the user can clear it from the usage page.
 
 ## Deployment
 
@@ -116,8 +135,12 @@ provider and font hosts the app genuinely uses.
   payload is the app + React chunks only. `loadXlsx()` in
   `apps/web/src/lib/engine-adapter.ts` is the single memoized seam to pre-warm if a future
   feature needs to parse a workbook before the user interacts.
-- **Model-layer evals** - the golden set exercises the deterministic planner offline. An
-  additional eval lane for the LLM layer (recorded provider responses, no network in CI) would
-  extend coverage to prompt/adapter drift.
+- **Model-layer evals** - provider adapters and the guardrail's handling of model proposals are
+  covered by recorded-payload tests. A live, opt-in contract test against each provider (behind an
+  env flag, never in CI) would additionally catch upstream schema drift.
+- **Browser E2E** - the jsdom suite renders the real app, but not a real browser. A Playwright
+  smoke test (upload, chat, apply, export) would cover paint-level regressions jsdom cannot see.
+- **Coverage thresholds** - coverage is not yet enforced in CI. Adding a floor per package would
+  make untested additions fail loudly.
 - **Cross-device memory** - learned associations live in `localStorage` per browser. Sharing
   them across devices would require a backend, which would break the zero-secret BYOK design.

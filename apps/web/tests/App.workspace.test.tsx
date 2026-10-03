@@ -1,0 +1,205 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+import { createCell, type Workbook } from '@excel-agent/engine';
+
+import { workbookToXlsxBuffer } from '../src/lib/engine-adapter.js';
+import {
+  askAgent,
+  createdBlobsSnapshot,
+  enterDemoMode,
+  fileInput,
+  fileWithSize,
+  installBrowserStubs,
+  metaPillText,
+  renderApp,
+  resetAppState,
+  revokedUrlsSnapshot,
+  sheetTabTexts,
+  toastTexts,
+} from './helpers.js';
+
+installBrowserStubs();
+
+beforeEach(() => {
+  resetAppState();
+});
+
+describe('workspace shell', () => {
+  it('renders the sample workbook with the BYOK gate closed', () => {
+    const { container } = renderApp();
+
+    expect(metaPillText(container)).toContain('sample-orders.xlsx');
+    expect(metaPillText(container)).toContain('11 rows');
+    expect(screen.getAllByText('Order ID').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Activate Excel Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Launch with Demo Mode/i })).toBeInTheDocument();
+  });
+
+  it('unlocks demo mode, greets the user, and stores the preference', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: /Launch with Demo Mode/i }));
+
+    expect(await screen.findByPlaceholderText(/Ask ExcelAgento/i)).toBeInTheDocument();
+    expect(screen.getByText('GROQ ACTIVE')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Activate Excel Agent' })).not.toBeInTheDocument();
+    expect(localStorage.getItem('excel_agent_settings_v2')).toContain('demo-local-mode');
+    await waitFor(() => expect(container.textContent).toContain('Welcome'), { timeout: 5000 });
+  });
+
+  it('opens the command palette with Ctrl+K', async () => {
+    renderApp();
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+
+    expect(await screen.findByPlaceholderText(/Type a command/i)).toBeInTheDocument();
+  });
+});
+
+describe('deterministic actions from chat', () => {
+  it('proposes an action, applies it, and undoes it', async () => {
+    enterDemoMode();
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    // The sample workbook deliberately contains one duplicate row.
+    await askAgent(user, 'remove duplicate rows');
+    expect(metaPillText(container)).toContain('11 rows');
+
+    const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+    await user.click(apply);
+
+    await waitFor(() =>
+      expect(toastTexts(container).join(' ')).toMatch(/delete_duplicates applied/i),
+    );
+    await waitFor(() => expect(metaPillText(container)).toContain('10 rows'));
+
+    const undo = await screen.findByRole('button', { name: /Undo This Step/i });
+    await user.click(undo);
+
+    await waitFor(() => expect(metaPillText(container)).toContain('11 rows'));
+  });
+
+  it('persists a verified action into the self-learning memory', async () => {
+    enterDemoMode();
+    const user = userEvent.setup();
+    renderApp();
+
+    await askAgent(user, 'remove duplicate rows');
+    const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+    await user.click(apply);
+
+    await waitFor(() =>
+      expect(localStorage.getItem('excel_agent_memory_v1')).toContain('delete_duplicates'),
+    );
+  });
+
+  it('never touches the network during a demo-mode turn', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('the network must not be used in demo mode');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    enterDemoMode();
+    const user = userEvent.setup();
+    renderApp();
+
+    await askAgent(user, 'remove duplicate rows');
+    await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('file handling', () => {
+  it('rejects a file larger than the 50 MB upload guard', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await user.upload(fileInput(container), fileWithSize('huge.xlsx', 51 * 1024 * 1024));
+
+    await waitFor(() => expect(toastTexts(container).join(' ')).toMatch(/larger than 50 MB/i));
+    // The workspace keeps the current workbook rather than half-loading it.
+    expect(metaPillText(container)).toContain('sample-orders.xlsx');
+  });
+
+  it('imports a real .xlsx file selected from disk', async () => {
+    const uploaded: Workbook = {
+      sheets: [
+        {
+          name: 'Revenue',
+          rows: [
+            [createCell('Region'), createCell('Total')],
+            [createCell('EMEA'), createCell(500)],
+          ],
+        },
+      ],
+    };
+    const bytes = await workbookToXlsxBuffer(uploaded);
+    // Copy into a fresh, ArrayBuffer-backed view so it satisfies BlobPart under TS 6.
+    const file = new File([new Uint8Array(bytes)], 'quarterly.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const user = userEvent.setup();
+    const { container } = renderApp();
+    await user.upload(fileInput(container), file);
+
+    await waitFor(() => expect(metaPillText(container)).toContain('quarterly.xlsx'));
+    await waitFor(() =>
+      expect(toastTexts(container).join(' ')).toMatch(/Loaded "quarterly\.xlsx"/i),
+    );
+    expect(metaPillText(container)).toContain('2 rows');
+    expect(container.textContent).toContain('Region');
+    expect(sheetTabTexts(container).join(' ')).toContain('Revenue');
+  });
+
+  it('exports the workbook as a real xlsx blob', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: /Export \.xlsx/i }));
+
+    await waitFor(() => expect(toastTexts(container).join(' ')).toMatch(/Exported/i));
+    const blobs = createdBlobsSnapshot();
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0]?.type).toContain('spreadsheetml.sheet');
+    expect(blobs[0]?.size).toBeGreaterThan(1000);
+    expect(revokedUrlsSnapshot()).toHaveLength(1);
+  });
+});
+
+describe('BYOK settings modal', () => {
+  it('saves a key, reflects it in the chat header, then clears it', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /API Keys & Settings/i }));
+    const card = document.querySelector('.modal-card') as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(within(card).getByText(/Settings - Model Keys/i)).toBeInTheDocument();
+
+    await user.type(within(card).getByPlaceholderText(/gsk_/i), 'gsk_test_123456');
+    await user.click(within(card).getByRole('button', { name: /Save Preferences/i }));
+
+    await waitFor(() =>
+      expect(localStorage.getItem('excel_agent_settings_v2')).toContain('gsk_test_123456'),
+    );
+    expect(await screen.findByText('GROQ ACTIVE')).toBeInTheDocument();
+    // The modal auto-closes after a successful save.
+    await waitFor(() => expect(document.querySelector('.modal-card')).toBeNull(), {
+      timeout: 3000,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Change Key/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Activate Excel Agent' })).toBeInTheDocument(),
+    );
+    // Clearing removes the stored configuration entirely, it does not leave a key behind.
+    expect(localStorage.getItem('excel_agent_settings_v2')).toBeNull();
+  });
+});

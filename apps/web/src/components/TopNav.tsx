@@ -21,6 +21,7 @@ interface TopNavProps {
   onOpenOperationModal: () => void;
   onToggleHistory: () => void;
   onOpenSettings: () => void;
+  onOpenUsage?: () => void;
   onOpenCommandPalette?: () => void;
 }
 
@@ -59,6 +60,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenOperationModal,
   onToggleHistory,
   onOpenSettings,
+  onOpenUsage,
   onOpenCommandPalette,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -317,6 +319,27 @@ export const TopNav: React.FC<TopNavProps> = ({
             <polyline points="12 6 12 12 14 14" />
           </svg>
           History ({historyPosition}/{historyLength})
+        </button>
+
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onOpenUsage}
+          title="Model & token usage"
+          data-testid="open-usage"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          Usage
         </button>
 
         <button
