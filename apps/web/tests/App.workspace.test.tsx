@@ -220,9 +220,7 @@ describe('BYOK settings modal', () => {
     await user.type(within(card).getByPlaceholderText(/gsk_/i), 'gsk_test_123456');
     await user.click(within(card).getByRole('button', { name: /Test Connection/i }));
 
-    expect(
-      await within(card).findByText(/Could not reach the provider/i),
-    ).toBeInTheDocument();
+    expect(await within(card).findByText(/Could not reach the provider/i)).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 });

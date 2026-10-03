@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -29,7 +29,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     );
 
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('Something got broken')).toBeInTheDocument();
     expect(screen.getByText(/kaboom/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Reload workspace/i })).toBeInTheDocument();
     expect(screen.queryByText('safe content')).not.toBeInTheDocument();

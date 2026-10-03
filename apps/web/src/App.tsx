@@ -17,6 +17,7 @@ import { HistoryDrawer } from './components/HistoryDrawer.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { ModelUsagePage } from './components/ModelUsagePage.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 
 import {
@@ -147,6 +148,27 @@ export const App: React.FC = () => {
 
   // Toasts replace blocking alert() dialogs.
   const { toasts, pushToast, dismissToast } = useToasts();
+
+  // Any uncaught error / rejected promise surfaces as a floating toast — never
+  // a silent console error or a dead workspace (panel boundaries stay alive).
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      pushToast('error', event.message || 'An unexpected error occurred.');
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      pushToast(
+        'error',
+        reason instanceof Error ? reason.message : 'An operation failed unexpectedly.',
+      );
+    };
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, [pushToast]);
 
   // Engine registry (shared runtime) and history stack
   const [historyStack, setHistoryStack] = useState<HistoryStack>(
@@ -661,24 +683,26 @@ export const App: React.FC = () => {
   if (view === 'usage') {
     return (
       <div className="app-container">
-        <ModelUsagePage
-          settings={settings}
-          entries={usageEntries}
-          learnedActions={learnedActions}
-          engineOperations={registry.names.length}
-          toolCount={orchestrator.tools.length}
-          workbookSummary={{
-            fileName,
-            sheetName: activeSheetName,
-            sheets: workbook.sheets.length,
-            rows: currentSheet.rows.length,
-            cols: Math.max(...currentSheet.rows.map((row) => row.length), 0),
-          }}
-          onBack={() => navigate('workspace')}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onClearUsage={handleClearUsage}
-          onForgetLearned={handleForgetLearned}
-        />
+        <ErrorBoundary variant="panel" label="Model & Usage">
+          <ModelUsagePage
+            settings={settings}
+            entries={usageEntries}
+            learnedActions={learnedActions}
+            engineOperations={registry.names.length}
+            toolCount={orchestrator.tools.length}
+            workbookSummary={{
+              fileName,
+              sheetName: activeSheetName,
+              sheets: workbook.sheets.length,
+              rows: currentSheet.rows.length,
+              cols: Math.max(...currentSheet.rows.map((row) => row.length), 0),
+            }}
+            onBack={() => navigate('workspace')}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onClearUsage={handleClearUsage}
+            onForgetLearned={handleForgetLearned}
+          />
+        </ErrorBoundary>
 
         <SettingsModal
           isOpen={isSettingsOpen}
@@ -725,31 +749,35 @@ export const App: React.FC = () => {
       {/* Main Workspace Body */}
       <main className="workspace-body">
         {/* Spreadsheet Grid with Drop Zone */}
-        <SpreadsheetGrid
-          workbook={workbook}
-          activeSheetName={activeSheetName}
-          onSelectSheet={(sheet) => setActiveSheetName(sheet)}
-          recentChangedCells={recentChangedCells}
-          searchHighlightCells={searchHighlightCells}
-          onQuickSort={handleQuickSort}
-          onFileDrop={handleFileUpload}
-        />
+        <ErrorBoundary variant="panel" label="the grid">
+          <SpreadsheetGrid
+            workbook={workbook}
+            activeSheetName={activeSheetName}
+            onSelectSheet={(sheet) => setActiveSheetName(sheet)}
+            recentChangedCells={recentChangedCells}
+            searchHighlightCells={searchHighlightCells}
+            onQuickSort={handleQuickSort}
+            onFileDrop={handleFileUpload}
+          />
+        </ErrorBoundary>
 
         {/* AI Agent Chat Panel */}
-        <AgentChat
-          audit={sheetAudit}
-          messages={messages}
-          isProcessing={isProcessing}
-          hasApiKey={hasApiKey}
-          apiKeyProvider={settings.provider}
-          onSaveApiKey={handleSaveApiKey}
-          onClearApiKey={handleClearApiKey}
-          onSendMessage={handleSendMessage}
-          onApplyAction={handleApplyAction}
-          onApplyPlan={handleApplyPlan}
-          onUndoLast={handleUndo}
-          canUndo={historyStack.canUndo}
-        />
+        <ErrorBoundary variant="panel" label="the agent chat">
+          <AgentChat
+            audit={sheetAudit}
+            messages={messages}
+            isProcessing={isProcessing}
+            hasApiKey={hasApiKey}
+            apiKeyProvider={settings.provider}
+            onSaveApiKey={handleSaveApiKey}
+            onClearApiKey={handleClearApiKey}
+            onSendMessage={handleSendMessage}
+            onApplyAction={handleApplyAction}
+            onApplyPlan={handleApplyPlan}
+            onUndoLast={handleUndo}
+            canUndo={historyStack.canUndo}
+          />
+        </ErrorBoundary>
       </main>
 
       {/* Manual Operation Modal */}

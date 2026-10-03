@@ -491,13 +491,9 @@ export function analyzeSpreadsheetIntentAndData(
   // Y" must never be hijacked by a keyword heuristic below. Without this, a
   // column named "Order Date" turns "rename column C to Order Date" into a
   // date-format mutation, and "delete column Sort Priority" into a sort.
-  const replaceMatch =
-    raw.match(
-      /(?:find\s+['"]?([^'"]+?)['"]?\s+(?:and\s+)?replace\s+(?:with\s+)?['"]?([^'"]+)['"]?(?:$|\s))/i,
-    ) ||
-    raw.match(
-      /(?:replace|change)\s+['"]?([^'"]+?)['"]?\s+(?:with|to)\s+['"]?([^'"]+?)['"]?(?:$|\s)/i,
-    );
+  const replaceMatch = raw.match(
+    /(?:find\s+and\s+replace|find|replace|change)\s*['"]?([^'"]+?)['"]?\s*(?:and\s+)?(?:replace|replace\s+with|with|to)\s*(?:with\s+)?['"]?([^'"]+?)['"]?(?:\s+in\b.*)?$/i,
+  );
 
   if (replaceMatch && replaceMatch[1] && replaceMatch[2]) {
     const find = replaceMatch[1].trim();
@@ -520,7 +516,9 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  const deleteColMatch = raw.match(/(?:delete|remove|drop)\s+column\s+([a-z0-9_\s/()]+)/i);
+  const deleteColMatch = raw.match(
+    /(?:delete|remove|drop)\s+(?:the\s+)?(?:column\s+)?([a-z0-9_\s/()]+?)(?:\s+column)?\s*$/i,
+  );
   if (deleteColMatch && deleteColMatch[1]) {
     const targetCol = resolveColumn(deleteColMatch[1], columns);
     if (targetCol) {
@@ -537,7 +535,7 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   const renameColMatch = raw.match(
-    /(?:rename)\s+column\s+([a-z0-9_\s/()]+)\s+to\s+([a-z0-9_\s/()]+)/i,
+    /(?:rename)\s+(?:the\s+)?(?:column\s+)?([a-z0-9_\s/()]+?)\s+(?:to|as)\s+(.+)/i,
   );
   if (renameColMatch && renameColMatch[1] && renameColMatch[2]) {
     const targetCol = resolveColumn(renameColMatch[1], columns);
@@ -555,12 +553,114 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
+  // 0b. COLUMN STRUCTURE: add / fill / split / merge
+  const addColMatch =
+    raw.match(
+      /(?:add|insert|create)\s+(?:an?\s+)?(?:new\s+)?(?:empty\s+)?column\s+(?:called\s+|named\s+)?['"]?([a-z0-9_\s-]+)['"]?/i,
+    ) || raw.match(/(?:add|insert|create)\s+(?:a\s+)?(?:new\s+)?(?:empty\s+)?column/i);
+  if (addColMatch) {
+    const headerName = (addColMatch[1] || 'New Column').trim();
+    const lastCol = columns[columns.length - 1]?.letter;
+    const afterIndex = lastCol ? lastCol.charCodeAt(0) - 64 : 0;
+    const insertLetter = indexToColumn(Math.max(afterIndex, 0));
+    return {
+      message: `I've prepared to add a new column **"${headerName}"** after the last existing column.\n\nClick **Apply Changes** to insert it.`,
+      proposedAction: {
+        name: 'add_column',
+        args: {
+          sheet: currentSheet.name,
+          column: insertLetter,
+          headerName,
+          defaultValue: '',
+          headerRow: 1,
+        },
+        explanation: `Add a new column "${headerName}" as column ${insertLetter}.`,
+        category: 'columns',
+      },
+    };
+  }
+
+  const fillMatch = raw.match(
+    /(?:fill|complete)\s+(?:the\s+)?(?:blank|empty|missing)(?:\s+(?:cells?|values?))?(?:\s+in\s+column\s+([a-z0-9_\s/()]+))?/i,
+  );
+  if (fillMatch) {
+    const targetCol =
+      (fillMatch[1] ? resolveColumn(fillMatch[1], columns) : null) ||
+      columns.find((c) => c.nonBlankCount < currentSheet.rows.length - 1) ||
+      columns[0]!;
+    return {
+      message: `I've prepared to fill blank cells in **${targetCol.rawName}** (${targetCol.letter}).\n\nClick **Apply Changes** to propagate the previous value forward.`,
+      proposedAction: {
+        name: 'fill_blanks',
+        args: {
+          sheet: currentSheet.name,
+          column: targetCol.letter,
+          strategy: 'forward',
+          headerRow: 1,
+        },
+        explanation: `Fill blank cells in column ${targetCol.letter} using forward fill.`,
+        category: 'transform',
+      },
+    };
+  }
+
+  const splitMatch = raw.match(
+    /split\s+column\s+([a-z0-9_\s/()]+)\s+by\s+(['"]?[^'"]+?['"]?)\s*$/i,
+  );
+  if (splitMatch) {
+    const targetCol = resolveColumn(splitMatch[1] ?? '', columns);
+    const delimiter = splitMatch[2]!.replace(/^['"]|['"]$/g, '');
+    if (targetCol && delimiter) {
+      return {
+        message: `I've prepared to split **${targetCol.rawName}** (${targetCol.letter}) on "${delimiter}".\n\nClick **Apply Changes** to expand it into new columns.`,
+        proposedAction: {
+          name: 'split_column',
+          args: { sheet: currentSheet.name, column: targetCol.letter, delimiter, headerRow: 1 },
+          explanation: `Split column ${targetCol.letter} by "${delimiter}".`,
+          category: 'transform',
+        },
+      };
+    }
+  }
+
+  const mergeMatch = raw.match(
+    /merge\s+columns?\s+([a-z0-9_\s/(),&]+?)\s+(?:into|as|to)\s+['"]?([a-z0-9_\s-]+)['"]?/i,
+  );
+  if (mergeMatch) {
+    const headerName = mergeMatch[2]!.trim();
+    const parts = mergeMatch[1]!
+      .split(/&|,|and/i)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const resolved = parts.map((p) => resolveColumn(p, columns)).filter((c) => c !== null);
+    if (resolved.length >= 2) {
+      const letters = resolved.map((c) => c!.letter);
+      return {
+        message: `I've prepared to merge columns **${letters.join(', ')}** into **"${headerName}"**.\n\nClick **Apply Changes** to combine them.`,
+        proposedAction: {
+          name: 'merge_columns',
+          args: {
+            sheet: currentSheet.name,
+            columns: letters,
+            separator: ' ',
+            headerName,
+            headerRow: 1,
+          },
+          explanation: `Merge columns ${letters.join(', ')} into "${headerName}".`,
+          category: 'transform',
+        },
+      };
+    }
+  }
+
   // 1. DUPLICATE REMOVAL
   if (
     q.includes('duplicate') ||
     q.includes('dedup') ||
     q.includes('unique') ||
-    q.includes('dublicate')
+    q.includes('dublicate') ||
+    q.includes('repeated') ||
+    q.includes('doublon')
   ) {
     const seen = new Set<string>();
     let dupCount = 0;
@@ -589,6 +689,8 @@ export function analyzeSpreadsheetIntentAndData(
   if (
     q.includes('trim') ||
     q.includes('whitespace') ||
+    q.includes('clean') ||
+    q.includes('space') ||
     q.includes('title case') ||
     q.includes('titlecase') ||
     q.includes('uppercase') ||
@@ -601,8 +703,12 @@ export function analyzeSpreadsheetIntentAndData(
     else if (q.includes('upper') || q.includes('caps')) caseOption = 'upper';
     else if (q.includes('lower')) caseOption = 'lower';
 
+    const explicitCol = q.match(/(?:column|col)\s+([a-z])\b/i);
     const targetCol =
-      resolveColumn(q, columns) || columns.find((c) => !c.isNumeric && !c.isDate) || columns[0]!;
+      (explicitCol?.[1] ? resolveColumn(explicitCol[1], columns) : null) ||
+      resolveColumn(q, columns) ||
+      columns.find((c) => !c.isNumeric && !c.isDate) ||
+      columns[0]!;
 
     return {
       message: `I've prepared a text normalization operation for **${targetCol.rawName}** (${targetCol.letter}).\n\n• Action: ${q.includes('trim') ? 'Trim leading/trailing whitespace' : ''} ${caseOption !== 'none' ? `Convert to ${caseOption} case` : ''}\n\nClick **Apply Changes** to clean this column!`,
@@ -624,7 +730,9 @@ export function analyzeSpreadsheetIntentAndData(
 
   // 3. DATE NORMALIZATION
   if (q.includes('date') || q.includes('iso') || q.includes('yyyy-mm-dd') || q.includes('tarikh')) {
+    const explicitCol = q.match(/(?:column|col)\s+([a-z])\b/i);
     const targetCol =
+      (explicitCol?.[1] ? resolveColumn(explicitCol[1], columns) : null) ||
       columns.find((c) => c.isDate) ||
       resolveColumn(q, columns) ||
       columns.find((c) => c.cleanName.includes('date') || c.cleanName.includes('time')) ||
@@ -656,6 +764,8 @@ export function analyzeSpreadsheetIntentAndData(
   if (
     q.includes('sort') ||
     q.includes('order by') ||
+    q.includes('order the') ||
+    q.includes('arrange') ||
     q.includes('ascending') ||
     q.includes('descending')
   ) {
