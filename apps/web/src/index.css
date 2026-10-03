@@ -1338,6 +1338,76 @@ body {
   cursor: text;
 }
 
+/* Structured assistant reply formatting */
+.md-content {
+  line-height: 1.55;
+  font-size: 13px;
+  color: var(--text-main, inherit);
+}
+
+.md-content .md-heading {
+  margin: 8px 0 4px;
+  font-weight: 700;
+  color: var(--text-main, inherit);
+}
+
+.md-content h3.md-heading {
+  font-size: 15px;
+}
+
+.md-content h4.md-heading {
+  font-size: 14px;
+}
+
+.md-content .md-paragraph {
+  margin: 0 0 8px;
+}
+
+.md-content .md-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.md-content .md-list {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+}
+
+.md-content .md-list li {
+  margin: 3px 0;
+}
+
+.md-content .md-list li::marker {
+  color: var(--primary, #4f46e5);
+}
+
+.md-content .md-inline-code {
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.md-content .md-code {
+  background: rgba(127, 127, 127, 0.1);
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 6px 0;
+}
+
+.md-content .md-quote {
+  border-left: 3px solid var(--primary, #4f46e5);
+  margin: 6px 0;
+  padding: 2px 12px;
+  color: var(--text-muted, inherit);
+  font-style: italic;
+}
+
 .typing-cursor {
   display: inline-block;
   color: var(--primary);

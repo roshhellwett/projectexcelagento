@@ -8,6 +8,7 @@ import {
 } from '../lib/agent-helper.js';
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
+import { MarkdownText } from './MarkdownText.js';
 
 export interface ChatMessage {
   id: string;
@@ -392,7 +393,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       <div className="assistant-text">
                         {msg.isStreaming ? (
                           <div>
-                            <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                            <MarkdownText text={msg.text} />
                             <span
                               className="activity-pulse-dot"
                               style={{
