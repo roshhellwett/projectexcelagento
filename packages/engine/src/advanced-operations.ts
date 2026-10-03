@@ -24,7 +24,7 @@ import {
   validResult,
 } from './operation-utils.js';
 import { runInvariants } from './invariants.js';
-import { columnToIndex, createCell, getSheet, indexToColumn } from './workbook.js';
+import { cloneWorkbook, columnToIndex, createCell, getSheet, indexToColumn } from './workbook.js';
 
 function operationReport(
   before: Workbook,
@@ -110,8 +110,8 @@ function validateFillBlanks(workbook: Workbook, args: FillBlanksArgs): Validatio
 }
 
 function applyFillBlanks(workbook: Workbook, args: FillBlanksArgs): OperationResult {
-  const before = workbook;
-  const after = JSON.parse(JSON.stringify(workbook)) as Workbook;
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
   const sheet = getSheet(after, args.sheet);
   const colIdx = columnToIndex(args.column) ?? 0;
 
@@ -243,117 +243,200 @@ function evaluateRowExpression(
   row: Cell[],
   headerMap: Map<string, number>,
 ): CellValue {
-  let expr = expression;
+  const slots: string[] = [];
+  const protect = (value: string): string => {
+    slots.push(value);
+    return '\u0000' + String(slots.length - 1) + '\u0000';
+  };
+  const unprotect = (token: string): string => {
+    const t = token.trim();
+    if (t.charCodeAt(0) !== 0 || t.charCodeAt(t.length - 1) !== 0) return '';
+    const inner = t.slice(1, t.length - 1);
+    return /^\d+$/.test(inner) ? (slots[Number(inner)] ?? '') : '';
+  };
+  const isPlaceholder = (token: string): boolean => {
+    const t = token.trim();
+    return (
+      t.charCodeAt(0) === 0 && t.charCodeAt(t.length - 1) === 0 && /^\d+$/.test(t.slice(1, -1))
+    );
+  };
 
-  // 1. Resolve named column brackets [Col Name] or col('Col Name') or col("Col Name")
-  expr = expr.replace(/col\(\s*['"]([^'"]+)['"]\s*\)/gi, (_, colName: string) => {
-    return resolveColValue(colName, row, headerMap);
-  });
-  expr = expr.replace(/\[([^\]]+)\]/g, (_, colName: string) => {
-    return resolveColValue(colName, row, headerMap);
-  });
+  let expr = expression.trim();
 
-  // 2. Resolve single/double letter columns like A, B, C, D (case-insensitive) preceded by boundary
-  expr = expr.replace(/\b([A-Z]{1,2})\b(?!\()/gi, (match) => {
+  // 1. Resolve named column brackets [Col Name] or col('Col Name') (before protecting literals)
+  const resolveColToken = (colName: string): string => {
+    let idx = headerMap.get(colName.toLowerCase().trim());
+    if (idx === undefined) {
+      const directIdx = columnToIndex(colName);
+      if (directIdx !== undefined) idx = directIdx;
+    }
+    if (idx !== undefined && idx < row.length) {
+      const cellVal = row[idx]?.value;
+      if (typeof cellVal === 'number') return String(cellVal);
+      if (typeof cellVal === 'string') return protect(cellVal);
+      return '0';
+    }
+    return '0';
+  };
+  expr = expr.replace(/col\(\s*['"]([^'"]+)['"]\s*\)/gi, (_m, n: string) => resolveColToken(n));
+  expr = expr.replace(/\[([^\]]+)\]/g, (_m, n: string) => resolveColToken(n));
+
+  // 2. Protect string literals so column resolution never rewrites letters inside them
+  expr = expr.replace(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g, (_m, a, b) =>
+    protect(a !== undefined ? a : b),
+  );
+
+  // 3. Resolve bare single/double letter columns (A, B, ...). String literals are protected.
+  expr = expr.replace(/\b([A-Za-z]{1,2})\b(?!\()/g, (match) => {
     const colIdx = columnToIndex(match);
     if (colIdx !== undefined && colIdx < row.length) {
       const val = row[colIdx]?.value;
       if (typeof val === 'number') return String(val);
-      if (typeof val === 'string') return JSON.stringify(val);
-      if (val === null || val === undefined) return '0';
+      if (typeof val === 'string') return protect(val);
+      return '0';
     }
     return match;
   });
 
-  // 3. Resolve string helpers: upper("..."), lower("..."), trim("..."), concat(...)
-  expr = expr.replace(/upper\(([^)]+)\)/gi, (_, arg: string) => {
-    const unquoted = arg.replace(/^['"]|['"]$/g, '');
-    return JSON.stringify(unquoted.toUpperCase());
-  });
-  expr = expr.replace(/lower\(([^)]+)\)/gi, (_, arg: string) => {
-    const unquoted = arg.replace(/^['"]|['"]$/g, '');
-    return JSON.stringify(unquoted.toLowerCase());
-  });
-  expr = expr.replace(/trim\(([^)]+)\)/gi, (_, arg: string) => {
-    const unquoted = arg.replace(/^['"]|['"]$/g, '');
-    return JSON.stringify(unquoted.trim());
-  });
-  expr = expr.replace(/concat\(([^)]+)\)/gi, (_, args: string) => {
-    const parts = args.split(',').map((p) => {
-      const trimmed = p.trim();
-      return trimmed.replace(/^['"]|['"]$/g, '');
-    });
-    return JSON.stringify(parts.join(''));
-  });
+  // 4. String helpers operate on resolved operands (literal or column value)
+  const resolveOperand = (arg: string): string => {
+    const t = arg.trim();
+    if (isPlaceholder(t)) return unprotect(t);
+    return t.replace(/^['"]|['"]$/g, '');
+  };
+  expr = expr.replace(/upper\(([^)]+)\)/gi, (_m, arg: string) =>
+    protect(resolveOperand(arg).toUpperCase()),
+  );
+  expr = expr.replace(/lower\(([^)]+)\)/gi, (_m, arg: string) =>
+    protect(resolveOperand(arg).toLowerCase()),
+  );
+  expr = expr.replace(/trim\(([^)]+)\)/gi, (_m, arg: string) =>
+    protect(resolveOperand(arg).trim()),
+  );
+  expr = expr.replace(/concat\(([^)]+)\)/gi, (_m, args: string) =>
+    protect(
+      args
+        .split(',')
+        .map((p) => resolveOperand(p))
+        .join(''),
+    ),
+  );
 
-  // 4. Resolve math functions: round(x, decimals), floor(x), ceil(x), abs(x)
+  // 5. Math functions
   expr = expr.replace(
     /round\(\s*([^,]+)\s*,\s*(\d+)\s*\)/gi,
-    (_, numStr: string, decStr: string) => {
+    (_m, numStr: string, decStr: string) => {
       const num = safeEvalArithmetic(numStr);
       const decimals = parseInt(decStr, 10);
       const factor = Math.pow(10, decimals);
       return String(Math.round(num * factor) / factor);
     },
   );
-  expr = expr.replace(/floor\(\s*([^)]+)\s*\)/gi, (_, numStr: string) => {
-    return String(Math.floor(safeEvalArithmetic(numStr)));
-  });
-  expr = expr.replace(/ceil\(\s*([^)]+)\s*\)/gi, (_, numStr: string) => {
-    return String(Math.ceil(safeEvalArithmetic(numStr)));
-  });
-  expr = expr.replace(/abs\(\s*([^)]+)\s*\)/gi, (_, numStr: string) => {
-    return String(Math.abs(safeEvalArithmetic(numStr)));
-  });
+  expr = expr.replace(/floor\(\s*([^)]+)\s*\)/gi, (_m, numStr: string) =>
+    String(Math.floor(safeEvalArithmetic(numStr))),
+  );
+  expr = expr.replace(/ceil\(\s*([^)]+)\s*\)/gi, (_m, numStr: string) =>
+    String(Math.ceil(safeEvalArithmetic(numStr))),
+  );
+  expr = expr.replace(/abs\(\s*([^)]+)\s*\)/gi, (_m, numStr: string) =>
+    String(Math.abs(safeEvalArithmetic(numStr))),
+  );
 
-  // 5. If it's a string literal or string concat
-  if (expr.includes('"') || expr.includes("'")) {
-    const stringConcat = expr
+  // 6. Any remaining string operand -> string concatenation semantics
+  if (expr.includes('\u0000')) {
+    return expr
       .split('+')
-      .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+      .map((part) => (isPlaceholder(part) ? unprotect(part) : part.trim()))
       .join('');
-    return stringConcat;
   }
 
-  // 6. Otherwise evaluate arithmetic
+  // 7. Otherwise arithmetic
   const num = safeEvalArithmetic(expr);
   return isNaN(num) ? null : Math.round(num * 10000) / 10000;
 }
 
-function resolveColValue(
-  colIdentifier: string,
-  row: Cell[],
-  headerMap: Map<string, number>,
-): string {
-  let idx = headerMap.get(colIdentifier.toLowerCase().trim());
-  if (idx === undefined) {
-    const directIdx = columnToIndex(colIdentifier);
-    if (directIdx !== undefined) idx = directIdx;
-  }
-  if (idx !== undefined && idx < row.length) {
-    const cellVal = row[idx]?.value;
-    if (typeof cellVal === 'number') return String(cellVal);
-    if (typeof cellVal === 'string') return JSON.stringify(cellVal);
-    if (cellVal === null || cellVal === undefined) return '0';
-  }
-  return '0';
-}
-
 function safeEvalArithmetic(str: string): number {
-  const sanitized = str.replace(/[^0-9+\-*/().% ]/g, '');
+  const sanitized = str.replace(/[^0-9+\-*/().%\s]/g, '');
   if (!sanitized.trim()) return 0;
+  let i = 0;
+  const skipWs = () => {
+    while (i < sanitized.length && sanitized[i] === ' ') i++;
+  };
+  const parseExpr = (): number => {
+    let v = parseTerm();
+    for (;;) {
+      skipWs();
+      if (sanitized[i] === '+') {
+        i++;
+        v = v + parseTerm();
+      } else if (sanitized[i] === '-') {
+        i++;
+        v = v - parseTerm();
+      } else {
+        return v;
+      }
+    }
+  };
+  const parseTerm = (): number => {
+    let v = parsePowerless();
+    for (;;) {
+      skipWs();
+      if (sanitized[i] === '*') {
+        i++;
+        v = v * parsePowerless();
+      } else if (sanitized[i] === '/') {
+        i++;
+        v = v / parsePowerless();
+      } else {
+        return v;
+      }
+    }
+  };
+  const parsePowerless = (): number => {
+    let v = parseFactor();
+    for (;;) {
+      skipWs();
+      if (sanitized[i] === '%') {
+        v = v / 100;
+        i++;
+      } else {
+        return v;
+      }
+    }
+  };
+  const parseFactor = (): number => {
+    skipWs();
+    if (sanitized[i] === '-') {
+      i++;
+      return -parseFactor();
+    }
+    if (sanitized[i] === '+') {
+      i++;
+      return parseFactor();
+    }
+    if (sanitized[i] === '(') {
+      i++;
+      const v = parseExpr();
+      skipWs();
+      if (sanitized[i] === ')') i++;
+      return v;
+    }
+    let num = '';
+    while (i < sanitized.length && /[0-9.]/.test(sanitized[i]!)) num += sanitized[i++]!;
+    const v = num ? parseFloat(num) : NaN;
+    return v;
+  };
   try {
-    const fn = new Function(`return (${sanitized});`);
-    const val = fn();
-    return typeof val === 'number' && isFinite(val) ? val : 0;
+    const v = parseExpr();
+    return typeof v === 'number' && isFinite(v) ? v : 0;
   } catch {
     return 0;
   }
 }
 
 function applyAddComputedColumn(workbook: Workbook, args: AddComputedColumnArgs): OperationResult {
-  const before = workbook;
-  const after = JSON.parse(JSON.stringify(workbook)) as Workbook;
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
   const sheet = getSheet(after, args.sheet);
 
   if (sheet) {
@@ -438,8 +521,8 @@ function validateSplitColumn(workbook: Workbook, args: SplitColumnArgs): Validat
 }
 
 function applySplitColumn(workbook: Workbook, args: SplitColumnArgs): OperationResult {
-  const before = workbook;
-  const after = JSON.parse(JSON.stringify(workbook)) as Workbook;
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
   const sheet = getSheet(after, args.sheet);
   const colIdx = columnToIndex(args.column) ?? 0;
 
@@ -533,8 +616,8 @@ function validateMergeColumns(workbook: Workbook, args: MergeColumnsArgs): Valid
 }
 
 function applyMergeColumns(workbook: Workbook, args: MergeColumnsArgs): OperationResult {
-  const before = workbook;
-  const after = JSON.parse(JSON.stringify(workbook)) as Workbook;
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
   const sheet = getSheet(after, args.sheet);
 
   if (sheet) {
@@ -622,8 +705,8 @@ function validateLookupMerge(workbook: Workbook, args: LookupMergeArgs): Validat
 }
 
 function applyLookupMerge(workbook: Workbook, args: LookupMergeArgs): OperationResult {
-  const before = workbook;
-  const after = JSON.parse(JSON.stringify(workbook)) as Workbook;
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
   const targetSheet = getSheet(after, args.sheet);
   const lookupSheet = getSheet(after, args.lookupSheet);
 

@@ -115,9 +115,9 @@ export function saveSettings(settings: AgentSettings): void {
   const store = storage();
   if (!store) return;
   store.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  // Mirror the legacy keys so older builds and the chat gate stay in sync.
-  store.setItem(LEGACY_KEY, settings.apiKey);
-  store.setItem(LEGACY_PROVIDER, settings.provider);
+  // Legacy mirrors are migrated on read, so they are cleared rather than duplicated.
+  store.removeItem(LEGACY_KEY);
+  store.removeItem(LEGACY_PROVIDER);
 }
 
 export function clearSettings(): void {

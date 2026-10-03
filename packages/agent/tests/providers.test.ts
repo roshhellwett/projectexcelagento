@@ -178,7 +178,7 @@ describe('openrouter adapter', () => {
 });
 
 describe('gemini adapter', () => {
-  it('inlines the key, splits the system instruction, and reads usageMetadata', async () => {
+  it('sends the key in a header (never the URL), splits the system instruction, and reads usageMetadata', async () => {
     const fetchMock = stubFetch(async () => jsonResponse(GEMINI_FIXTURE));
 
     const result = await geminiAdapter.complete(MESSAGES, {
@@ -188,10 +188,11 @@ describe('gemini adapter', () => {
 
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIza%20test',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
     );
-    // Gemini takes the key in the URL, so no Authorization header is expected.
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(url).not.toContain('key=');
+    // The key travels in a header so it never lands in URLs/logs.
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('AIza test');
 
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body.systemInstruction).toEqual({ parts: [{ text: 'SYS' }] });

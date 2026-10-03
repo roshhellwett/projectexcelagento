@@ -138,6 +138,34 @@ describe('advanced operations', () => {
       expect(values(result.workbook, 3)).toEqual(['jane', 'smith', 'JANE SMITH']);
       expect(addComputedColumnOperation.invariants(before, result.workbook, args).valid).toBe(true);
     });
+
+    it('does not rewrite column letters inside string values', () => {
+      const before = workbook([row('Code', 'Note'), row('AB', 'keep'), row('x', 'A')]);
+
+      const args = addComputedColumnOperation.schema.parse({
+        sheet: 'Data',
+        headerName: 'Mirror',
+        expression: "col('Code') + '-' + col('Note')",
+      });
+
+      const result = addComputedColumnOperation.apply(before, args);
+      expect(values(result.workbook, 2)).toEqual(['AB', 'keep', 'AB-keep']);
+      expect(values(result.workbook, 3)).toEqual(['x', 'A', 'x-A']);
+    });
+
+    it('treats % as the Excel postfix percent operator', () => {
+      const before = workbook([row('Rate'), row(50), row(200)]);
+
+      const args = addComputedColumnOperation.schema.parse({
+        sheet: 'Data',
+        headerName: 'Half',
+        expression: "col('Rate') * 50%",
+      });
+
+      const result = addComputedColumnOperation.apply(before, args);
+      expect(values(result.workbook, 2)).toEqual([50, 25]);
+      expect(values(result.workbook, 3)).toEqual([200, 100]);
+    });
   });
 
   describe('split_column', () => {

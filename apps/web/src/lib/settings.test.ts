@@ -42,11 +42,15 @@ describe('settings store', () => {
     expect(loaded).toEqual({ provider: 'groq', apiKey: 'gsk_x' });
   });
 
-  it('mirrors the legacy keys so older builds stay in sync', () => {
+  it('clears mirrored legacy keys instead of duplicating the secret', () => {
+    localStorage.setItem(LEGACY_KEY, 'gsk_legacy');
+    localStorage.setItem(LEGACY_PROVIDER, 'groq');
+
     saveSettings({ provider: 'openrouter', apiKey: 'sk-or-x' });
 
-    expect(localStorage.getItem(LEGACY_KEY)).toBe('sk-or-x');
-    expect(localStorage.getItem(LEGACY_PROVIDER)).toBe('openrouter');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    expect(localStorage.getItem(LEGACY_PROVIDER)).toBeNull();
+    expect(loadSettings()).toEqual({ provider: 'openrouter', apiKey: 'sk-or-x' });
   });
 
   it('migrates a legacy single-key configuration', () => {

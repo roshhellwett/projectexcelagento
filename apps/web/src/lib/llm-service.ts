@@ -46,12 +46,14 @@ export async function askExcelAgent(
     conversationHistory?: ChatMessage[];
     callbacks?: StreamCallbacks;
     onActivity?: (activity: AgentActivityEvent) => void;
+    signal?: AbortSignal;
   } = {},
 ): Promise<AgentResponse> {
   const decision = await orchestrator.decide({
     query: userQuery,
     workbook,
     sheetName: activeSheetName,
+    signal: options.signal,
     config:
       config && !isDemoKey(config.apiKey)
         ? {

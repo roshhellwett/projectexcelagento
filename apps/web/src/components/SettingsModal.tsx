@@ -107,10 +107,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ? 'https://openrouter.ai/api/v1/models'
               : provider === 'custom'
                 ? `${baseUrl.replace(/\/+$/, '') || 'http://localhost:11434/v1'}/models`
-                : `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey.trim())}`;
+                : 'https://generativelanguage.googleapis.com/v1beta/models';
 
       const headers: Record<string, string> = {};
-      if (provider !== 'gemini') {
+      if (provider === 'gemini') {
+        headers['x-goog-api-key'] = apiKey.trim();
+      } else {
         headers.Authorization = `Bearer ${apiKey.trim()}`;
       }
 

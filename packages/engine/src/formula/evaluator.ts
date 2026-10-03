@@ -38,31 +38,52 @@ export function tokenize(formulaStr: string): Token[] {
       continue;
     }
 
-    // String literals
+    // String literals. A single-quoted token immediately followed by '!' is a quoted sheet name.
     if (ch === '"' || ch === "'") {
       const quote = ch;
       let text = '';
-      i++;
-      while (i < str.length && str[i] !== quote) {
-        if (str[i] === '\\' && i + 1 < str.length) {
-          text += str[i + 1];
-          i += 2;
+      let j = i + 1;
+      while (j < str.length && str[j] !== quote) {
+        if (str[j] === '\\' && j + 1 < str.length) {
+          text += str[j + 1];
+          j += 2;
         } else {
-          text += str[i];
-          i++;
+          text += str[j];
+          j++;
         }
       }
-      i++; // closing quote
+      if (quote === "'" && str[j + 1] === '!') {
+        // Quoted sheet reference, e.g. 'My Sheet'!A1:B2
+        let k = j + 2;
+        while (k < str.length && /[A-Za-z0-9_$!:]/.test(str[k]!)) k++;
+        const ref = str.slice(j + 2, k);
+        const sheet = text;
+        const rangeMatch = ref.match(/^\$?([A-Za-z]+)\$?(\d+):\$?([A-Za-z]+)\$?(\d+)$/);
+        const cellMatch = ref.match(/^\$?([A-Za-z]+)\$?(\d+)$/);
+        if (rangeMatch) {
+          tokens.push({ type: 'RANGE', value: `${sheet}!${ref}`, sheet });
+        } else if (cellMatch) {
+          tokens.push({ type: 'CELL', value: `${sheet}!${ref}`, sheet });
+        }
+        i = k;
+        continue;
+      }
+      i = j + 1; // closing quote
       tokens.push({ type: 'STRING', value: text });
       continue;
     }
 
-    // Numbers
+    // Numbers (incl. scientific notation 1E5, 1.5e-3)
     if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(str[i + 1] ?? ''))) {
       let numStr = '';
       while (i < str.length && /[0-9.]/.test(str[i]!)) {
         numStr += str[i];
         i++;
+      }
+      if ((str[i] === 'e' || str[i] === 'E') && /[0-9+-]/.test(str[i + 1] ?? '')) {
+        numStr += str[i++]!;
+        if (str[i] === '+' || str[i] === '-') numStr += str[i++]!;
+        while (i < str.length && /[0-9]/.test(str[i]!)) numStr += str[i++]!;
       }
       tokens.push({ type: 'NUMBER', value: numStr });
       continue;
@@ -138,6 +159,44 @@ export function tokenize(formulaStr: string): Token[] {
   return tokens;
 }
 
+function formulaEquals(a: ParsedValue, b: ParsedValue): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return b === '' || a === '';
+  if (typeof a === 'number' && typeof b === 'number') return a === b;
+  if (typeof a === 'boolean' || typeof b === 'boolean') return a === b;
+  const an = typeof a === 'string' && a.trim() !== '' ? Number(a) : NaN;
+  const bn = typeof b === 'string' && b.trim() !== '' ? Number(b) : NaN;
+  if (!isNaN(an) && !isNaN(bn)) return an === bn;
+  if (typeof a === 'number' && !isNaN(bn as number)) return a === bn;
+  if (typeof b === 'number' && !isNaN(an as number)) return b === an;
+  return String(a) === String(b);
+}
+
+function compareOrdered(a: ParsedValue, b: ParsedValue): number {
+  const rank = (v: ParsedValue): number =>
+    typeof v === 'number' ? 0 : typeof v === 'string' ? 1 : typeof v === 'boolean' ? 2 : 3;
+  const aNum =
+    typeof a === 'number'
+      ? a
+      : typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a))
+        ? Number(a)
+        : NaN;
+  const bNum =
+    typeof b === 'number'
+      ? b
+      : typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b))
+        ? Number(b)
+        : NaN;
+  if (!isNaN(aNum) && !isNaN(bNum)) return aNum < bNum ? -1 : aNum > bNum ? 1 : 0;
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra < rb ? -1 : 1;
+  if (typeof a === 'boolean' && typeof b === 'boolean') return a === b ? 0 : a ? 1 : -1;
+  const sa = String(a);
+  const sb = String(b);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
 export function evaluateFormula(formula: string, context: FormulaContext): FormulaValue {
   try {
     const tokens = tokenize(formula);
@@ -165,12 +224,12 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parseAdditive();
-        if (op === '=') left = left === right;
-        else if (op === '<>') left = left !== right;
-        else if (op === '<') left = (left as number | string) < (right as number | string);
-        else if (op === '>') left = (left as number | string) > (right as number | string);
-        else if (op === '<=') left = (left as number | string) <= (right as number | string);
-        else if (op === '>=') left = (left as number | string) >= (right as number | string);
+        if (op === '=') left = formulaEquals(left, right);
+        else if (op === '<>') left = !formulaEquals(left, right);
+        else if (op === '<') left = compareOrdered(left, right) < 0;
+        else if (op === '>') left = compareOrdered(left, right) > 0;
+        else if (op === '<=') left = compareOrdered(left, right) <= 0;
+        else if (op === '>=') left = compareOrdered(left, right) >= 0;
       }
       return left;
     }
@@ -197,33 +256,33 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       while (
         cursor < tokens.length &&
         tokens[cursor]?.type === 'OP' &&
-        ['*', '/', '%'].includes(tokens[cursor]!.value)
+        ['*', '/'].includes(tokens[cursor]!.value)
       ) {
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parsePower();
         if (op === '*') left = Number(left) * Number(right);
         else if (op === '/') left = Number(right) === 0 ? '#DIV/0!' : Number(left) / Number(right);
-        else if (op === '%') left = Number(left) % Number(right);
       }
       return left;
     }
 
     function parsePower(): ParsedValue {
-      let left = parseUnary();
-      while (
+      const left = parseUnary();
+      if (
         cursor < tokens.length &&
         tokens[cursor]?.type === 'OP' &&
         tokens[cursor]!.value === '^'
       ) {
         cursor++;
-        const right = parseUnary();
-        left = Math.pow(Number(left), Number(right));
+        const right = parsePower(); // '^' is right-associative in Excel
+        return Math.pow(Number(left), Number(right));
       }
       return left;
     }
 
     function parseUnary(): ParsedValue {
+      let val: ParsedValue;
       if (
         cursor < tokens.length &&
         tokens[cursor]?.type === 'OP' &&
@@ -231,10 +290,21 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       ) {
         const op = tokens[cursor]!.value;
         cursor++;
-        const val = parseUnary();
-        return op === '-' ? -Number(val) : Number(val);
+        const v = parseUnary();
+        val = op === '-' ? -Number(v) : Number(v);
+      } else {
+        val = parsePrimary();
       }
-      return parsePrimary();
+      // Postfix percent operator: 50% -> 0.5
+      while (
+        cursor < tokens.length &&
+        tokens[cursor]?.type === 'OP' &&
+        tokens[cursor]!.value === '%'
+      ) {
+        val = Number(val) / 100;
+        cursor++;
+      }
+      return val;
     }
 
     function parsePrimary(): ParsedValue {
@@ -269,12 +339,12 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         return val;
       }
 
-      // Cell reference (A1, Sheet1!B2)
+      // Cell reference (A1, Sheet1!B2, 'My Sheet'!C3)
       if (t.type === 'CELL') {
         cursor++;
-        const match = t.value.match(CELL_REGEX);
+        const match = t.value.match(/^(?:(.+)!)?\$?([A-Za-z]+)\$?(\d+)$/);
         if (match) {
-          const sheet = match[1] ?? context.activeSheet;
+          const sheet = t.sheet ?? match[1] ?? context.activeSheet;
           const col = match[2]!.toUpperCase();
           const row = parseInt(match[3]!, 10);
           return context.getCellValue(sheet, col, row);
@@ -285,9 +355,9 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       // Range reference (A1:B10)
       if (t.type === 'RANGE') {
         cursor++;
-        const match = t.value.match(RANGE_REGEX);
+        const match = t.value.match(/^(?:(.+)!)?\$?([A-Za-z]+)\$?(\d+):\$?([A-Za-z]+)\$?(\d+)$/);
         if (match) {
-          const sheet = match[1] ?? context.activeSheet;
+          const sheet = t.sheet ?? match[1] ?? context.activeSheet;
           const startCol = match[2]!.toUpperCase();
           const startRow = parseInt(match[3]!, 10);
           const endCol = match[4]!.toUpperCase();

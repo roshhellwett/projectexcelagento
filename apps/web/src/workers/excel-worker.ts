@@ -1,13 +1,10 @@
 import * as XLSX from 'xlsx';
 import {
   createCell,
-  evaluateFormula,
   type Cell,
   type CellValue,
   type Workbook,
   type Sheet,
-  type FormulaValue,
-  type FormulaContext,
 } from '@excel-agent/engine';
 
 export const MAX_IMPORTED_CELLS = 1_500_000;
@@ -119,9 +116,6 @@ function exportXlsxInternal(workbook: Workbook): Uint8Array {
   for (const sheet of workbook.sheets) {
     const aoa: unknown[][] = sheet.rows.map((row) =>
       row.map((cell) => {
-        if (cell.formula) {
-          return { f: cell.formula, v: cell.value ?? '' };
-        }
         if (cell.value === null || cell.value === '') {
           return null;
         }
@@ -130,6 +124,28 @@ function exportXlsxInternal(workbook: Workbook): Uint8Array {
     );
 
     const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+
+    // Write formula cells explicitly: aoa_to_sheet does not understand {f, v} objects.
+    sheet.rows.forEach((row, rowIndex) => {
+      row.forEach((cell, columnIndex) => {
+        if (!cell.formula) return;
+        const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+        const cached = cell.value;
+        const type =
+          typeof cached === 'number'
+            ? 'n'
+            : typeof cached === 'boolean'
+              ? 'b'
+              : cached instanceof Date
+                ? 'd'
+                : 'str';
+        (ws as Record<string, unknown>)[address] = {
+          t: type,
+          f: cell.formula.replace(/^=/, ''),
+          v: cached ?? null,
+        };
+      });
+    });
 
     sheet.rows.forEach((row, rowIndex) => {
       row.forEach((cell, columnIndex) => {
@@ -166,30 +182,6 @@ if (typeof self !== 'undefined' && 'addEventListener' in self) {
         (
           self as unknown as { postMessage: (message: unknown, transfer: Transferable[]) => void }
         ).postMessage({ id, type: 'EXPORT_XLSX_SUCCESS', payload: buffer }, [buffer.buffer]);
-      } else if (type === 'EVALUATE_FORMULA') {
-        const { formula, activeSheet, sheetData } = payload;
-        const ctx: FormulaContext = {
-          activeSheet: activeSheet || 'Sheet1',
-          getCellValue(sheet, col, row) {
-            return sheetData?.[sheet]?.[col]?.[row] ?? null;
-          },
-          getRangeValues(sheet, startCol, startRow, endCol, endRow) {
-            const rows: FormulaValue[][] = [];
-            const startCode = startCol.charCodeAt(0);
-            const endCode = endCol.charCodeAt(0);
-            for (let r = startRow; r <= endRow; r++) {
-              const rowVals: FormulaValue[] = [];
-              for (let c = startCode; c <= endCode; c++) {
-                const colLetter = String.fromCharCode(c);
-                rowVals.push(sheetData?.[sheet]?.[colLetter]?.[r] ?? null);
-              }
-              rows.push(rowVals);
-            }
-            return rows;
-          },
-        };
-        const result = evaluateFormula(formula, ctx);
-        self.postMessage({ id, type: 'EVALUATE_FORMULA_SUCCESS', payload: result });
       } else {
         self.postMessage({ id, type: 'ERROR', error: `Unknown worker message type: ${type}` });
       }

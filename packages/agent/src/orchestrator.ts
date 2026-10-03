@@ -59,6 +59,7 @@ export class ExcelAgentOrchestrator {
   private readonly registry: OperationRegistry;
   private readonly memory: MemoryStore | undefined;
   private readonly memorySimilarity: number;
+  private readonly memoryConfidence: number;
   private readonly catalog: ToolDescriptor[];
   private readonly toolDefinitions: ToolDefinition[];
 
@@ -66,6 +67,7 @@ export class ExcelAgentOrchestrator {
     this.registry = options.registry;
     this.memory = options.memory;
     this.memorySimilarity = options.memorySimilarity ?? 0.6;
+    this.memoryConfidence = options.memoryConfidence ?? 0;
     this.catalog = buildToolCatalog(options.registry);
     this.toolDefinitions = this.buildAllToolDefinitions();
   }
@@ -175,6 +177,16 @@ export class ExcelAgentOrchestrator {
     // Layer 2 - Memory: Replay proven learned operation
     const memoryHit = this.memory?.retrieve(input.query, sheetName, this.memorySimilarity);
     if (memoryHit) {
+      const confidentEnough = this.memory?.confidenceOf
+        ? this.memory.confidenceOf(memoryHit) >= this.memoryConfidence
+        : true;
+      if (!confidentEnough) {
+        trace.push({
+          layer: 'memory',
+          summary: 'Memory hit skipped: below memoryConfidence threshold.',
+        });
+        return this.plan(input, sheetName, sheet, trace, activities, emitActivity);
+      }
       const action: ProposedAction = {
         name: memoryHit.operation,
         args: { ...memoryHit.args },
@@ -220,7 +232,7 @@ export class ExcelAgentOrchestrator {
         sheetName: outcome.sheetName,
       });
     }
-    this.memory.recordOutcome(outcome.operation, outcome.sheetName, outcome.success);
+    this.memory.recordOutcome(outcome.operation, outcome.sheetName, outcome.success, outcome.query);
   }
 
   private async plan(
@@ -251,7 +263,11 @@ export class ExcelAgentOrchestrator {
     let llmThought: string | undefined;
     let telemetry: LlmTelemetry | undefined;
 
-    const config = input.config;
+    const config = input.config
+      ? input.signal
+        ? { ...input.config, signal: input.signal }
+        : input.config
+      : input.config;
 
     // Layer 4 - LLM Conductor & Specialists
     if (config && !isDemoKey(config.apiKey) && sheet) {
@@ -307,8 +323,9 @@ export class ExcelAgentOrchestrator {
             msg.includes('model_decommissioned') ||
             msg.includes('not found') ||
             msg.includes('does not exist') ||
-            msg.includes('Request too large') ||
             msg.includes('rate_limit') ||
+            msg.includes('timed out') ||
+            msg.includes('aborted') ||
             (err instanceof ProviderError &&
               (err.status === 404 || err.status === 413 || err.status === 429));
 
@@ -494,8 +511,18 @@ export class ExcelAgentOrchestrator {
         'Guardrail',
         `Verifying plan: ${llmPlan.steps.length} steps...`,
       );
+      const failedSteps = llmPlan.steps.filter((s) => s.status === 'error').length;
       return {
-        message: llmMessage || `Plan prepared with ${llmPlan.steps.length} steps.`,
+        message:
+          llmPlan.status === 'error'
+            ? `I couldn't verify any step of that plan: ${llmPlan.steps
+                .map((s) => s.error)
+                .filter(Boolean)
+                .join('; ')}`
+            : llmMessage ||
+              (failedSteps > 0
+                ? `Plan prepared with ${llmPlan.steps.length} steps (${failedSteps} flagged with validation errors).`
+                : `Plan prepared with ${llmPlan.steps.length} steps.`),
         thought: llmThought,
         plan: llmPlan,
         source: 'llm',
@@ -642,13 +669,16 @@ export class ExcelAgentOrchestrator {
 
     if (steps.length === 0) return undefined;
 
+    const failed = steps.filter((s) => s.status === 'error').length;
+    const status = failed === steps.length ? 'error' : 'pending';
+
     return {
       id: `plan-${Date.now()}`,
       title: typeof args.title === 'string' ? args.title : 'Spreadsheet Execution Plan',
       description:
         typeof args.description === 'string' ? args.description : 'Multi-step transformation plan',
       steps,
-      status: 'pending',
+      status,
       totalAffectedCells: totalAffected,
     };
   }

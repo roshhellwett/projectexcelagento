@@ -1,4 +1,14 @@
-import type { Workbook, FormulaValue } from '@excel-agent/engine';
+import type { Workbook } from '@excel-agent/engine';
+
+class WorkerRequestError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'unavailable' | 'crash' | 'timeout' | 'execution',
+  ) {
+    super(message);
+    this.name = 'WorkerRequestError';
+  }
+}
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -41,7 +51,7 @@ function getWorker(): Worker | null {
       pendingRequests.delete(id);
 
       if (type === 'ERROR') {
-        pending.reject(new Error(error || 'Worker execution failed'));
+        pending.reject(new WorkerRequestError(error || 'Worker execution failed', 'execution'));
       } else {
         pending.resolve(payload);
       }
@@ -49,7 +59,7 @@ function getWorker(): Worker | null {
 
     workerInstance.onerror = (e) => {
       // In case of fatal worker script error, reject all pending requests
-      const err = new Error(e.message || 'Worker thread crashed');
+      const err = new WorkerRequestError(e.message || 'Worker thread crashed', 'crash');
       for (const req of pendingRequests.values()) {
         clearTimeout(req.timer);
         req.reject(err);
@@ -68,7 +78,7 @@ function getWorker(): Worker | null {
 function postToWorker<T>(type: string, payload?: unknown, timeoutMs = 60000): Promise<T> {
   const worker = getWorker();
   if (!worker) {
-    return Promise.reject(new Error('Web Workers not available in this environment'));
+    return Promise.reject(new WorkerRequestError('Web Workers not available', 'unavailable'));
   }
 
   const id = `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -76,7 +86,9 @@ function postToWorker<T>(type: string, payload?: unknown, timeoutMs = 60000): Pr
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRequests.delete(id);
-      reject(new Error(`Worker request ${type} timed out after ${timeoutMs}ms`));
+      reject(
+        new WorkerRequestError(`Worker request ${type} timed out after ${timeoutMs}ms`, 'timeout'),
+      );
     }, timeoutMs);
 
     pendingRequests.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
@@ -100,8 +112,12 @@ export async function parseXlsxWorker(arrayBuffer: ArrayBuffer): Promise<Workboo
   try {
     return await postToWorker<Workbook>('PARSE_XLSX', { arrayBuffer });
   } catch (err) {
-    console.warn('Worker parsing failed, falling back to main thread:', err);
-    return null;
+    if (err instanceof WorkerRequestError && (err.kind === 'unavailable' || err.kind === 'crash')) {
+      console.warn('Worker unavailable, falling back to main thread:', err);
+      return null;
+    }
+    // A genuine parse failure or timeout must surface, not silently double-parse.
+    throw err;
   }
 }
 
@@ -114,27 +130,10 @@ export async function exportXlsxWorker(workbook: Workbook): Promise<Uint8Array |
   try {
     return await postToWorker<Uint8Array>('EXPORT_XLSX', { workbook });
   } catch (err) {
-    console.warn('Worker export failed, falling back to main thread:', err);
-    return null;
-  }
-}
-
-/**
- * Evaluates Excel formula on the worker thread.
- */
-export async function evaluateFormulaWorker(
-  formula: string,
-  activeSheet: string,
-  sheetData: Record<string, Record<string, Record<number, FormulaValue>>>,
-): Promise<FormulaValue | null> {
-  if (!isWorkerSupported()) return null;
-  try {
-    return await postToWorker<FormulaValue>('EVALUATE_FORMULA', {
-      formula,
-      activeSheet,
-      sheetData,
-    });
-  } catch {
-    return null;
+    if (err instanceof WorkerRequestError && (err.kind === 'unavailable' || err.kind === 'crash')) {
+      console.warn('Worker unavailable, falling back to main thread:', err);
+      return null;
+    }
+    throw err;
   }
 }

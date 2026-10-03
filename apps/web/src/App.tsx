@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   type Workbook,
   type Sheet,
@@ -219,6 +219,7 @@ export const App: React.FC = () => {
 
   // Initial Chat Messages
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const turnAbortRef = useRef<AbortController | null>(null);
 
   // Execute an engine operation transactionally
   const executeOperation = useCallback(
@@ -442,6 +443,8 @@ export const App: React.FC = () => {
 
     setMessages((prev) => [...prev, userMsg, initialAssistMsg]);
     setIsProcessing(true);
+    const turnAbort = new AbortController();
+    turnAbortRef.current = turnAbort;
 
     try {
       // Build conversation history for multi-turn reasoning context
@@ -490,6 +493,7 @@ export const App: React.FC = () => {
           conversationHistory,
           callbacks,
           onActivity,
+          signal: turnAbort.signal,
         },
       );
 
@@ -547,22 +551,32 @@ export const App: React.FC = () => {
         }),
       );
     } catch (error) {
+      const aborted =
+        turnAbort.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistMsgId
             ? {
                 ...m,
-                text: m.text || 'An error occurred while answering your request.',
+                text:
+                  m.text ||
+                  (aborted ? 'Stopped.' : 'An error occurred while answering your request.'),
                 isStreaming: false,
-                status: 'error',
-                errorMessage:
-                  error instanceof Error ? error.message : 'The agent could not respond.',
+                status: aborted ? 'pending' : 'error',
+                errorMessage: aborted
+                  ? undefined
+                  : error instanceof Error
+                    ? error.message
+                    : 'The agent could not respond.',
               }
             : m,
         ),
       );
-      pushToast('error', error instanceof Error ? error.message : 'The agent could not respond.');
+      if (!aborted) {
+        pushToast('error', error instanceof Error ? error.message : 'The agent could not respond.');
+      }
     } finally {
+      turnAbortRef.current = null;
       setIsProcessing(false);
     }
   };
@@ -776,6 +790,7 @@ export const App: React.FC = () => {
             onApplyPlan={handleApplyPlan}
             onUndoLast={handleUndo}
             canUndo={historyStack.canUndo}
+            onStop={() => turnAbortRef.current?.abort()}
           />
         </ErrorBoundary>
       </main>

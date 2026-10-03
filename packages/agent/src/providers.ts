@@ -117,6 +117,33 @@ async function requestWithRetry(
   );
 }
 
+/** Guards an SSE read against a stalled upstream stream and caller cancellation. */
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  config: ProviderConfig,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reader.cancel().catch(() => {});
+          reject(new Error(`Stream read timed out after ${timeoutMs}ms.`));
+        }, timeoutMs);
+        config.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('The operation was aborted.', 'AbortError')),
+          { once: true },
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 async function readError(provider: ProviderName, response: Response): Promise<ProviderError> {
   const body = await response.text().catch(() => '');
   const retryable = isTransientStatus(response.status);
@@ -335,7 +362,7 @@ function openAiCompatibleAdapter(
 
       try {
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await readWithTimeout(reader, config);
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
 
@@ -473,7 +500,9 @@ export const customAdapter: ProviderAdapter = openAiCompatibleAdapter(
 );
 
 type GeminiShape = {
-  candidates?: { content?: { parts?: { text?: string }[] } }[];
+  candidates?: {
+    content?: { parts?: { text?: string; functionCall?: { name?: string; args?: unknown } }[] };
+  }[];
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
@@ -484,29 +513,47 @@ type GeminiShape = {
 export const geminiAdapter: ProviderAdapter = {
   name: 'gemini',
   defaultModel: 'gemini-2.0-flash',
-  async complete(messages, config): Promise<ProviderResponse> {
+  async complete(messages, config, tools): Promise<ProviderResponse> {
     const model = config.model || this.defaultModel;
     const system = messages
       .filter((message) => message.role === 'system')
       .map((message) => message.content)
       .join('\n\n');
-    const conversation = messages
+    const contents = messages
       .filter((message) => message.role !== 'system')
-      .map((message) => message.content)
-      .join('\n\n');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-      config.apiKey.trim(),
-    )}`;
+      .map((message) => ({
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: message.content }],
+      }));
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    const geminiTools =
+      tools && tools.length > 0
+        ? [
+            {
+              functionDeclarations: tools.map((tool) => ({
+                name: tool.function.name,
+                description: tool.function.description,
+                parameters: tool.function.parameters,
+              })),
+            },
+          ]
+        : undefined;
 
     const response = await requestWithRetry(
       'gemini',
       url,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Key in header, never in the URL (logged by proxies/tooling)
+          'x-goog-api-key': config.apiKey.trim(),
+        },
         body: JSON.stringify({
           systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-          contents: [{ role: 'user', parts: [{ text: conversation }] }],
+          contents: contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: '' }] }],
+          tools: geminiTools,
           generationConfig: {
             temperature: config.temperature ?? 0.2,
             maxOutputTokens: config.maxTokens ?? 1200,
@@ -518,10 +565,24 @@ export const geminiAdapter: ProviderAdapter = {
 
     if (!response.ok) throw await readError('gemini', response);
     const data = await readJson<GeminiShape>('gemini', response);
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const text = parts.map((part) => (part as { text?: string }).text ?? '').join('');
+    const toolCalls: ToolCall[] = [];
+    for (const part of parts) {
+      const fc = (part as { functionCall?: { name?: string; args?: unknown } }).functionCall;
+      if (fc?.name) {
+        toolCalls.push({
+          id: `gemini-call-${toolCalls.length}`,
+          type: 'function',
+          function: { name: fc.name, arguments: JSON.stringify(fc.args ?? {}) },
+        });
+      }
+    }
     return {
-      content: data.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+      content: text,
       provider: 'gemini',
       model,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage: {
         promptTokens: data.usageMetadata?.promptTokenCount,
         completionTokens: data.usageMetadata?.candidatesTokenCount,

@@ -90,10 +90,7 @@ export function getWorkbookOverview(workbook: Workbook): WorkbookOverviewResult 
 
 function resolveSheet(workbook: Workbook, sheetName?: string): Sheet | undefined {
   if (!sheetName) return workbook.sheets[0];
-  return (
-    workbook.sheets.find((s) => s.name.toLowerCase() === sheetName.trim().toLowerCase()) ??
-    workbook.sheets[0]
-  );
+  return workbook.sheets.find((s) => s.name.toLowerCase() === sheetName.trim().toLowerCase());
 }
 
 /** Profile a single column for deep analysis, cardinality, distributions, and aggregates. */

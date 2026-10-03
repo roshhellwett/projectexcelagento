@@ -1,5 +1,27 @@
-import type { HistoryEntry, Patch, Workbook } from './types.js';
+import type { HistoryEntry, Patch, PatchEntry, Workbook } from './types.js';
 import { applyPatch, cloneWorkbook } from './workbook.js';
+
+function clonePatchEntry(entry: PatchEntry): PatchEntry {
+  if (entry.kind === 'workbook') {
+    return {
+      kind: 'workbook',
+      oldWorkbook: cloneWorkbook(entry.oldWorkbook),
+      newWorkbook: cloneWorkbook(entry.newWorkbook),
+    };
+  }
+  const cloneValue = (v: (typeof entry)['oldValue']) =>
+    v instanceof Date ? new Date(v.getTime()) : v;
+  return {
+    ...entry,
+    address: { ...entry.address },
+    oldValue: cloneValue(entry.oldValue),
+    newValue: cloneValue(entry.newValue),
+  };
+}
+
+function clonePatch(patch: Patch): Patch {
+  return patch.map(clonePatchEntry);
+}
 
 export interface HistoryOptions {
   snapshotEvery?: number;
@@ -50,8 +72,8 @@ export class HistoryStack {
   get history(): HistoryEntry[] {
     return this.entries.map((entry) => ({
       operationName: entry.operationName,
-      patch: entry.patch,
-      inverse: entry.inverse,
+      patch: clonePatch(entry.patch),
+      inverse: clonePatch(entry.inverse),
     }));
   }
 
@@ -66,7 +88,7 @@ export class HistoryStack {
       }
     }
 
-    this.entries.push({ operationName, patch, inverse });
+    this.entries.push({ operationName, patch: clonePatch(patch), inverse: clonePatch(inverse) });
     this.cursor += 1;
     if (this.cursor % this.snapshotEvery === 0) {
       this.snapshots.set(this.cursor, cloneWorkbook(after));

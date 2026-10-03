@@ -1,5 +1,12 @@
 import type { FormulaValue } from './types.js';
 
+let formulaClock: () => Date = () => new Date();
+
+/** Overrides the wall clock used by TODAY()/NOW() so evaluation stays deterministic per call site. */
+export function setFormulaClock(clock: () => Date): void {
+  formulaClock = clock;
+}
+
 function flatten(args: unknown[]): unknown[] {
   const result: unknown[] = [];
   for (const item of args) {
@@ -83,7 +90,13 @@ function matchesCriteria(val: unknown, criteria: unknown): boolean {
 
   // Exact or wildcard comparison
   if (critStr.includes('*') || critStr.includes('?')) {
-    const regexStr = '^' + critStr.replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+    const regexStr =
+      '^' +
+      critStr
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.') +
+      '$';
     return new RegExp(regexStr, 'i').test(toString(val));
   }
 
@@ -144,7 +157,10 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return (Math.floor(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1);
   },
   ABS: (num: unknown) => Math.abs(toNumber(num)),
-  SQRT: (num: unknown) => Math.sqrt(Math.max(0, toNumber(num))),
+  SQRT: (num: unknown) => {
+    const n = toNumber(num);
+    return n < 0 ? '#NUM!' : Math.sqrt(n);
+  },
   POWER: (base: unknown, exp: unknown) => Math.pow(toNumber(base), toNumber(exp)),
   MOD: (n: unknown, d: unknown) => (toNumber(d) === 0 ? 0 : toNumber(n) % toNumber(d)),
   INT: (n: unknown) => Math.floor(toNumber(n)),
@@ -162,10 +178,23 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     if (sig === 0) return 0;
     return Math.floor(toNumber(n) / sig) * sig;
   },
-  EXP: (n: unknown) => Math.exp(toNumber(n)),
-  LN: (n: unknown) => Math.log(toNumber(n)),
-  LOG: (n: unknown, base: unknown = 10) => Math.log(toNumber(n)) / Math.log(toNumber(base)),
-  LOG10: (n: unknown) => Math.log10(toNumber(n)),
+  EXP: (n: unknown) => {
+    const v = Math.exp(toNumber(n));
+    return isFinite(v) ? v : '#NUM!';
+  },
+  LN: (n: unknown) => {
+    const v = toNumber(n);
+    return v <= 0 ? '#NUM!' : Math.log(v);
+  },
+  LOG: (n: unknown, base: unknown = 10) => {
+    const v = toNumber(n);
+    const b = toNumber(base);
+    return v <= 0 || b <= 0 || b === 1 ? '#NUM!' : Math.log(v) / Math.log(b);
+  },
+  LOG10: (n: unknown) => {
+    const v = toNumber(n);
+    return v <= 0 ? '#NUM!' : Math.log10(v);
+  },
 
   // Conditionals
   IF: (cond: unknown, trueVal: unknown, falseVal: unknown = false) => {
@@ -273,18 +302,46 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   VLOOKUP: (lookupVal: unknown, table: unknown, colIdx: unknown, exact: unknown = true) => {
     if (!Array.isArray(table) || table.length === 0) return '#N/A';
     const cIdx = toNumber(colIdx) - 1; // 1-indexed in Excel
-    const isExact = exact === undefined || toBoolean(exact);
+    // Fourth argument mirrors Excel's range_lookup: FALSE (or omitted) = exact, TRUE = approximate
+    const isExact = exact === undefined ? true : !toBoolean(exact);
     const targetStr = toString(lookupVal).trim().toLowerCase();
 
+    if (isExact) {
+      for (const row of table) {
+        if (Array.isArray(row) && row.length > 0) {
+          const key = toString(row[0]).trim().toLowerCase();
+          if (key === targetStr) return (row[cIdx] ?? null) as FormulaValue;
+        }
+      }
+      return '#N/A';
+    }
+
+    // Approximate match: largest key <= lookup value (table assumed sorted ascending)
+    const numeric = (v: unknown): number | null => {
+      if (typeof v === 'number' && isFinite(v)) return v;
+      if (typeof v === 'string' && v.trim() !== '' && isNumeric(v)) return Number(v);
+      return null;
+    };
+    const targetNum = numeric(lookupVal);
+    let best: unknown = '#N/A';
+    let bestFound = false;
     for (const row of table) {
       if (Array.isArray(row) && row.length > 0) {
-        const key = toString(row[0]).trim().toLowerCase();
-        if (isExact ? key === targetStr : key.includes(targetStr)) {
-          return (row[cIdx] ?? null) as FormulaValue;
+        const keyRaw = row[0];
+        const keyNum = numeric(keyRaw);
+        const leq =
+          targetNum !== null && keyNum !== null
+            ? keyNum <= targetNum
+            : toString(keyRaw).trim().toLowerCase() <= targetStr;
+        if (leq) {
+          best = (row[cIdx] ?? null) as FormulaValue;
+          bestFound = true;
+        } else {
+          break;
         }
       }
     }
-    return '#N/A';
+    return bestFound ? (best as FormulaValue) : '#N/A';
   },
   XLOOKUP: (
     lookupVal: unknown,
@@ -314,20 +371,328 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     }
     return array as FormulaValue;
   },
-  MATCH: (lookupVal: unknown, lookupArray: unknown, _matchType: unknown = 0) => {
+  MATCH: (lookupVal: unknown, lookupArray: unknown, matchType: unknown = 0) => {
     const flat = flatten([lookupArray]);
     const target = toString(lookupVal).trim().toLowerCase();
-    for (let i = 0; i < flat.length; i++) {
-      if (toString(flat[i]).trim().toLowerCase() === target) {
-        return i + 1; // 1-indexed in Excel
+    const type = toNumber(matchType);
+
+    if (type === 0) {
+      for (let i = 0; i < flat.length; i++) {
+        if (toString(flat[i]).trim().toLowerCase() === target) return i + 1;
       }
+      return '#N/A';
     }
-    return '#N/A';
+
+    const numericVal = (v: unknown): number | null => {
+      if (typeof v === 'number' && isFinite(v)) return v;
+      if (typeof v === 'string' && v.trim() !== '' && isNumeric(v)) return Number(v);
+      return null;
+    };
+    const targetNum = numericVal(lookupVal);
+    let best = -1;
+    for (let i = 0; i < flat.length; i++) {
+      const keyNum = numericVal(flat[i]);
+      const leq =
+        targetNum !== null && keyNum !== null
+          ? keyNum <= targetNum
+          : toString(flat[i]).trim().toLowerCase() <= target;
+      const geq =
+        targetNum !== null && keyNum !== null
+          ? keyNum >= targetNum
+          : toString(flat[i]).trim().toLowerCase() >= target;
+      if (type === 1 && leq) best = i;
+      if (type === -1 && geq && best === -1) best = i;
+    }
+    return best >= 0 ? best + 1 : '#N/A';
   },
   CHOOSE: (index: unknown, ...choices: unknown[]) => {
     const idx = toNumber(index) - 1;
     return (choices[idx] ?? '#VALUE!') as FormulaValue;
   },
+  IFNA: (val: unknown, fallback: unknown) =>
+    val === '#N/A' || (typeof val === 'string' && val.toUpperCase() === '#N/A')
+      ? (fallback as FormulaValue)
+      : (val as FormulaValue),
+  SWITCH: (expr: unknown, ...pairs: unknown[]) => {
+    for (let i = 0; i + 1 < pairs.length; i += 2) {
+      if (toString(expr) === toString(pairs[i]) || toNumber(expr) === toNumber(pairs[i])) {
+        return pairs[i + 1] as FormulaValue;
+      }
+    }
+    return pairs.length % 2 === 1 ? (pairs[pairs.length - 1] as FormulaValue) : '#N/A';
+  },
+  SUMPRODUCT: (...arrays: unknown[]) => {
+    const flats = arrays.map((a) => flatten([a]));
+    if (flats.length === 0 || flats.some((f) => f.length !== flats[0]!.length)) return '#VALUE!';
+    let sum = 0;
+    for (let i = 0; i < flats[0]!.length; i++) {
+      let product = 1;
+      for (const f of flats) product *= toNumber(f[i]);
+      sum += product;
+    }
+    return sum;
+  },
+  GEOMEAN: (...args: unknown[]) => {
+    const nums = flatten(args)
+      .map(toNumber)
+      .filter((n) => n > 0);
+    return nums.length === 0
+      ? '#NUM!'
+      : Math.pow(
+          nums.reduce((a, b) => a * b, 1),
+          1 / nums.length,
+        );
+  },
+  STDEV: (...args: unknown[]) => {
+    const nums = flatten(args).flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []));
+    if (nums.length < 2) return '#DIV/0!';
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    return Math.sqrt(nums.reduce((a, b) => a + (b - mean) ** 2, 0) / (nums.length - 1));
+  },
+  VAR: (...args: unknown[]) => {
+    const nums = flatten(args).flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []));
+    if (nums.length < 2) return '#DIV/0!';
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    return nums.reduce((a, b) => a + (b - mean) ** 2, 0) / (nums.length - 1);
+  },
+  MODE: (...args: unknown[]) => {
+    const nums = flatten(args).flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []));
+    if (nums.length === 0) return '#N/A';
+    const counts = new Map<number, number>();
+    for (const n of nums) counts.set(n, (counts.get(n) ?? 0) + 1);
+    let best: number | null = null;
+    let bestCount = 1;
+    for (const [n, c] of counts) {
+      if (c > bestCount) {
+        best = n;
+        bestCount = c;
+      }
+    }
+    return best ?? '#N/A';
+  },
+  LARGE: (data: unknown, k: unknown) => {
+    const nums = flatten([data])
+      .flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []))
+      .sort((a, b) => b - a);
+    const idx = toNumber(k) - 1;
+    return nums[idx] ?? '#NUM!';
+  },
+  SMALL: (data: unknown, k: unknown) => {
+    const nums = flatten([data])
+      .flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []))
+      .sort((a, b) => a - b);
+    const idx = toNumber(k) - 1;
+    return nums[idx] ?? '#NUM!';
+  },
+  RANK: (value: unknown, data: unknown, order: unknown = 0) => {
+    const nums = flatten([data]).flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []));
+    const target = toNumber(value);
+    return order
+      ? nums.filter((n) => n < target).length + 1
+      : nums.filter((n) => n > target).length + 1;
+  },
+  PERCENTILE: (data: unknown, k: unknown) => {
+    const nums = flatten([data])
+      .flatMap((v) => (isNumeric(v) ? [toNumber(v)] : []))
+      .sort((a, b) => a - b);
+    if (nums.length === 0) return '#NUM!';
+    const p = toNumber(k);
+    if (p < 0 || p > 1) return '#NUM!';
+    const rank = p * (nums.length - 1);
+    const lo = Math.floor(rank);
+    const hi = Math.ceil(rank);
+    return lo === hi ? nums[lo]! : nums[lo]! + (nums[hi]! - nums[lo]!) * (rank - lo);
+  },
+  FV: (rate: unknown, nper: unknown, pmt: unknown, pv: unknown = 0, type: unknown = 0) => {
+    const r = toNumber(rate);
+    const n = toNumber(nper);
+    const p = toNumber(pmt);
+    const present = toNumber(pv);
+    if (r === 0) return -(present + p * n);
+    const factor = Math.pow(1 + r, n);
+    return -(present * factor + p * (1 + r * toNumber(type)) * ((factor - 1) / r));
+  },
+  PV: (rate: unknown, nper: unknown, pmt: unknown, fv: unknown = 0, type: unknown = 0) => {
+    const r = toNumber(rate);
+    const n = toNumber(nper);
+    const p = toNumber(pmt);
+    const future = toNumber(fv);
+    if (r === 0) return -(future + p * n);
+    const factor = Math.pow(1 + r, n);
+    return -(future + p * (1 + r * toNumber(type)) * ((factor - 1) / r)) / factor;
+  },
+  PMT: (rate: unknown, nper: unknown, pv: unknown, fv: unknown = 0, type: unknown = 0) => {
+    const r = toNumber(rate);
+    const n = toNumber(nper);
+    const present = toNumber(pv);
+    const future = toNumber(fv);
+    if (n === 0) return '#DIV/0!';
+    if (r === 0) return -(present + future) / n;
+    const factor = Math.pow(1 + r, n);
+    return (-(present * factor + future) * r) / ((1 + r * toNumber(type)) * (factor - 1));
+  },
+  NPER: (rate: unknown, pmt: unknown, pv: unknown, fv: unknown = 0, type: unknown = 0) => {
+    const r = toNumber(rate);
+    const p = toNumber(pmt);
+    const present = toNumber(pv);
+    const future = toNumber(fv);
+    if (r === 0) return p === 0 ? '#DIV/0!' : -(present + future) / p;
+    const adjustedP = p * (1 + r * toNumber(type));
+    return Math.log((adjustedP - future * r) / (present * r + adjustedP)) / Math.log(1 + r);
+  },
+  NPV: (rate: unknown, ...values: unknown[]) => {
+    const r = toNumber(rate);
+    const flows = flatten(values).map(toNumber);
+    return flows.reduce((sum, cf, i) => sum + cf / Math.pow(1 + r, i + 1), 0);
+  },
+  IRR: (values: unknown, guess: unknown = 0.1) => {
+    const flows = flatten([values]).map(toNumber);
+    let rate = toNumber(guess);
+    for (let iter = 0; iter < 100; iter++) {
+      let npv = 0;
+      let dnpv = 0;
+      for (let i = 0; i < flows.length; i++) {
+        npv += flows[i]! / Math.pow(1 + rate, i);
+        dnpv -= (i * flows[i]!) / Math.pow(1 + rate, i + 1);
+      }
+      if (Math.abs(dnpv) < 1e-12) return '#NUM!';
+      const next = rate - npv / dnpv;
+      if (Math.abs(next - rate) < 1e-10) return next;
+      rate = next;
+    }
+    return '#NUM!';
+  },
+  RATE: (
+    nper: unknown,
+    pmt: unknown,
+    pv: unknown,
+    fv: unknown = 0,
+    type: unknown = 0,
+    guess: unknown = 0.1,
+  ) => {
+    let rate = toNumber(guess);
+    const n = toNumber(nper);
+    const p = toNumber(pmt);
+    const present = toNumber(pv);
+    const future = toNumber(fv);
+    for (let iter = 0; iter < 100; iter++) {
+      const factor = Math.pow(1 + rate, n);
+      const npv =
+        present * factor + p * (1 + rate * toNumber(type)) * ((factor - 1) / rate) + future;
+      const dFactor = n * Math.pow(1 + rate, n - 1);
+      const dNpv =
+        present * dFactor +
+        p * toNumber(type) * ((factor - 1) / rate) +
+        p * (1 + rate * toNumber(type)) * ((dFactor * rate - (factor - 1)) / (rate * rate));
+      if (Math.abs(dNpv) < 1e-12) return '#NUM!';
+      const next = rate - npv / dNpv;
+      if (Math.abs(next - rate) < 1e-10) return next;
+      rate = next;
+    }
+    return '#NUM!';
+  },
+  DATEDIF: (start: unknown, end: unknown, unit: unknown) => {
+    const a = new Date(toString(start));
+    const b = new Date(toString(end));
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return '#VALUE!';
+    const u = toString(unit).toUpperCase();
+    const days = Math.floor((b.getTime() - a.getTime()) / 86400000);
+    if (u === 'D') return days;
+    if (u === 'M')
+      return (
+        (b.getUTCFullYear() - a.getUTCFullYear()) * 12 +
+        (b.getUTCMonth() - a.getUTCMonth()) -
+        (b.getUTCDate() < a.getUTCDate() ? 1 : 0)
+      );
+    if (u === 'Y')
+      return (
+        b.getUTCFullYear() -
+        a.getUTCFullYear() -
+        (b.getUTCMonth() < a.getUTCMonth() ||
+        (b.getUTCMonth() === a.getUTCMonth() && b.getUTCDate() < a.getUTCDate())
+          ? 1
+          : 0)
+      );
+    return '#VALUE!';
+  },
+  DAYS: (end: unknown, start: unknown) => {
+    const a = new Date(toString(end));
+    const b = new Date(toString(start));
+    return isNaN(a.getTime()) || isNaN(b.getTime())
+      ? '#VALUE!'
+      : Math.round((a.getTime() - b.getTime()) / 86400000);
+  },
+  EOMONTH: (start: unknown, months: unknown) => {
+    const d = new Date(toString(start));
+    if (isNaN(d.getTime())) return '#VALUE!';
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + toNumber(months) + 1, 0))
+      .toISOString()
+      .slice(0, 10);
+  },
+  EDATE: (start: unknown, months: unknown) => {
+    const d = new Date(toString(start));
+    if (isNaN(d.getTime())) return '#VALUE!';
+    return new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + toNumber(months), d.getUTCDate()),
+    )
+      .toISOString()
+      .slice(0, 10);
+  },
+  WEEKDAY: (dateVal: unknown, type: unknown = 1) => {
+    const d = new Date(toString(dateVal));
+    if (isNaN(d.getTime())) return '#VALUE!';
+    const dow = d.getUTCDay();
+    return toNumber(type) === 3 ? (dow === 0 ? 6 : dow - 1) : dow + 1;
+  },
+  NETWORKDAYS: (start: unknown, end: unknown) => {
+    const a = new Date(toString(start));
+    const b = new Date(toString(end));
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return '#VALUE!';
+    let count = 0;
+    for (let d = new Date(a.getTime()); d <= b; d = new Date(d.getTime() + 86400000)) {
+      const day = d.getUTCDay();
+      if (day !== 0 && day !== 6) count++;
+    }
+    return count;
+  },
+  HOUR: (dateVal: unknown) => {
+    const d = new Date(toString(dateVal));
+    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCHours();
+  },
+  MINUTE: (dateVal: unknown) => {
+    const d = new Date(toString(dateVal));
+    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCMinutes();
+  },
+  SECOND: (dateVal: unknown) => {
+    const d = new Date(toString(dateVal));
+    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCSeconds();
+  },
+  HLOOKUP: (lookupVal: unknown, table: unknown, rowIdx: unknown, exact: unknown = true) => {
+    if (!Array.isArray(table) || table.length === 0) return '#N/A';
+    const rIdx = toNumber(rowIdx) - 1;
+    const isExact = exact === undefined ? true : !toBoolean(exact);
+    const target = toString(lookupVal).trim().toLowerCase();
+    const header = table[0] as unknown[];
+    for (let c = 0; c < header.length; c++) {
+      if (toString(header[c]).trim().toLowerCase() === target) {
+        return ((table[rIdx] as unknown[])?.[c] ?? '#REF!') as FormulaValue;
+      }
+    }
+    if (!isExact) {
+      let best = -1;
+      for (let c = 0; c < header.length; c++) {
+        if (toString(header[c]).trim().toLowerCase() <= target) best = c;
+      }
+      if (best >= 0) return ((table[rIdx] as unknown[])?.[best] ?? '#REF!') as FormulaValue;
+    }
+    return '#N/A';
+  },
+  CHAR: (n: unknown) => String.fromCharCode(toNumber(n)),
+  CODE: (text: unknown) => toString(text).charCodeAt(0) || 0,
+  REPT: (text: unknown, n: unknown) => toString(text).repeat(Math.max(0, toNumber(n))),
+  CLEAN: (text: unknown) =>
+    // eslint-disable-next-line no-control-regex
+    toString(text).replace(/[\x00-\x1F\x7F]/g, ''),
 
   // Text
   CONCAT: (...args: unknown[]) => {
@@ -396,15 +761,47 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return idx >= 0 ? idx + 1 : '#VALUE!';
   },
   EXACT: (t1: unknown, t2: unknown) => toString(t1) === toString(t2),
-  TEXT: (val: unknown, _fmt?: unknown) => {
-    if (val instanceof Date) return val.toISOString().slice(0, 10);
+  TEXT: (val: unknown, fmt?: unknown) => {
+    const format = fmt === undefined || fmt === null ? '' : toString(fmt);
+    const dateVal =
+      val instanceof Date
+        ? val
+        : typeof val === 'string' || typeof val === 'number'
+          ? new Date(typeof val === 'number' ? (val - 25569) * 86400000 : val)
+          : null;
+    const looksDate = /[yMdHs]/.test(format) && dateVal !== null && !isNaN(dateVal.getTime());
+    if (dateVal && (looksDate || format.length === 0)) {
+      if (!format) {
+        return val instanceof Date ? val.toISOString().slice(0, 10) : toString(val);
+      }
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return format
+        .replace(/YYYY/g, String(dateVal.getUTCFullYear()))
+        .replace(/YY/g, String(dateVal.getUTCFullYear()).slice(-2))
+        .replace(/MMMM/g, dateVal.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }))
+        .replace(/MMM/g, dateVal.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }))
+        .replace(/MM/g, pad(dateVal.getUTCMonth() + 1))
+        .replace(/DD/g, pad(dateVal.getUTCDate()))
+        .replace(/HH/g, pad(dateVal.getUTCHours()))
+        .replace(/mm/g, pad(dateVal.getUTCMinutes()))
+        .replace(/ss/g, pad(dateVal.getUTCSeconds()));
+    }
+    const n = toNumber(val);
+    if (typeof val === 'number' || (typeof val === 'string' && isNumeric(val))) {
+      if (format.includes('%')) {
+        const decimals = format.split('.')[1]?.replace(/[^0#]/g, '').length ?? 0;
+        return (n * 100).toFixed(decimals) + '%';
+      }
+      const decimals = format.split('.')[1]?.replace(/[^0#]/g, '').length;
+      if (decimals !== undefined) return n.toFixed(decimals);
+    }
     return toString(val);
   },
   VALUE: (text: unknown) => toNumber(text),
 
   // Date & Time
-  TODAY: () => new Date().toISOString().slice(0, 10),
-  NOW: () => new Date().toISOString(),
+  TODAY: () => formulaClock().toISOString().slice(0, 10),
+  NOW: () => formulaClock().toISOString(),
   DATE: (y: unknown, m: unknown, d: unknown) => {
     const date = new Date(Date.UTC(toNumber(y), toNumber(m) - 1, toNumber(d)));
     return date.toISOString().slice(0, 10);

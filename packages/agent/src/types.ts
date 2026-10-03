@@ -188,10 +188,11 @@ export interface MemoryStore {
   remember(
     record: Omit<MemoryRecord, 'id' | 'createdAt' | 'lastUsedAt' | 'successes' | 'failures'>,
   ): MemoryRecord;
-  recordOutcome(operation: string, sheetName: string, success: boolean): void;
+  recordOutcome(operation: string, sheetName: string, success: boolean, key?: string): void;
   retrieve(query: string, sheetName: string, threshold?: number): MemoryRecord | undefined;
   entries(): MemoryRecord[];
   toJSON(): string;
+  confidenceOf?(record: MemoryRecord): number;
   clear(): void;
 }
 
@@ -217,4 +218,6 @@ export type DecideInput = {
   callbacks?: StreamCallbacks;
   /** Real-time activity callback for live subagent and tool feedback. */
   onActivity?: (activity: AgentActivityEvent) => void;
+  /** Aborts the in-flight provider request (used by the stop button). */
+  signal?: AbortSignal;
 };

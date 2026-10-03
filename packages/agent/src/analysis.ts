@@ -1,4 +1,10 @@
-import { type Workbook, type Sheet, type CellValue, indexToColumn } from '@excel-agent/engine';
+import {
+  type Workbook,
+  type Sheet,
+  type CellValue,
+  columnToIndex,
+  indexToColumn,
+} from '@excel-agent/engine';
 
 export interface ProposedAction {
   name: string;
@@ -561,8 +567,8 @@ export function analyzeSpreadsheetIntentAndData(
   if (addColMatch) {
     const headerName = (addColMatch[1] || 'New Column').trim();
     const lastCol = columns[columns.length - 1]?.letter;
-    const afterIndex = lastCol ? lastCol.charCodeAt(0) - 64 : 0;
-    const insertLetter = indexToColumn(Math.max(afterIndex, 0));
+    const lastIndex = lastCol ? columnToIndex(lastCol) : undefined;
+    const insertLetter = indexToColumn(lastIndex !== undefined ? lastIndex + 1 : 0);
     return {
       message: `I've prepared to add a new column **"${headerName}"** after the last existing column.\n\nClick **Apply Changes** to insert it.`,
       proposedAction: {
@@ -915,9 +921,7 @@ export function analyzeSpreadsheetIntentAndData(
           if (typeof targetValue === 'number') {
             isMatch = numVal === targetValue || strVal === String(targetValue);
           } else {
-            isMatch =
-              strVal === String(targetValue).toLowerCase() ||
-              strVal.includes(String(targetValue).toLowerCase());
+            isMatch = strVal === String(targetValue).toLowerCase();
           }
         } else if (operatorGuess === 'gt' && typeof targetValue === 'number') {
           isMatch = !isNaN(numVal) && numVal > targetValue;

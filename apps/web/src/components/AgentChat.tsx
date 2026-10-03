@@ -38,6 +38,7 @@ interface AgentChatProps {
   onApplyPlan?: (messageId: string, plan: ExecutionPlan) => void;
   onUndoLast: () => void;
   canUndo: boolean;
+  onStop?: () => void;
 }
 
 export const AgentChat: React.FC<AgentChatProps> = ({
@@ -53,8 +54,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onApplyPlan,
   onUndoLast,
   canUndo,
+  onStop,
 }) => {
   const [inputText, setInputText] = useState('');
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+  }, [messages.length, messages[messages.length - 1]?.text, isProcessing]);
 
   // BYOK setup state
   const [setupProvider, setSetupProvider] = useState<ProviderName>('groq');
@@ -560,6 +567,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 </div>
               );
             })}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Suggestions Drawer */}
@@ -609,6 +617,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             >
               Send
             </button>
+            {isProcessing && onStop && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onStop}>
+                Stop
+              </button>
+            )}
           </form>
         </>
       )}

@@ -99,9 +99,16 @@ export const TopNav: React.FC<TopNavProps> = ({
         <select
           className="select-input"
           title="Load Test Fixtures"
-          onChange={(e) => onSelectFixture(e.target.value)}
-          defaultValue="sample"
+          onChange={(e) => {
+            onSelectFixture(e.target.value);
+            // Reset so the same fixture can be re-selected.
+            e.target.value = '';
+          }}
+          defaultValue=""
         >
+          <option value="" disabled>
+            Load fixture...
+          </option>
           {FIXTURES.map((f) => (
             <option key={f.value} value={f.value}>
               {f.label}

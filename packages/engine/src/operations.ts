@@ -119,8 +119,11 @@ function compareValues(left: CellValue, right: CellValue): number {
   if (typeof a === 'string' && typeof b === 'string') {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
   }
-  if (a < b) return -1;
-  if (a > b) return 1;
+  // Rank by type so mixed-type sorts are deterministic instead of JS-coerced
+  const rank = (v: unknown): number => (typeof v === 'number' ? 0 : typeof v === 'boolean' ? 1 : 2);
+  if (typeof a !== typeof b) return rank(a) - rank(b);
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (typeof a === 'boolean' && typeof b === 'boolean') return a === b ? 0 : a ? 1 : -1;
   return 0;
 }
 
@@ -502,13 +505,17 @@ function applyFindReplace(workbook: Workbook, args: FindReplaceArgs): OperationR
         const current = sheet?.rows[row - 1]?.[column];
         if (!current) continue;
         if (current.formula !== undefined) {
-          if (
-            !args.includeFormulas ||
-            !textMatches(current.formula, args.find, args.matchCase, args.wholeCell)
-          ) {
-            skipped += 1;
+          const formulaMatches = textMatches(
+            current.formula,
+            args.find,
+            args.matchCase,
+            args.wholeCell,
+          );
+          if (!args.includeFormulas) {
+            if (formulaMatches) skipped += 1;
             continue;
           }
+          if (!formulaMatches) continue;
           const formulaPattern = new RegExp(
             escapeRegExp(args.find),
             args.matchCase ? (args.wholeCell ? '' : 'g') : args.wholeCell ? 'i' : 'gi',

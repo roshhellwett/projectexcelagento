@@ -68,6 +68,36 @@ export interface ParsedModelOutput {
   action?: { name: string; args: Record<string, unknown>; explanation: string };
 }
 
+/** Balanced-brace scan for the first top-level JSON object containing "name", string-aware. */
+function extractBalancedJson(content: string): string | null {
+  for (let start = 0; start < content.length; start += 1) {
+    if (content[start] !== '{') continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < content.length; i += 1) {
+      const ch = content[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = content.slice(start, i + 1);
+          if (candidate.includes('"name"')) return candidate;
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** Extract the first JSON action block from a model reply, tolerating fences and prose. */
 export function parseModelOutput(content: string): ParsedModelOutput {
   const candidates: string[] = [];
@@ -82,8 +112,8 @@ export function parseModelOutput(content: string): ParsedModelOutput {
       );
     }
   }
-  const bare = content.match(/\{[\s\S]*?"name"[\s\S]*?\}/);
-  if (bare?.[0]) candidates.push(bare[0]);
+  const bare = extractBalancedJson(content);
+  if (bare) candidates.push(bare);
 
   for (const candidate of candidates) {
     try {

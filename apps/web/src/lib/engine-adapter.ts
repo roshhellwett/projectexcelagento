@@ -35,6 +35,20 @@ function looksLikeZip(bytes: Uint8Array): boolean {
   );
 }
 
+function looksLikeOle2(bytes: Uint8Array): boolean {
+  return (
+    bytes.length > 7 &&
+    bytes[0] === 0xd0 &&
+    bytes[1] === 0xcf &&
+    bytes[2] === 0x11 &&
+    bytes[3] === 0xe0 &&
+    bytes[4] === 0xa1 &&
+    bytes[5] === 0xb1 &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0xe1
+  );
+}
+
 /**
  * Parse an uploaded workbook. Handles both real .xlsx/.xlsm archives (detected by
  * their ZIP magic bytes) and plain-text CSV/TSV files, and refuses sheets large
@@ -47,7 +61,8 @@ export async function xlsxToWorkbook(arrayBuffer: ArrayBuffer): Promise<Workbook
 
   const XLSX = await loadXlsx();
   const bytes = new Uint8Array(arrayBuffer);
-  const wb = looksLikeZip(bytes)
+  const isBinary = looksLikeZip(bytes) || looksLikeOle2(bytes);
+  const wb = isBinary
     ? XLSX.read(bytes, {
         type: 'array',
         cellDates: false,
@@ -153,9 +168,6 @@ export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Arr
   for (const sheet of workbook.sheets) {
     const aoa: unknown[][] = sheet.rows.map((row) =>
       row.map((cell) => {
-        if (cell.formula) {
-          return { f: cell.formula, v: cell.value ?? '' };
-        }
         if (cell.value === null || cell.value === '') {
           return null;
         }
@@ -164,6 +176,28 @@ export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Arr
     );
 
     const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+
+    // Write formula cells explicitly: aoa_to_sheet does not understand {f, v} objects.
+    sheet.rows.forEach((row, rowIndex) => {
+      row.forEach((cell, columnIndex) => {
+        if (!cell.formula) return;
+        const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+        const cached = cell.value;
+        const type =
+          typeof cached === 'number'
+            ? 'n'
+            : typeof cached === 'boolean'
+              ? 'b'
+              : cached instanceof Date
+                ? 'd'
+                : 'str';
+        (ws as Record<string, unknown>)[address] = {
+          t: type,
+          f: cell.formula.replace(/^=/, ''),
+          v: cached ?? null,
+        };
+      });
+    });
 
     // Preserve per-cell number formats so dates and currencies survive the trip.
     sheet.rows.forEach((row, rowIndex) => {
@@ -205,7 +239,8 @@ export async function downloadWorkbookAsXlsx(
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
     return true;
-  } catch {
+  } catch (error) {
+    console.error('Excel export failed:', error);
     return false;
   }
 }

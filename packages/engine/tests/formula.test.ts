@@ -44,8 +44,11 @@ describe('Formula Evaluator Engine', () => {
       expect(evaluateFormula('=(1 + 2) * 3', context)).toBe(9);
       expect(evaluateFormula('=10 - 4 / 2', context)).toBe(8);
       expect(evaluateFormula('=2 ^ 3', context)).toBe(8);
-      expect(evaluateFormula('=10 % 3', context)).toBe(1);
+      expect(evaluateFormula('=MOD(10, 3)', context)).toBe(1);
+      expect(evaluateFormula('=50%', context)).toBeCloseTo(0.5);
       expect(evaluateFormula('=-5 + 10', context)).toBe(5);
+      expect(evaluateFormula('=2 ^ 3 ^ 2', context)).toBe(512);
+      expect(evaluateFormula('=1E3 + 2', context)).toBe(1002);
     });
 
     it('evaluates comparison operators', () => {

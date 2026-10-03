@@ -96,6 +96,8 @@ export class InMemoryMemoryStore implements MemoryStore {
       existing.args = { ...record.args };
       existing.rawQuery = record.rawQuery;
       existing.lastUsedAt = Date.now();
+      this.records.splice(this.records.indexOf(existing), 1);
+      this.records.push(existing);
       return existing;
     }
     const created: MemoryRecord = {
@@ -115,15 +117,16 @@ export class InMemoryMemoryStore implements MemoryStore {
     return created;
   }
 
-  recordOutcome(operation: string, sheetName: string, success: boolean): void {
+  recordOutcome(operation: string, sheetName: string, success: boolean, key?: string): void {
+    const normalizedKey = key === undefined ? undefined : normalizeQuery(key);
     for (let index = this.records.length - 1; index >= 0; index -= 1) {
       const record = this.records[index];
-      if (record?.operation === operation && record.sheetName === sheetName) {
-        if (success) record.successes += 1;
-        else record.failures += 1;
-        record.lastUsedAt = Date.now();
-        return;
-      }
+      if (record?.operation !== operation || record.sheetName !== sheetName) continue;
+      if (normalizedKey !== undefined && record.key !== normalizedKey) continue;
+      if (success) record.successes += 1;
+      else record.failures += 1;
+      record.lastUsedAt = Date.now();
+      return;
     }
   }
 
@@ -148,6 +151,10 @@ export class InMemoryMemoryStore implements MemoryStore {
 
   entries(): MemoryRecord[] {
     return this.records.map((record) => ({ ...record, args: { ...record.args } }));
+  }
+
+  confidenceOf(record: MemoryRecord): number {
+    return this.score(record);
   }
 
   clear(): void {

@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { type Workbook, type Sheet, type Cell, indexToColumn } from '@excel-agent/engine';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  type Workbook,
+  type Sheet,
+  type Cell,
+  type FormulaValue,
+  indexToColumn,
+  evaluateFormula,
+} from '@excel-agent/engine';
 
 interface SpreadsheetGridProps {
   workbook: Workbook;
@@ -27,6 +34,84 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 }) => {
   const currentSheet: Sheet = workbook.sheets.find((s) => s.name === activeSheetName) ||
     workbook.sheets[0] || { name: 'Sheet1', rows: [] };
+
+  // Evaluate formula cells against the live workbook so the grid shows results, not raw formulas.
+  const evaluateCell = useMemo(() => {
+    const getCellValue = (sheetName: string, col: string, rowNumber: number): FormulaValue => {
+      const sheet = workbook.sheets.find((s) => s.name === sheetName);
+      const colIdx = (() => {
+        let idx = 0;
+        for (const ch of col.toUpperCase()) idx = idx * 26 + ch.charCodeAt(0) - 64;
+        return idx - 1;
+      })();
+      const cell = sheet?.rows[rowNumber - 1]?.[colIdx];
+      if (cell?.formula) return evaluate(cell, sheetName);
+      return (cell?.value ?? null) as FormulaValue;
+    };
+    const getRangeValues = (
+      sheetName: string,
+      startCol: string,
+      startRow: number,
+      endCol: string,
+      endRow: number,
+    ) => {
+      const startIdx = (() => {
+        let idx = 0;
+        for (const ch of startCol.toUpperCase()) idx = idx * 26 + ch.charCodeAt(0) - 64;
+        return idx - 1;
+      })();
+      const endIdx = (() => {
+        let idx = 0;
+        for (const ch of endCol.toUpperCase()) idx = idx * 26 + ch.charCodeAt(0) - 64;
+        return idx - 1;
+      })();
+      const sheet = workbook.sheets.find((s) => s.name === sheetName);
+      const out: FormulaValue[][] = [];
+      for (let r = startRow; r <= endRow; r += 1) {
+        const rowVals: FormulaValue[] = [];
+        for (let c = startIdx; c <= endIdx; c += 1) {
+          const cell = sheet?.rows[r - 1]?.[c];
+          rowVals.push(
+            (cell?.formula ? evaluate(cell, sheetName) : (cell?.value ?? null)) as FormulaValue,
+          );
+        }
+        out.push(rowVals);
+      }
+      return out;
+    };
+    function evaluate(cell: Cell, sheetName: string): FormulaValue {
+      // Cached value wins during fast scroll; re-evaluate only for display consistency.
+      try {
+        return evaluateFormula(cell.formula!, {
+          activeSheet: sheetName,
+          getCellValue,
+          getRangeValues,
+        });
+      } catch {
+        return cell.value ?? null;
+      }
+    }
+    return (cell: Cell | undefined, sheetName: string): FormulaValue | undefined => {
+      if (!cell?.formula) return undefined;
+      return evaluate(cell, sheetName);
+    };
+  }, [workbook]);
+
+  // Date-like number formats mean the numeric cell should render as a date.
+  const isDateLikeFormat = useCallback((format: string | undefined): boolean => {
+    if (!format) return false;
+    const cleaned = format.replace(/"[^"]*"/g, '').replace(/\\/g, '');
+    return (
+      /[yYdDmM]|hh?|ss/.test(cleaned.replace(/m{2}\s*:\s*s/i, '')) &&
+      !/[$0#%]/.test(cleaned.replace(/[ymdhHs]/g, ''))
+    );
+  }, []);
+
+  const formatSerialAsDate = useCallback((serial: number): string => {
+    const ms = Math.round((serial - 25569) * 86400000);
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? String(serial) : d.toISOString().slice(0, 10);
+  }, []);
 
   const [selectedCell, setSelectedCell] = useState<{
     row: number; // 1-indexed
@@ -282,10 +367,15 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                     if (isSearchMatch) cellClass += ' cell-search-match';
 
                     if (cell?.formula) {
-                      displayVal = <span className="cell-val-formula">={cell.formula}</span>;
+                      const evaluated = evaluateCell(cell, currentSheet.name);
+                      cellClass += ' cell-val-formula-result';
+                      displayVal =
+                        evaluated === null || evaluated === undefined ? '' : String(evaluated);
                     } else if (typeof val === 'number') {
                       cellClass += ' cell-val-number';
-                      displayVal = val.toLocaleString();
+                      displayVal = isDateLikeFormat(cell?.numberFormat)
+                        ? formatSerialAsDate(val)
+                        : val.toLocaleString();
                     } else if (val === null || val === undefined || val === '') {
                       cellClass += ' cell-val-null';
                       displayVal = '';
