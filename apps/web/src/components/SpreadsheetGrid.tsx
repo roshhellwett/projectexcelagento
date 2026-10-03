@@ -8,6 +8,8 @@ import {
   evaluateFormula,
 } from '@excel-agent/engine';
 
+import { describeCellSelection, type CellSelection } from '../lib/selection-context.js';
+
 interface SpreadsheetGridProps {
   workbook: Workbook;
   activeSheetName: string;
@@ -17,6 +19,7 @@ interface SpreadsheetGridProps {
   onQuickSort?: (columnLetter: string, direction: 'asc' | 'desc') => void;
   onSelectCell?: (coord: { row: number; column: string; value: unknown }) => void;
   onFileDrop?: (file: File) => void;
+  onAddSelectionContext?: (ctx: CellSelection) => void;
 }
 
 const ROW_HEIGHT = 28;
@@ -31,6 +34,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onQuickSort,
   onSelectCell,
   onFileDrop,
+  onAddSelectionContext,
 }) => {
   const currentSheet: Sheet = workbook.sheets.find((s) => s.name === activeSheetName) ||
     workbook.sheets[0] || { name: 'Sheet1', rows: [] };
@@ -119,6 +123,25 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   }>({ row: 1, colIdx: 0 });
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    rowIdx: number;
+    colIdx: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [contextMenu]);
   const scrollWrapperRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
@@ -298,7 +321,21 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                 const colLetter = indexToColumn(cIdx);
 
                 return (
-                  <th key={colLetter} className="column-header">
+                  <th
+                    key={colLetter}
+                    className="column-header"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const firstRow = currentSheet.rows.length > 0 ? 0 : 0;
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        rowIdx: firstRow,
+                        colIdx: cIdx,
+                      });
+                    }}
+                  >
                     <div className="col-header-inner">
                       <span className="col-letter">{colLetter}</span>
 
@@ -388,6 +425,17 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         key={colLetter}
                         className={cellClass}
                         onClick={() => setSelectedCell({ row: rowNumber, colIdx: cIdx })}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedCell({ row: rowNumber, colIdx: cIdx });
+                          setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            rowIdx: rowNumber - 1,
+                            colIdx: cIdx,
+                          });
+                        }}
                         title={`${colLetter}${rowNumber}: ${val ?? '(empty)'}`}
                       >
                         {displayVal}
@@ -406,6 +454,35 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
           </tbody>
         </table>
       </div>
+
+      {contextMenu && (
+        <div
+          className="cell-context-menu"
+          style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 1000 }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(['cell', 'row', 'column'] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className="cell-context-menu-item"
+              onClick={() => {
+                const ctx = describeCellSelection(
+                  kind,
+                  currentSheet,
+                  contextMenu.rowIdx,
+                  contextMenu.colIdx,
+                );
+                onAddSelectionContext?.(ctx);
+                setContextMenu(null);
+              }}
+            >
+              Ask agent about this {kind}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Multi-Sheet Tabs */}
       <div className="sheet-tabs-bar">

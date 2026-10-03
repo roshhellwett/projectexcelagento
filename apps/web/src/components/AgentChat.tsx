@@ -40,6 +40,8 @@ interface AgentChatProps {
   onUndoLast: () => void;
   canUndo: boolean;
   onStop?: () => void;
+  selectionContext?: import('../lib/selection-context.js').CellSelection | null;
+  onClearSelectionContext?: () => void;
 }
 
 export const AgentChat: React.FC<AgentChatProps> = ({
@@ -56,6 +58,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onUndoLast,
   canUndo,
   onStop,
+  selectionContext,
+  onClearSelectionContext,
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -603,6 +607,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
           {/* Chat Input Bar */}
           <form className="chat-input-bar" onSubmit={handleSubmit}>
+            {selectionContext && (
+              <div className="selection-context-chip">
+                <span className="selection-context-label">{selectionContext.label}</span>
+                <span className="selection-context-sheet">{selectionContext.sheetName}</span>
+                <button
+                  type="button"
+                  className="selection-context-clear"
+                  aria-label="Clear selection"
+                  onClick={onClearSelectionContext}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <input
               type="text"
               className="chat-input"

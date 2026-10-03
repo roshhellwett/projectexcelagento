@@ -977,6 +977,64 @@ body {
   border-top: 1px solid var(--border-main);
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.selection-context-chip {
+  flex-basis: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  font-size: 12px;
+  width: fit-content;
+}
+
+.selection-context-label {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.selection-context-sheet {
+  color: var(--text-muted, #888);
+}
+
+.selection-context-clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted, #888);
+  padding: 0 2px;
+}
+
+.cell-context-menu {
+  min-width: 220px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+}
+
+.cell-context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.cell-context-menu-item:hover {
+  background: rgba(127, 127, 127, 0.12);
 }
 
 .chat-input {

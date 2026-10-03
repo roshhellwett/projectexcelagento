@@ -11,6 +11,7 @@ import {
 
 import { TopNav } from './components/TopNav.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
+import type { CellSelection } from './lib/selection-context.js';
 import { AgentChat, type ChatMessage } from './components/AgentChat.js';
 import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
@@ -220,6 +221,7 @@ export const App: React.FC = () => {
   // Initial Chat Messages
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const turnAbortRef = useRef<AbortController | null>(null);
+  const [selectionContext, setSelectionContext] = useState<CellSelection | null>(null);
 
   // Execute an engine operation transactionally
   const executeOperation = useCallback(
@@ -453,6 +455,11 @@ export const App: React.FC = () => {
         content: m.text,
       }));
 
+      // When the user pins a selection chip, scope the agent's request to it.
+      const agentQuery = selectionContext
+        ? `Context: ${selectionContext.summary}\n\nUser request (spreadsheet operations only): ${query}`
+        : query;
+
       const callbacks = {
         onToken: (chunk: string) => {
           setMessages((prev) =>
@@ -477,7 +484,7 @@ export const App: React.FC = () => {
       };
 
       const agentRes = await askExcelAgent(
-        query,
+        agentQuery,
         workbook,
         activeSheetName,
         hasApiKey
@@ -772,6 +779,7 @@ export const App: React.FC = () => {
             searchHighlightCells={searchHighlightCells}
             onQuickSort={handleQuickSort}
             onFileDrop={handleFileUpload}
+            onAddSelectionContext={setSelectionContext}
           />
         </ErrorBoundary>
 
@@ -791,6 +799,8 @@ export const App: React.FC = () => {
             onUndoLast={handleUndo}
             canUndo={historyStack.canUndo}
             onStop={() => turnAbortRef.current?.abort()}
+            selectionContext={selectionContext}
+            onClearSelectionContext={() => setSelectionContext(null)}
           />
         </ErrorBoundary>
       </main>
