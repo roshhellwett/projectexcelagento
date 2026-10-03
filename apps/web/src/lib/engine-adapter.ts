@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import {
   createCell,
   type Cell,
@@ -6,6 +5,21 @@ import {
   type Workbook,
   type Sheet,
 } from '@excel-agent/engine';
+
+type XlsxModule = typeof import('xlsx');
+
+let xlsxLoad: Promise<XlsxModule> | null = null;
+
+/**
+ * Lazily load the heavy xlsx codec the first time a file is parsed or
+ * exported. The spreadsheet code is one of the largest chunks in the bundle;
+ * deferring it keeps the initial page load small for visitors who only
+ * browse, while repeat calls reuse the memoized module.
+ */
+function loadXlsx(): Promise<XlsxModule> {
+  xlsxLoad ??= import('xlsx');
+  return xlsxLoad;
+}
 
 /** Guard against pathological sheets that would freeze the browser tab. */
 export const MAX_IMPORTED_CELLS = 1_500_000;
@@ -25,7 +39,8 @@ function looksLikeZip(bytes: Uint8Array): boolean {
  * their ZIP magic bytes) and plain-text CSV/TSV files, and refuses sheets large
  * enough to hang the tab.
  */
-export function xlsxToWorkbook(arrayBuffer: ArrayBuffer): Workbook {
+export async function xlsxToWorkbook(arrayBuffer: ArrayBuffer): Promise<Workbook> {
+  const XLSX = await loadXlsx();
   const bytes = new Uint8Array(arrayBuffer);
   const wb = looksLikeZip(bytes)
     ? XLSX.read(bytes, {
@@ -121,7 +136,8 @@ function sanitizeSheetName(name: string, used: Set<string>): string {
  * empty strings), formulas keep their cached value, per-cell number formats are
  * reapplied, and sheet names are made Excel-legal and unique.
  */
-export function workbookToXlsxBuffer(workbook: Workbook): Uint8Array {
+export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Array> {
+  const XLSX = await loadXlsx();
   const wb = XLSX.utils.book_new();
   const usedNames = new Set<string>();
 
@@ -162,12 +178,12 @@ export function workbookToXlsxBuffer(workbook: Workbook): Uint8Array {
   return new Uint8Array(out);
 }
 
-export function downloadWorkbookAsXlsx(
+export async function downloadWorkbookAsXlsx(
   workbook: Workbook,
   filename = 'exported-data.xlsx',
-): boolean {
+): Promise<boolean> {
   try {
-    const buffer = workbookToXlsxBuffer(workbook);
+    const buffer = await workbookToXlsxBuffer(workbook);
     const blob = new Blob([buffer as BlobPart], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

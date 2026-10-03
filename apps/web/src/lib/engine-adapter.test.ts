@@ -9,7 +9,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 describe('xlsx adapter', () => {
-  it('round-trips values, formulas, blanks, and number formats', () => {
+  it('round-trips values, formulas, blanks, and number formats', async () => {
     const workbook: Workbook = {
       sheets: [
         {
@@ -27,7 +27,7 @@ describe('xlsx adapter', () => {
       ],
     };
 
-    const restored = xlsxToWorkbook(toArrayBuffer(workbookToXlsxBuffer(workbook)));
+    const restored = await xlsxToWorkbook(toArrayBuffer(await workbookToXlsxBuffer(workbook)));
     const sheet = restored.sheets[0];
     expect(sheet?.name).toBe('Data');
     expect(sheet?.rows[1]?.[0]?.value).toBe('Ada');
@@ -41,7 +41,7 @@ describe('xlsx adapter', () => {
     expect(sheet?.rows[2]?.[2]?.formula).toBe('B3*2');
   });
 
-  it('writes Excel-legal, unique sheet names', () => {
+  it('writes Excel-legal, unique sheet names', async () => {
     const workbook: Workbook = {
       sheets: [
         { name: 'A:B[C]', rows: [[createCell('x')]] },
@@ -49,21 +49,21 @@ describe('xlsx adapter', () => {
       ],
     };
 
-    const restored = xlsxToWorkbook(toArrayBuffer(workbookToXlsxBuffer(workbook)));
+    const restored = await xlsxToWorkbook(toArrayBuffer(await workbookToXlsxBuffer(workbook)));
     expect(restored.sheets.map((sheet) => sheet.name)).toEqual(['A B C', 'A B C_2']);
   });
 
-  it('imports plain CSV uploads by sniffing the ZIP magic bytes', () => {
+  it('imports plain CSV uploads by sniffing the ZIP magic bytes', async () => {
     const csv = 'Name,Amount\nAda,12.5\nGrace,7\n';
     const bytes = new TextEncoder().encode(csv);
-    const restored = xlsxToWorkbook(toArrayBuffer(bytes));
+    const restored = await xlsxToWorkbook(toArrayBuffer(bytes));
 
     expect(restored.sheets[0]?.rows[0]?.[0]?.value).toBe('Name');
     expect(restored.sheets[0]?.rows[1]?.[0]?.value).toBe('Ada');
     expect(String(restored.sheets[0]?.rows[1]?.[1]?.value)).toBe('12.5');
   });
 
-  it('keeps multi-sheet structure and trailing blanks', () => {
+  it('keeps multi-sheet structure and trailing blanks', async () => {
     const workbook: Workbook = {
       sheets: [
         { name: 'One', rows: [[createCell('a'), createCell('b')]] },
@@ -71,7 +71,7 @@ describe('xlsx adapter', () => {
       ],
     };
 
-    const restored = xlsxToWorkbook(toArrayBuffer(workbookToXlsxBuffer(workbook)));
+    const restored = await xlsxToWorkbook(toArrayBuffer(await workbookToXlsxBuffer(workbook)));
     expect(restored.sheets.map((sheet) => sheet.name)).toEqual(['One', 'Two']);
     expect(restored.sheets[0]?.rows[0]).toHaveLength(2);
     expect(restored.sheets[1]?.rows[0]?.[1]?.value).toBe(null);

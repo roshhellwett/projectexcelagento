@@ -477,10 +477,83 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   const q = userQuery.trim().toLowerCase();
+  // Structural patterns (delete/rename/find-replace) are matched against the
+  // original text so user-supplied names and replacement values keep their
+  // casing; trigger checks below use the normalized copy.
+  const raw = userQuery.trim();
   const columns = getColumnProfiles(currentSheet);
   const totalRows = currentSheet.rows.length;
   const dataRowsCount = Math.max(0, totalRows - 1);
   const allColumns = columns.map((c) => c.letter);
+
+  // 0. EXPLICIT STRUCTURAL COMMANDS (highest precedence)
+  // An unambiguous "rename column X to Y", "delete column X", or "replace X with
+  // Y" must never be hijacked by a keyword heuristic below. Without this, a
+  // column named "Order Date" turns "rename column C to Order Date" into a
+  // date-format mutation, and "delete column Sort Priority" into a sort.
+  const replaceMatch =
+    raw.match(
+      /(?:find\s+['"]?([^'"]+?)['"]?\s+(?:and\s+)?replace\s+(?:with\s+)?['"]?([^'"]+)['"]?(?:$|\s))/i,
+    ) ||
+    raw.match(
+      /(?:replace|change)\s+['"]?([^'"]+?)['"]?\s+(?:with|to)\s+['"]?([^'"]+?)['"]?(?:$|\s)/i,
+    );
+
+  if (replaceMatch && replaceMatch[1] && replaceMatch[2]) {
+    const find = replaceMatch[1].trim();
+    const replace = replaceMatch[2].trim();
+    return {
+      message: `I've prepared a **Find & Replace** operation:\n\n• Replace: \`${find}\`\n• With: \`${replace}\`\n• Scope: Entire active sheet (${currentSheet.name})\n\nClick **Apply Changes** to execute this across all cells.`,
+      proposedAction: {
+        name: 'find_replace',
+        args: {
+          sheet: currentSheet.name,
+          find,
+          replace,
+          matchCase: false,
+          wholeCell: false,
+          includeFormulas: false,
+        },
+        explanation: `Replace occurrences of "${find}" with "${replace}" in ${currentSheet.name}.`,
+        category: 'transform',
+      },
+    };
+  }
+
+  const deleteColMatch = raw.match(/(?:delete|remove|drop)\s+column\s+([a-z0-9_\s/()]+)/i);
+  if (deleteColMatch && deleteColMatch[1]) {
+    const targetCol = resolveColumn(deleteColMatch[1], columns);
+    if (targetCol) {
+      return {
+        message: `I've prepared to remove column **${targetCol.rawName}** (${targetCol.letter}).\n\nReview the preview card and click **Apply Changes** to delete it.`,
+        proposedAction: {
+          name: 'delete_column',
+          args: { sheet: currentSheet.name, column: targetCol.letter },
+          explanation: `Delete column ${targetCol.letter} ("${targetCol.rawName}") from the sheet.`,
+          category: 'columns',
+        },
+      };
+    }
+  }
+
+  const renameColMatch = raw.match(
+    /(?:rename)\s+column\s+([a-z0-9_\s/()]+)\s+to\s+([a-z0-9_\s/()]+)/i,
+  );
+  if (renameColMatch && renameColMatch[1] && renameColMatch[2]) {
+    const targetCol = resolveColumn(renameColMatch[1], columns);
+    const newName = renameColMatch[2].trim();
+    if (targetCol) {
+      return {
+        message: `I've prepared to rename column **${targetCol.rawName}** (${targetCol.letter}) to **"${newName}"**.\n\nClick **Apply Changes** to update the header.`,
+        proposedAction: {
+          name: 'rename_column',
+          args: { sheet: currentSheet.name, column: targetCol.letter, newName, headerRow: 1 },
+          explanation: `Rename column ${targetCol.letter} to "${newName}".`,
+          category: 'columns',
+        },
+      };
+    }
+  }
 
   // 1. DUPLICATE REMOVAL
   if (
@@ -558,8 +631,10 @@ export function analyzeSpreadsheetIntentAndData(
       columns[0]!;
 
     let format: 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD/MM/YYYY' = 'YYYY-MM-DD';
-    if (q.includes('us') || q.includes('mm/dd/yyyy')) format = 'MM/DD/YYYY';
-    else if (q.includes('eu') || q.includes('dd/mm/yyyy')) format = 'DD/MM/YYYY';
+    // Word boundaries matter: "must", "customer", and "please use" all contain
+    // the substring "us" and must not silently select the US date format.
+    if (/\bus\b/.test(q) || q.includes('mm/dd/yyyy')) format = 'MM/DD/YYYY';
+    else if (/\beu\b/.test(q) || q.includes('dd/mm/yyyy')) format = 'DD/MM/YYYY';
 
     return {
       message: `I've prepared a date normalization for **${targetCol.rawName}** (Column ${targetCol.letter}).\n\n• Target Format: **${format}**\n• Total rows: ${dataRowsCount}\n\nClick **Apply Changes** below to standardize all dates!`,
@@ -577,37 +652,7 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  // 4. FIND & REPLACE
-  const replaceMatch =
-    q.match(
-      /(?:find\s+['"]?([^'"]+?)['"]?\s+(?:and\s+)?replace\s+(?:with\s+)?['"]?([^'"]+?)['"]?)/i,
-    ) ||
-    q.match(
-      /(?:replace|change)\s+['"]?([^'"]+?)['"]?\s+(?:with|to)\s+['"]?([^'"]+?)['"]?(?:$|\s)/i,
-    );
-
-  if (replaceMatch && replaceMatch[1] && replaceMatch[2]) {
-    const find = replaceMatch[1].trim();
-    const replace = replaceMatch[2].trim();
-    return {
-      message: `I've prepared a **Find & Replace** operation:\n\n• Replace: \`${find}\`\n• With: \`${replace}\`\n• Scope: Entire active sheet (${currentSheet.name})\n\nClick **Apply Changes** to execute this across all cells.`,
-      proposedAction: {
-        name: 'find_replace',
-        args: {
-          sheet: currentSheet.name,
-          find,
-          replace,
-          matchCase: false,
-          wholeCell: false,
-          includeFormulas: false,
-        },
-        explanation: `Replace occurrences of "${find}" with "${replace}" in ${currentSheet.name}.`,
-        category: 'transform',
-      },
-    };
-  }
-
-  // 5. SORTING
+  // 4. SORTING
   if (
     q.includes('sort') ||
     q.includes('order by') ||
@@ -639,43 +684,7 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  // 6. COLUMN STRUCTURAL OPERATIONS (ADD / RENAME / DELETE)
-  const deleteColMatch = q.match(/(?:delete|remove|drop)\s+column\s+([a-z0-9_\s/()]+)/i);
-  if (deleteColMatch && deleteColMatch[1]) {
-    const targetCol = resolveColumn(deleteColMatch[1], columns);
-    if (targetCol) {
-      return {
-        message: `I've prepared to remove column **${targetCol.rawName}** (${targetCol.letter}).\n\nReview the preview card and click **Apply Changes** to delete it.`,
-        proposedAction: {
-          name: 'delete_column',
-          args: { sheet: currentSheet.name, column: targetCol.letter },
-          explanation: `Delete column ${targetCol.letter} ("${targetCol.rawName}") from the sheet.`,
-          category: 'columns',
-        },
-      };
-    }
-  }
-
-  const renameColMatch = q.match(
-    /(?:rename)\s+column\s+([a-z0-9_\s/()]+)\s+to\s+([a-z0-9_\s/()]+)/i,
-  );
-  if (renameColMatch && renameColMatch[1] && renameColMatch[2]) {
-    const targetCol = resolveColumn(renameColMatch[1], columns);
-    const newName = renameColMatch[2].trim();
-    if (targetCol) {
-      return {
-        message: `I've prepared to rename column **${targetCol.rawName}** (${targetCol.letter}) to **"${newName}"**.\n\nClick **Apply Changes** to update the header.`,
-        proposedAction: {
-          name: 'rename_column',
-          args: { sheet: currentSheet.name, column: targetCol.letter, newName, headerRow: 1 },
-          explanation: `Rename column ${targetCol.letter} to "${newName}".`,
-          category: 'columns',
-        },
-      };
-    }
-  }
-
-  // 7. MATH CALCULATIONS & AGGREGATIONS (SUM, AVG, MIN, MAX, COUNT)
+  // 5. MATH CALCULATIONS & AGGREGATIONS (SUM, AVG, MIN, MAX, COUNT)
   if (
     q.includes('sum') ||
     q.includes('total') ||
@@ -704,7 +713,7 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
-  // 8. CATEGORY / FREQUENCY BREAKDOWN (PIVOT-LIKE INTELLIGENCE)
+  // 6. CATEGORY / FREQUENCY BREAKDOWN (PIVOT-LIKE INTELLIGENCE)
   if (
     q.includes('who') ||
     q.includes('breakdown') ||
@@ -735,7 +744,7 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  // 9. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
+  // 7. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
   // Check if query contains a number or specific value
   const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
   const operatorGuess: 'equals' | 'gt' | 'lt' | 'gte' | 'lte' =
@@ -852,7 +861,7 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
-  // 10. MISSING DATA & AUDITING
+  // 8. MISSING DATA & AUDITING
   if (
     q.includes('blank') ||
     q.includes('empty') ||
@@ -882,7 +891,7 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
-  // 11. GENERAL SUMMARY & OVERVIEW
+  // 9. GENERAL SUMMARY & OVERVIEW
   if (
     q.includes('summary') ||
     q.includes('overview') ||
@@ -902,7 +911,7 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  // 12. FALLBACK SMART REASONING: Search sheet cells
+  // 10. FALLBACK SMART REASONING: Search sheet cells
   const searchMatches = searchCellsInSheet(currentSheet, userQuery);
   if (searchMatches.length > 0) {
     const first = searchMatches[0]!;

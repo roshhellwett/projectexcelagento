@@ -109,8 +109,15 @@ provider and font hosts the app genuinely uses.
 
 ## Known follow-ups
 
-- `@tanstack/react-router` / `@tanstack/react-start` are declared but unused while the app
-  is a client-rendered SPA. They are tree-shaken out of the bundle; either adopt them for
-  routing/SSR or remove them.
-- `xlsx` is isolated in its own chunk. Lazy-loading it on first upload would shrink the
-  initial payload further.
+- **Routing/SSR** - `@tanstack/react-router` / `@tanstack/react-start` have been removed; the
+  app is a client-rendered SPA and needs no router until multi-page navigation is required.
+  Reintroduce a router when deep-linkable views (e.g. `/workbooks/:id`) become a real need.
+- **`xlsx` loading** - the codec is now lazily imported on first upload/export, so the initial
+  payload is the app + React chunks only. `loadXlsx()` in
+  `apps/web/src/lib/engine-adapter.ts` is the single memoized seam to pre-warm if a future
+  feature needs to parse a workbook before the user interacts.
+- **Model-layer evals** - the golden set exercises the deterministic planner offline. An
+  additional eval lane for the LLM layer (recorded provider responses, no network in CI) would
+  extend coverage to prompt/adapter drift.
+- **Cross-device memory** - learned associations live in `localStorage` per browser. Sharing
+  them across devices would require a backend, which would break the zero-secret BYOK design.

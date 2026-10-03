@@ -275,14 +275,14 @@ export const App: React.FC = () => {
 
     const reader = new FileReader();
     reader.onerror = () => pushToast('error', `Could not read "${file.name}".`);
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const buffer = e.target?.result;
       if (!(buffer instanceof ArrayBuffer)) {
         pushToast('error', `Could not read "${file.name}".`);
         return;
       }
       try {
-        const wb = xlsxToWorkbook(buffer);
+        const wb = await xlsxToWorkbook(buffer);
         const totalRows = wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
         if (totalRows === 0) {
           pushToast('info', `"${file.name}" loaded but contains no rows.`);
@@ -314,7 +314,7 @@ export const App: React.FC = () => {
       const response = await fetch(`/fixtures/${fixtureName}`);
       if (!response.ok) throw new Error('Fixture file not found');
       const buffer = await response.arrayBuffer();
-      const wb = xlsxToWorkbook(buffer);
+      const wb = await xlsxToWorkbook(buffer);
       loadNewWorkbook(wb, fixtureName, true);
     } catch (error) {
       pushToast('error', error instanceof Error ? error.message : `Could not load ${fixtureName}`);
@@ -322,9 +322,9 @@ export const App: React.FC = () => {
   };
 
   // Export current workbook
-  const handleExport = () => {
+  const handleExport = async () => {
     const target = `${fileName.replace(/\.[^.]+$/, '')}-cleaned.xlsx`;
-    if (downloadWorkbookAsXlsx(workbook, target)) {
+    if (await downloadWorkbookAsXlsx(workbook, target)) {
       pushToast('success', `Exported "${target}".`);
     } else {
       pushToast('error', 'Export failed. Please try again.');
