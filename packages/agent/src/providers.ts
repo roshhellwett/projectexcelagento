@@ -4,6 +4,9 @@ import type {
   ProviderConfig,
   ProviderName,
   ProviderResponse,
+  StreamCallbacks,
+  ToolCall,
+  ToolDefinition,
 } from './types.js';
 
 export class ProviderError extends Error {
@@ -24,8 +27,26 @@ export class ProviderError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_RETRIES = 2;
+
+export const FALLBACK_MODELS: Record<ProviderName, string[]> = {
+  groq: [
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b',
+    'allam-2-7b',
+    'llama-3.3-70b-versatile',
+  ],
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  openrouter: [
+    'google/gemini-2.0-flash-001',
+    'meta-llama/llama-3.3-70b-instruct',
+    'deepseek/deepseek-chat',
+  ],
+  openai: ['gpt-4o-mini', 'gpt-4o'],
+  custom: ['default'],
+};
 
 function isTransientStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
@@ -39,8 +60,7 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * Fetch with an abort-based timeout, merged with an optional caller signal, plus
- * bounded exponential backoff for transient upstream failures. This is the single
- * reliability choke point shared by every provider.
+ * bounded exponential backoff for transient upstream failures.
  */
 async function requestWithRetry(
   provider: ProviderName,
@@ -107,11 +127,6 @@ async function readError(provider: ProviderName, response: Response): Promise<Pr
   );
 }
 
-/**
- * Parse a success response body. A 200 that is not JSON (captive portal, proxy
- * error page, truncated body) must surface as a ProviderError with a usable
- * message rather than a raw SyntaxError.
- */
 async function readJson<T>(provider: ProviderName, response: Response): Promise<T> {
   try {
     return (await response.json()) as T;
@@ -123,23 +138,68 @@ async function readJson<T>(provider: ProviderName, response: Response): Promise<
   }
 }
 
+type OpenAIToolCallShape = {
+  id?: string;
+  type?: 'function';
+  function?: { name?: string; arguments?: string };
+};
+
 type OpenAICompatibleShape = {
-  choices?: { message?: { content?: string } }[];
+  choices?: {
+    message?: {
+      content?: string;
+      reasoning_content?: string;
+      thought?: string;
+      tool_calls?: OpenAIToolCallShape[];
+    };
+  }[];
   model?: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
+function formatMessagesForOpenAI(messages: ChatMessage[]) {
+  return messages.map((m) => {
+    const msg: Record<string, unknown> = {
+      role: m.role,
+      content: m.content,
+    };
+    if (m.name) msg.name = m.name;
+    if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+    if (m.tool_calls && m.tool_calls.length > 0) msg.tool_calls = m.tool_calls;
+    return msg;
+  });
+}
+
 function openAiCompatibleAdapter(
   name: ProviderName,
   defaultModel: string,
-  endpoint: string,
+  endpointOrResolver: string | ((config: ProviderConfig) => string),
   extraHeaders: () => Record<string, string> = () => ({}),
 ): ProviderAdapter {
+  const resolveEndpoint = (config: ProviderConfig) =>
+    typeof endpointOrResolver === 'function' ? endpointOrResolver(config) : endpointOrResolver;
+
   return {
     name,
     defaultModel,
-    async complete(messages: ChatMessage[], config: ProviderConfig): Promise<ProviderResponse> {
+    async complete(
+      messages: ChatMessage[],
+      config: ProviderConfig,
+      tools?: ToolDefinition[],
+    ): Promise<ProviderResponse> {
       const model = config.model || defaultModel;
+      const endpoint = resolveEndpoint(config);
+
+      const requestBody: Record<string, unknown> = {
+        model,
+        messages: formatMessagesForOpenAI(messages),
+        temperature: config.temperature ?? 0.2,
+        max_tokens: config.maxTokens ?? 1200,
+      };
+      if (tools && tools.length > 0) {
+        requestBody.tools = tools;
+      }
+
       const response = await requestWithRetry(
         name,
         endpoint,
@@ -150,20 +210,31 @@ function openAiCompatibleAdapter(
             'Content-Type': 'application/json',
             ...extraHeaders(),
           },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature: config.temperature ?? 0.2,
-            max_tokens: config.maxTokens ?? 1200,
-          }),
+          body: JSON.stringify(requestBody),
         },
         config,
       );
 
       if (!response.ok) throw await readError(name, response);
       const data = await readJson<OpenAICompatibleShape>(name, response);
+
+      const messageObj = data.choices?.[0]?.message;
+      const content = messageObj?.content ?? '';
+      const thought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+
+      const toolCalls: ToolCall[] | undefined = messageObj?.tool_calls?.map((tc, idx) => ({
+        id: tc.id || `call-${Date.now()}-${idx}`,
+        type: 'function',
+        function: {
+          name: tc.function?.name ?? '',
+          arguments: tc.function?.arguments ?? '{}',
+        },
+      }));
+
       return {
-        content: data.choices?.[0]?.message?.content ?? '',
+        content,
+        thought,
+        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
         provider: name,
         model: data.model ?? model,
         usage: {
@@ -171,6 +242,196 @@ function openAiCompatibleAdapter(
           completionTokens: data.usage?.completion_tokens,
           totalTokens: data.usage?.total_tokens,
         },
+      };
+    },
+
+    async completeStream(
+      messages: ChatMessage[],
+      config: ProviderConfig,
+      callbacks: StreamCallbacks,
+      tools?: ToolDefinition[],
+    ): Promise<ProviderResponse> {
+      const model = config.model || defaultModel;
+      const endpoint = resolveEndpoint(config);
+
+      const requestBody: Record<string, unknown> = {
+        model,
+        messages: formatMessagesForOpenAI(messages),
+        temperature: config.temperature ?? 0.2,
+        max_tokens: config.maxTokens ?? 1200,
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+      if (tools && tools.length > 0) {
+        requestBody.tools = tools;
+      }
+
+      const response = await requestWithRetry(
+        name,
+        endpoint,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.apiKey.trim()}`,
+            'Content-Type': 'application/json',
+            ...extraHeaders(),
+          },
+          body: JSON.stringify(requestBody),
+        },
+        config,
+      );
+
+      if (!response.ok) throw await readError(name, response);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream') && contentType.includes('application/json')) {
+        const data = await readJson<OpenAICompatibleShape>(name, response);
+        const messageObj = data.choices?.[0]?.message;
+        const content = messageObj?.content ?? '';
+        const thought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+        if (content) callbacks.onToken?.(content);
+        if (thought) callbacks.onThinking?.(thought);
+
+        const toolCalls: ToolCall[] | undefined = messageObj?.tool_calls?.map((tc, idx) => ({
+          id: tc.id || `call-${Date.now()}-${idx}`,
+          type: 'function',
+          function: {
+            name: tc.function?.name ?? '',
+            arguments: tc.function?.arguments ?? '{}',
+          },
+        }));
+
+        if (toolCalls) {
+          for (const tc of toolCalls) callbacks.onToolCall?.(tc);
+        }
+
+        return {
+          content,
+          thought,
+          toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+          provider: name,
+          model: data.model ?? model,
+          usage: {
+            promptTokens: data.usage?.prompt_tokens,
+            completionTokens: data.usage?.completion_tokens,
+            totalTokens: data.usage?.total_tokens,
+          },
+        };
+      }
+
+      if (!response.body) {
+        return this.complete(messages, config, tools);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let fullContent = '';
+      let fullThought = '';
+      let reportedModel = model;
+      let reportedUsage:
+        | { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+        | undefined;
+      const toolCallMap = new Map<number, { id: string; name: string; args: string }>();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const payload = trimmed.slice(5).trim();
+            if (payload === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(payload) as {
+                model?: string;
+                choices?: {
+                  delta?: {
+                    content?: string;
+                    reasoning_content?: string;
+                    thought?: string;
+                    tool_calls?: {
+                      index?: number;
+                      id?: string;
+                      function?: { name?: string; arguments?: string };
+                    }[];
+                  };
+                }[];
+                usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+              };
+
+              if (parsed.model) reportedModel = parsed.model;
+              if (parsed.usage) {
+                reportedUsage = {
+                  promptTokens: parsed.usage.prompt_tokens,
+                  completionTokens: parsed.usage.completion_tokens,
+                  totalTokens: parsed.usage.total_tokens,
+                };
+              }
+              const delta = parsed.choices?.[0]?.delta;
+              if (delta) {
+                if (delta.content) {
+                  fullContent += delta.content;
+                  callbacks.onToken?.(delta.content);
+                }
+                const thoughtToken = delta.reasoning_content ?? delta.thought;
+                if (thoughtToken) {
+                  fullThought += thoughtToken;
+                  callbacks.onThinking?.(thoughtToken);
+                }
+                if (delta.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0;
+                    const existing = toolCallMap.get(idx) ?? {
+                      id: tc.id || `call-${Date.now()}-${idx}`,
+                      name: '',
+                      args: '',
+                    };
+                    if (tc.id) existing.id = tc.id;
+                    if (tc.function?.name) existing.name += tc.function.name;
+                    if (tc.function?.arguments) existing.args += tc.function.arguments;
+                    toolCallMap.set(idx, existing);
+                  }
+                }
+              }
+            } catch {
+              // Ignore non-json sse chunks
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      const toolCalls: ToolCall[] = Array.from(toolCallMap.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([_, tc]) => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: tc.args || '{}',
+          },
+        }));
+
+      for (const tc of toolCalls) {
+        callbacks.onToolCall?.(tc);
+      }
+
+      return {
+        content: fullContent,
+        thought: fullThought || undefined,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        provider: name,
+        model: reportedModel,
+        usage: reportedUsage,
       };
     },
   };
@@ -191,6 +452,21 @@ export const openRouterAdapter: ProviderAdapter = openAiCompatibleAdapter(
       typeof window === 'undefined' ? 'https://excel-agent.app' : window.location.origin,
     'X-Title': 'ExcelAgento',
   }),
+);
+
+export const openAiAdapter: ProviderAdapter = openAiCompatibleAdapter(
+  'openai',
+  'gpt-4o-mini',
+  'https://api.openai.com/v1/chat/completions',
+);
+
+export const customAdapter: ProviderAdapter = openAiCompatibleAdapter(
+  'custom',
+  'default',
+  (config) => {
+    const base = config.baseUrl?.replace(/\/+$/, '') || 'http://localhost:11434/v1';
+    return `${base}/chat/completions`;
+  },
 );
 
 type GeminiShape = {
@@ -250,16 +526,26 @@ export const geminiAdapter: ProviderAdapter = {
       },
     };
   },
+
+  async completeStream(messages, config, callbacks, tools): Promise<ProviderResponse> {
+    const res = await this.complete(messages, config, tools);
+    if (res.content) {
+      callbacks.onToken?.(res.content);
+    }
+    return res;
+  },
 };
 
 const ADAPTERS: Record<ProviderName, ProviderAdapter> = {
   groq: groqAdapter,
   openrouter: openRouterAdapter,
   gemini: geminiAdapter,
+  openai: openAiAdapter,
+  custom: customAdapter,
 };
 
 export function getAdapter(provider: ProviderName): ProviderAdapter {
-  return ADAPTERS[provider];
+  return ADAPTERS[provider] ?? groqAdapter;
 }
 
 export function listProviders(): ProviderAdapter[] {
@@ -270,6 +556,24 @@ export function listProviders(): ProviderAdapter[] {
 export function complete(
   messages: ChatMessage[],
   config: ProviderConfig,
+  tools?: ToolDefinition[],
 ): Promise<ProviderResponse> {
-  return getAdapter(config.provider).complete(messages, config);
+  return getAdapter(config.provider).complete(messages, config, tools);
+}
+
+/** Streaming completion wrapper. */
+export function completeStream(
+  messages: ChatMessage[],
+  config: ProviderConfig,
+  callbacks: StreamCallbacks,
+  tools?: ToolDefinition[],
+): Promise<ProviderResponse> {
+  const adapter = getAdapter(config.provider);
+  if (adapter.completeStream) {
+    return adapter.completeStream(messages, config, callbacks, tools);
+  }
+  return adapter.complete(messages, config, tools).then((res) => {
+    if (res.content) callbacks.onToken?.(res.content);
+    return res;
+  });
 }

@@ -5,6 +5,7 @@ import {
   type Workbook,
   type Sheet,
 } from '@excel-agent/engine';
+import { parseXlsxWorker, exportXlsxWorker } from './worker-client.js';
 
 type XlsxModule = typeof import('xlsx');
 
@@ -40,6 +41,10 @@ function looksLikeZip(bytes: Uint8Array): boolean {
  * enough to hang the tab.
  */
 export async function xlsxToWorkbook(arrayBuffer: ArrayBuffer): Promise<Workbook> {
+  // Offload to background Web Worker thread to keep the UI at 60 FPS
+  const workerResult = await parseXlsxWorker(arrayBuffer);
+  if (workerResult) return workerResult;
+
   const XLSX = await loadXlsx();
   const bytes = new Uint8Array(arrayBuffer);
   const wb = looksLikeZip(bytes)
@@ -137,6 +142,10 @@ function sanitizeSheetName(name: string, used: Set<string>): string {
  * reapplied, and sheet names are made Excel-legal and unique.
  */
 export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Array> {
+  // Offload to background Web Worker thread if available
+  const workerResult = await exportXlsxWorker(workbook);
+  if (workerResult) return workerResult;
+
   const XLSX = await loadXlsx();
   const wb = XLSX.utils.book_new();
   const usedNames = new Set<string>();

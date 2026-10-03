@@ -1,4 +1,5 @@
 import {
+  applyOperation,
   cloneWorkbook,
   type OperationRegistry,
   type Preview,
@@ -8,15 +9,35 @@ import {
 
 import { analyzeSpreadsheetIntentAndData, type ProposedAction } from './analysis.js';
 import { buildSystemPrompt, parseModelOutput } from './context.js';
-import { complete, ProviderError } from './providers.js';
+import {
+  calculateAggregate,
+  getWorkbookOverview,
+  profileColumn,
+  readCellRange,
+  READ_TOOL_DEFINITIONS,
+  searchSheet,
+} from './read-tools.js';
+import {
+  complete,
+  completeStream,
+  FALLBACK_MODELS,
+  ProviderError,
+} from './providers.js';
 import { buildToolCatalog, type ToolDescriptor } from './tools.js';
 import type {
+  AgentActivityEvent,
   AgentDecision,
+  ChatMessage,
   DecideInput,
+  ExecutionPlan,
+  ExecutionPlanStep,
   GuardrailReport,
   LlmTelemetry,
   MemoryStore,
   OrchestratorOptions,
+  ProviderConfig,
+  ProviderResponse,
+  ToolDefinition,
   TraceStep,
 } from './types.js';
 
@@ -29,51 +50,116 @@ function isDemoKey(key: string | undefined): boolean {
 }
 
 /**
- * ExcelAgento's control plane. Each conversational turn passes through ordered
- * layers so a model can never mutate the workbook without schema, engine, and
- * preview agreement:
+ * ExcelAgento Multi-Layer Intelligent Orchestrator.
  *
- *   intent -> memory -> heuristic -> llm -> guardrail -> (verification on execute)
+ * Tier 0: Fast deterministic & memory cache (offline, zero-token, instant).
+ * Tier 1: Interactive Multi-Agent Conductor + Specialists:
+ *   - Read-tools for ground-truth data verification without hallucinations.
+ *   - Multi-step planning with transactional step-by-step previews.
+ *   - Real-time token and thought streaming.
+ *   - Automatic provider & model fallback on decommissioned or rate-limited models.
+ *   - Guardrail verification (schema -> engine -> invariants -> preview).
  */
 export class ExcelAgentOrchestrator {
   private readonly registry: OperationRegistry;
-
   private readonly memory: MemoryStore | undefined;
-
   private readonly memorySimilarity: number;
-
   private readonly catalog: ToolDescriptor[];
+  private readonly toolDefinitions: ToolDefinition[];
 
   constructor(options: OrchestratorOptions) {
     this.registry = options.registry;
     this.memory = options.memory;
     this.memorySimilarity = options.memorySimilarity ?? 0.6;
     this.catalog = buildToolCatalog(options.registry);
+    this.toolDefinitions = this.buildAllToolDefinitions();
   }
 
   get tools(): ToolDescriptor[] {
     return this.catalog;
   }
 
+  private buildAllToolDefinitions(): ToolDefinition[] {
+    const definitions: ToolDefinition[] = [...READ_TOOL_DEFINITIONS];
+
+    for (const tool of this.catalog) {
+      definitions.push({
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: (tool.jsonSchema as Record<string, unknown>) ?? { type: 'object', properties: {} },
+        },
+      });
+    }
+
+    definitions.push({
+      type: 'function',
+      function: {
+        name: 'create_execution_plan',
+        description: 'Create an ordered multi-step execution plan when a user request requires multiple operations in sequence.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Brief title for the plan' },
+            description: { type: 'string', description: 'Overall summary of the plan' },
+            steps: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  operation: { type: 'string', description: 'Operation name, e.g. "format_dates", "sort_range"' },
+                  args: { type: 'object', description: 'Arguments object matching the operation schema' },
+                  description: { type: 'string', description: 'Explanation of what this step achieves' },
+                },
+                required: ['operation', 'args', 'description'],
+              },
+              description: 'Ordered sequence of steps to apply',
+            },
+          },
+          required: ['title', 'steps'],
+        },
+      },
+    });
+
+    return definitions;
+  }
+
   async decide(input: DecideInput): Promise<AgentDecision> {
     const trace: TraceStep[] = [];
+    const activities: AgentActivityEvent[] = [];
+
+    const emitActivity = (type: AgentActivityEvent['type'], agent: string, summary: string, detail?: unknown) => {
+      const event: AgentActivityEvent = {
+        id: `act-${Date.now()}-${activities.length}`,
+        type,
+        agent,
+        summary,
+        detail,
+        timestamp: Date.now(),
+      };
+      activities.push(event);
+      input.onActivity?.(event);
+    };
+
     const sheet =
       input.workbook.sheets.find((candidate) => candidate.name === input.sheetName) ??
       input.workbook.sheets[0];
     const sheetName = sheet?.name ?? input.sheetName;
 
-    // Layer 1 - Intent: social turns never touch the workbook.
+    // Layer 1 - Intent: Social greetings
     if (GREETING.test(input.query.trim())) {
       const message = !input.hasUserFile
-        ? 'Hello. I am **ExcelAgento**. Upload an Excel or CSV file (or pick a sample fixture) and I can normalize dates, clean text, deduplicate, sort, filter, and compute aggregates.'
-        : `Hello. I am **ExcelAgento**. **${sheetName}** is loaded with ${
+        ? 'Hello! I am **ExcelAgento**, your intelligent enterprise spreadsheet copilot. Upload an Excel or CSV file (or choose a sample fixture), and I can clean data, format dates, normalize text, deduplicate, filter, compute metrics, and execute multi-step operations.'
+        : `Hello! I am **ExcelAgento**. **${sheetName}** is loaded with ${
             sheet?.rows.length ?? 0
-          } rows. Tell me what to change and I will show you a verified preview first.`;
+          } rows. What would you like to inspect, analyze, or transform?`;
       trace.push({ layer: 'intent', summary: 'Greeting detected; no operation proposed.' });
-      return { message, source: 'heuristic', trace };
+      emitActivity('status', 'Conductor', 'Welcomed user.');
+      return { message, source: 'heuristic', trace, activities };
     }
 
-    // Layer 2 - Memory: replay a previously verified operation.
+    // Layer 2 - Memory: Replay proven learned operation
     const memoryHit = this.memory?.retrieve(input.query, sheetName, this.memorySimilarity);
     if (memoryHit) {
       const action: ProposedAction = {
@@ -89,23 +175,21 @@ export class ExcelAgentOrchestrator {
         detail: { operation: memoryHit.operation, passed: guardrail.passed },
       });
       if (guardrail.passed) {
+        emitActivity('status', 'Memory', `Replayed verified operation "${memoryHit.operation}".`);
         return {
           message: `I recognised this as a repeat of a verified action and re-ran it on **${sheetName}**.`,
           action,
           guardrail,
           source: 'memory',
           trace,
+          activities,
         };
       }
     }
 
-    return this.plan(input, sheetName, sheet, trace);
+    return this.plan(input, sheetName, sheet, trace, activities, emitActivity);
   }
 
-  /**
-   * Self-learning hook. The host calls this after an action has been applied (or
-   * failed) so proven associations are reinforced and replayable next time.
-   */
   learn(outcome: {
     query: string;
     sheetName: string;
@@ -131,8 +215,10 @@ export class ExcelAgentOrchestrator {
     sheetName: string,
     sheet: Sheet | undefined,
     trace: TraceStep[],
+    activities: AgentActivityEvent[],
+    emitActivity: (type: AgentActivityEvent['type'], agent: string, summary: string, detail?: unknown) => void,
   ): Promise<AgentDecision> {
-    // Layer 3 - Heuristic: deterministic, offline-first understanding.
+    // Layer 3 - Heuristic Fast Path
     const heuristic = analyzeSpreadsheetIntentAndData(input.query, input.workbook, sheetName);
     trace.push({
       layer: 'heuristic',
@@ -141,33 +227,187 @@ export class ExcelAgentOrchestrator {
         : 'Heuristic planner produced an informational answer.',
     });
 
-    // Layer 4 - LLM: optional BYOK reasoning layer.
     let llmAction: ProposedAction | undefined;
+    let llmPlan: ExecutionPlan | undefined;
     let llmMessage: string | undefined;
+    let llmThought: string | undefined;
     let telemetry: LlmTelemetry | undefined;
+
     const config = input.config;
+
+    // Layer 4 - LLM Conductor & Specialists
     if (config && !isDemoKey(config.apiKey) && sheet) {
       const startedAt = Date.now();
-      try {
-        const response = await complete(
-          [
-            { role: 'system', content: buildSystemPrompt(sheet, this.catalog) },
-            { role: 'user', content: input.query },
-          ],
-          config,
-        );
-        const parsed = parseModelOutput(response.content);
-        if (parsed.action) {
-          llmAction = {
-            name: parsed.action.name,
-            args: { ...parsed.action.args, sheet: parsed.action.args.sheet ?? sheetName },
-            explanation: parsed.action.explanation,
-            category: 'transform',
-          };
+      emitActivity('thinking', 'Conductor', `Analyzing request for ${sheetName}...`);
+
+      const messages: ChatMessage[] = [
+        { role: 'system', content: buildSystemPrompt(sheet, this.catalog) },
+      ];
+
+      if (input.conversationHistory && input.conversationHistory.length > 0) {
+        const recentHistory = input.conversationHistory.slice(-8);
+        for (const historyItem of recentHistory) {
+          if (historyItem.role !== 'system') {
+            messages.push({
+              role: historyItem.role,
+              content: historyItem.content,
+            });
+          }
         }
-        if (parsed.message) llmMessage = parsed.message;
-        const summed =
-          (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0);
+      }
+
+      messages.push({ role: 'user', content: input.query });
+
+      // Build model retry & fallback list
+      const candidateModels = [
+        config.model,
+        ...(FALLBACK_MODELS[config.provider] ?? []),
+      ].filter((m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i);
+
+      let response: ProviderResponse | undefined;
+      let lastError: unknown;
+      let usedModel = config.model || candidateModels[0] || 'default';
+
+      for (const candidateModel of candidateModels) {
+        const currentConfig: ProviderConfig = { ...config, model: candidateModel };
+        try {
+          if (input.callbacks && typeof input.callbacks.onToken === 'function') {
+            response = await completeStream(
+              messages,
+              currentConfig,
+              input.callbacks,
+              this.toolDefinitions,
+            );
+          } else {
+            response = await complete(messages, currentConfig, this.toolDefinitions);
+          }
+          usedModel = candidateModel;
+          break;
+        } catch (err) {
+          lastError = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          const isQuotaOrModelUnavailable =
+            msg.includes('model_decommissioned') ||
+            msg.includes('not found') ||
+            msg.includes('does not exist') ||
+            msg.includes('Request too large') ||
+            msg.includes('rate_limit') ||
+            (err instanceof ProviderError && (err.status === 404 || err.status === 413 || err.status === 429));
+
+          if (isQuotaOrModelUnavailable && candidateModel !== candidateModels[candidateModels.length - 1]) {
+            emitActivity('status', 'Conductor', `Model ${candidateModel} quota/rate limit reached; falling back to alternative model...`);
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (response) {
+        llmThought = response.thought;
+        let finalResponseContent = response.content;
+
+        // Tool-calling loop: execute read-tools if called by model (max 3 turns)
+        let turns = 0;
+        let currentToolCalls = response.toolCalls;
+
+        while (currentToolCalls && currentToolCalls.length > 0 && turns < 3) {
+          turns += 1;
+          const toolCall = currentToolCalls[0]!;
+          const fnName = toolCall.function.name;
+          let fnArgs: Record<string, unknown> = {};
+          try {
+            fnArgs = JSON.parse(toolCall.function.arguments || '{}');
+          } catch {
+            fnArgs = {};
+          }
+
+          // Check if this is a read tool
+          const isReadTool = [
+            'get_workbook_overview',
+            'profile_column',
+            'read_cell_range',
+            'search_sheet',
+            'calculate_aggregate',
+          ].includes(fnName);
+
+          if (isReadTool) {
+            emitActivity('inspecting', 'Data Analyst', `Reading sheet data via ${fnName}...`, fnArgs);
+            const toolOutput = this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
+
+            messages.push({
+              role: 'assistant',
+              content: response.content || '',
+              tool_calls: [toolCall],
+            });
+
+            messages.push({
+              role: 'tool',
+              name: fnName,
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(toolOutput),
+            });
+
+            try {
+              const followUp = await complete(
+                messages,
+                { ...config, model: usedModel },
+                this.toolDefinitions,
+              );
+              finalResponseContent = followUp.content;
+              currentToolCalls = followUp.toolCalls;
+              if (followUp.thought) llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
+              continue;
+            } catch {
+              break;
+            }
+          }
+
+          // Check if create_execution_plan was called
+          if (fnName === 'create_execution_plan') {
+            emitActivity('planning', 'Planner', `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`);
+            const plan = this.buildExecutionPlan(input.workbook, sheetName, fnArgs);
+            if (plan) {
+              llmPlan = plan;
+              llmMessage =
+                typeof fnArgs.description === 'string'
+                  ? fnArgs.description
+                  : `Created a ${plan.steps.length}-step plan to update **${sheetName}**.`;
+            }
+            break;
+          }
+
+          // Check if a single engine write operation was called directly
+          if (this.registry.get(fnName)) {
+            emitActivity('guardrail_check', 'Guardrail', `Validating proposed operation "${fnName}"...`);
+            llmAction = {
+              name: fnName,
+              args: { ...fnArgs, sheet: fnArgs.sheet ?? sheetName },
+              explanation: typeof fnArgs.explanation === 'string' ? fnArgs.explanation : `Execute ${fnName}`,
+              category: 'transform',
+            };
+            break;
+          }
+
+          break;
+        }
+
+        // If no tool call produced an action/plan, fallback to parsing content JSON
+        if (!llmAction && !llmPlan && finalResponseContent) {
+          const parsed = parseModelOutput(finalResponseContent);
+          if (parsed.action) {
+            llmAction = {
+              name: parsed.action.name,
+              args: { ...parsed.action.args, sheet: parsed.action.args.sheet ?? sheetName },
+              explanation: parsed.action.explanation,
+              category: 'transform',
+            };
+          }
+          if (parsed.message) llmMessage = parsed.message;
+        } else if (finalResponseContent && !llmMessage) {
+          llmMessage = finalResponseContent;
+        }
+
+        const summed = (response.usage?.promptTokens ?? 0) + (response.usage?.completionTokens ?? 0);
         telemetry = {
           provider: response.provider,
           model: response.model,
@@ -177,14 +417,19 @@ export class ExcelAgentOrchestrator {
           latencyMs: Date.now() - startedAt,
           ok: true,
         };
+
         trace.push({
-          layer: 'llm',
+          layer: 'conductor',
           summary: `${response.provider}/${response.model} responded.`,
-          detail: { proposedOperation: llmAction?.name, totalTokens: telemetry.totalTokens },
+          detail: {
+            proposedOperation: llmAction?.name,
+            hasPlan: Boolean(llmPlan),
+            totalTokens: telemetry.totalTokens,
+          },
           durationMs: telemetry.latencyMs,
         });
-      } catch (error) {
-        const reason = error instanceof ProviderError ? error.message : String(error);
+      } else {
+        const reason = lastError instanceof ProviderError ? lastError.message : String(lastError);
         telemetry = {
           provider: config.provider,
           model: config.model ?? 'unknown',
@@ -193,14 +438,29 @@ export class ExcelAgentOrchestrator {
           error: reason,
         };
         trace.push({
-          layer: 'llm',
+          layer: 'conductor',
           summary: `Provider unavailable: ${reason}`,
           durationMs: telemetry.latencyMs,
         });
+        emitActivity('status', 'Conductor', `Provider error: ${reason}`);
       }
     }
 
-    // Layer 5 - Guardrail: every candidate must satisfy schema + engine + preview.
+    // Layer 5 - Guardrail verification for multi-step plan
+    if (llmPlan) {
+      emitActivity('guardrail_check', 'Guardrail', `Verifying plan: ${llmPlan.steps.length} steps...`);
+      return {
+        message: llmMessage || `Plan prepared with ${llmPlan.steps.length} steps.`,
+        thought: llmThought,
+        plan: llmPlan,
+        source: 'llm',
+        trace,
+        activities,
+        ...(telemetry ? { telemetry } : {}),
+      };
+    }
+
+    // Guardrail verification for single action
     const candidates: ProposedAction[] = [];
     if (llmAction) candidates.push(llmAction);
     if (heuristic.proposedAction) candidates.push(heuristic.proposedAction);
@@ -213,28 +473,140 @@ export class ExcelAgentOrchestrator {
         detail: guardrail.errors,
       });
       if (guardrail.passed) {
+        emitActivity('status', 'Guardrail', `Approved operation "${candidate.name}".`);
         return {
           message: llmMessage || heuristic.message,
+          thought: llmThought,
           action: candidate,
           guardrail,
           source: llmAction && candidate === llmAction ? 'llm' : 'heuristic',
           trace,
+          activities,
           ...(telemetry ? { telemetry } : {}),
         };
       }
     }
 
-    // Fallback - answer conversationally, never silently guessing an operation.
-    trace.push({ layer: 'guardrail', summary: 'No candidate action passed the guardrail.' });
+    // Conversational fallback
+    trace.push({ layer: 'guardrail', summary: 'Informational answer; no mutation proposed.' });
     return {
       message: llmMessage || heuristic.message,
+      thought: llmThought,
       source: 'fallback',
       trace,
+      activities,
       ...(telemetry ? { telemetry } : {}),
     };
   }
 
-  /** Validate an action against the registry, the engine, and a bounded preview. */
+  private executeReadTool(
+    workbook: Workbook,
+    sheetName: string,
+    name: string,
+    args: Record<string, unknown>,
+  ): unknown {
+    switch (name) {
+      case 'get_workbook_overview':
+        return getWorkbookOverview(workbook);
+      case 'profile_column':
+        return profileColumn(
+          workbook,
+          typeof args.sheet === 'string' ? args.sheet : sheetName,
+          String(args.column ?? 'A'),
+        );
+      case 'read_cell_range':
+        return readCellRange(
+          workbook,
+          typeof args.sheet === 'string' ? args.sheet : sheetName,
+          typeof args.startRow === 'number' ? args.startRow : 1,
+          typeof args.endRow === 'number' ? args.endRow : 15,
+          typeof args.startColumn === 'string' ? args.startColumn : 'A',
+          typeof args.endColumn === 'string' ? args.endColumn : undefined,
+        );
+      case 'search_sheet':
+        return searchSheet(
+          workbook,
+          typeof args.sheet === 'string' ? args.sheet : sheetName,
+          String(args.query ?? ''),
+          typeof args.limit === 'number' ? args.limit : 15,
+        );
+      case 'calculate_aggregate':
+        return calculateAggregate(
+          workbook,
+          typeof args.sheet === 'string' ? args.sheet : sheetName,
+          String(args.column ?? 'A'),
+          args.metric as 'sum' | 'avg' | 'min' | 'max' | 'count' | 'count_distinct',
+        );
+      default:
+        return { error: `Unknown read tool "${name}".` };
+    }
+  }
+
+  private buildExecutionPlan(
+    workbook: Workbook,
+    sheetName: string,
+    args: Record<string, unknown>,
+  ): ExecutionPlan | undefined {
+    const rawSteps = Array.isArray(args.steps) ? args.steps : [];
+    if (rawSteps.length === 0) return undefined;
+
+    let simWorkbook = cloneWorkbook(workbook);
+    const steps: ExecutionPlanStep[] = [];
+    let totalAffected = 0;
+
+    for (let i = 0; i < rawSteps.length; i += 1) {
+      const rawStep = rawSteps[i] as {
+        operation?: string;
+        args?: Record<string, unknown>;
+        description?: string;
+      };
+      if (!rawStep || typeof rawStep.operation !== 'string') continue;
+
+      const opName = rawStep.operation;
+      const stepArgs = { ...(rawStep.args ?? {}), sheet: rawStep.args?.sheet ?? sheetName };
+
+      const stepAction: ProposedAction = {
+        name: opName,
+        args: stepArgs,
+        explanation: rawStep.description || `Step ${i + 1}: ${opName}`,
+        category: 'transform',
+      };
+
+      const guardrail = this.guardrail(simWorkbook, stepAction);
+      const stepPreview = guardrail.preview;
+
+      if (guardrail.passed) {
+        const execRes = applyOperation(simWorkbook, opName, stepArgs, { registry: this.registry });
+        if (execRes.ok) {
+          simWorkbook = execRes.workbook;
+          totalAffected += execRes.report.affectedCells;
+        }
+      }
+
+      steps.push({
+        id: `step-${Date.now()}-${i}`,
+        operation: opName,
+        args: stepArgs,
+        description: rawStep.description || `Execute ${opName}`,
+        category: 'transform',
+        status: guardrail.passed ? 'pending' : 'error',
+        preview: stepPreview,
+        error: guardrail.errors.length > 0 ? guardrail.errors.join('; ') : undefined,
+      });
+    }
+
+    if (steps.length === 0) return undefined;
+
+    return {
+      id: `plan-${Date.now()}`,
+      title: typeof args.title === 'string' ? args.title : 'Spreadsheet Execution Plan',
+      description: typeof args.description === 'string' ? args.description : 'Multi-step transformation plan',
+      steps,
+      status: 'pending',
+      totalAffectedCells: totalAffected,
+    };
+  }
+
   guardrail(workbook: Workbook, action: ProposedAction): GuardrailReport {
     const operation = this.registry.get(action.name);
     if (!operation) {

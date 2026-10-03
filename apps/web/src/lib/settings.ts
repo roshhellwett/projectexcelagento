@@ -7,6 +7,8 @@ export interface AgentSettings {
   apiKey: string;
   /** Optional explicit model override per provider. */
   model?: string;
+  /** Optional custom endpoint base URL for Ollama / LM Studio */
+  baseUrl?: string;
 }
 
 const SETTINGS_KEY = 'excel_agent_settings_v2';
@@ -17,17 +19,50 @@ const DEFAULT_MODELS = {
   groq: 'llama-3.3-70b-versatile',
   openrouter: 'google/gemini-2.0-flash-001',
   gemini: 'gemini-2.0-flash',
+  openai: 'gpt-4o-mini',
+  custom: 'default',
 } as const satisfies Record<ProviderName, string>;
 
 export function defaultModelFor(provider: ProviderName): string {
-  return DEFAULT_MODELS[provider];
+  return DEFAULT_MODELS[provider] ?? 'default';
 }
 
 export const PROVIDER_LABELS = {
   groq: 'Groq (ultra-fast)',
-  openrouter: 'OpenRouter (multi-model)',
   gemini: 'Google Gemini',
+  openrouter: 'OpenRouter (multi-model)',
+  openai: 'OpenAI (GPT-4o / o3)',
+  custom: 'Custom / Local (Ollama, LM Studio)',
 } as const satisfies Record<ProviderName, string>;
+
+export const AVAILABLE_MODELS: Record<ProviderName, { id: string; label: string }[]> = {
+  groq: [
+    { id: 'openai/gpt-oss-120b', label: 'GPT OSS 120B (OpenAI / Groq) - Recommended' },
+    { id: 'openai/gpt-oss-20b', label: 'GPT OSS 20B (High Speed)' },
+    { id: 'qwen/qwen3.8-27b', label: 'Qwen 3.8 27B' },
+    { id: 'allam-2-7b', label: 'Allam 2 7B' },
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Legacy)' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Smart)' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Deep Reasoning)' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+  openrouter: [
+    { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct' },
+    { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini (Fast & Cost Effective)' },
+    { id: 'gpt-4o', label: 'GPT-4o (Flagship Omni)' },
+    { id: 'o3-mini', label: 'o3-mini (High Reasoning)' },
+  ],
+  custom: [
+    { id: 'default', label: 'Default / Configured on host' },
+  ],
+};
 
 export function isDemoKey(apiKey: string | undefined | null): boolean {
   if (!apiKey) return true;
@@ -56,6 +91,7 @@ export function loadSettings(): AgentSettings {
           provider: parsed.provider,
           apiKey: parsed.apiKey,
           ...(parsed.model ? { model: parsed.model } : {}),
+          ...(parsed.baseUrl ? { baseUrl: parsed.baseUrl } : {}),
         };
       }
     }
@@ -65,7 +101,9 @@ export function loadSettings(): AgentSettings {
     if (
       legacyProvider === 'groq' ||
       legacyProvider === 'openrouter' ||
-      legacyProvider === 'gemini'
+      legacyProvider === 'gemini' ||
+      legacyProvider === 'openai' ||
+      legacyProvider === 'custom'
     ) {
       return { provider: legacyProvider, apiKey: legacyKey };
     }

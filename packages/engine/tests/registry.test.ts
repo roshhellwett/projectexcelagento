@@ -38,9 +38,16 @@ describe('operation registry', () => {
       'add_column',
       'normalize_text',
       'set_cells',
+      'fill_blanks',
+      'add_computed_column',
+      'split_column',
+      'merge_columns',
+      'lookup_merge',
     ]);
     expect(registry.schemas.has('format_dates')).toBe(true);
     expect(registry.schemas.has('set_cells')).toBe(true);
+    expect(registry.schemas.has('fill_blanks')).toBe(true);
+    expect(registry.schemas.has('add_computed_column')).toBe(true);
   });
 
   it('runs validation, preview, apply, invariants, and history as one transaction', () => {

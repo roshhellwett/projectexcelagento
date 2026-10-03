@@ -25,7 +25,14 @@ import {
   downloadWorkbookAsXlsx,
 } from './lib/engine-adapter.js';
 
-import { auditSheet, searchCellsInSheet, type ProposedAction } from './lib/agent-helper.js';
+import {
+  auditSheet,
+  searchCellsInSheet,
+  type ProposedAction,
+  type AgentActivityEvent,
+  type ExecutionPlan,
+  type ChatMessage as LLMChatMessage,
+} from './lib/agent-helper.js';
 
 import { askExcelAgent } from './lib/llm-service.js';
 import {
@@ -112,8 +119,8 @@ export const App: React.FC = () => {
     pushToast('info', 'Usage history cleared.');
   };
 
-  const handleSaveApiKey = (provider: ProviderName, key: string) => {
-    const next: AgentSettings = { provider, apiKey: key };
+  const handleSaveApiKey = (provider: ProviderName, key: string, baseUrl?: string) => {
+    const next: AgentSettings = { provider, apiKey: key, baseUrl };
     setSettings(next);
     saveSettings(next);
 
@@ -393,22 +400,79 @@ export const App: React.FC = () => {
   // Chat message send handler
   const handleSendMessage = async (query: string) => {
     const userMsgId = `user-${Date.now()}`;
-    const newMsg: ChatMessage = {
+    const assistMsgId = `assist-${Date.now() + 1}`;
+
+    const userMsg: ChatMessage = {
       id: userMsgId,
       sender: 'user',
       text: query,
     };
 
-    setMessages((prev) => [...prev, newMsg]);
+    const initialAssistMsg: ChatMessage = {
+      id: assistMsgId,
+      sender: 'assistant',
+      text: '',
+      sourceQuery: query,
+      status: 'pending',
+      isStreaming: true,
+      activities: [],
+    };
+
+    setMessages((prev) => [...prev, userMsg, initialAssistMsg]);
     setIsProcessing(true);
 
     try {
+      // Build conversation history for multi-turn reasoning context
+      const conversationHistory: LLMChatMessage[] = messages
+        .slice(-10)
+        .map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text,
+        }));
+
+      const callbacks = {
+        onToken: (chunk: string) => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistMsgId ? { ...m, text: m.text + chunk } : m)),
+          );
+        },
+        onThinking: (thoughtChunk: string) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistMsgId ? { ...m, thought: (m.thought || '') + thoughtChunk } : m,
+            ),
+          );
+        },
+      };
+
+      const onActivity = (activity: AgentActivityEvent) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistMsgId
+              ? { ...m, activities: [...(m.activities || []), activity] }
+              : m,
+          ),
+        );
+      };
+
       const agentRes = await askExcelAgent(
         query,
         workbook,
         activeSheetName,
-        hasApiKey ? { provider: settings.provider, apiKey: settings.apiKey } : null,
+        hasApiKey
+          ? {
+              provider: settings.provider,
+              apiKey: settings.apiKey,
+              model: settings.model,
+              baseUrl: settings.baseUrl,
+            }
+          : null,
         hasUserUploadedFile,
+        {
+          conversationHistory,
+          callbacks,
+          onActivity,
+        },
       );
 
       const proposed = agentRes.proposedAction;
@@ -435,8 +499,7 @@ export const App: React.FC = () => {
         if (blocked) pushToast('info', blocked.summary);
       }
 
-      // Telemetry ledger: real provider-reported token counts when the model ran,
-      // an explicit zero-token record when the turn was served locally.
+      // Telemetry ledger: real provider-reported token counts when the model ran
       setUsageEntries(
         appendUsageEntry(
           createUsageEntry({
@@ -447,21 +510,108 @@ export const App: React.FC = () => {
         ),
       );
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assist-${Date.now()}`,
-          sender: 'assistant',
-          text: agentRes.message,
-          sourceQuery: query,
-          ...(proposed ? { proposedAction: proposed } : {}),
-          ...(previewResult ? { preview: previewResult } : {}),
-          status: 'pending',
-          isStreaming: true,
-        } satisfies ChatMessage,
-      ]);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === assistMsgId) {
+            return {
+              ...m,
+              text: agentRes.message || m.text,
+              thought: agentRes.thought || m.thought,
+              activities: agentRes.activities ?? m.activities,
+              proposedAction: proposed,
+              plan: agentRes.plan,
+              preview: previewResult,
+              isStreaming: false,
+              status: 'pending',
+            };
+          }
+          return m;
+        }),
+      );
     } catch (error) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistMsgId
+            ? {
+                ...m,
+                text: m.text || 'An error occurred while answering your request.',
+                isStreaming: false,
+                status: 'error',
+                errorMessage: error instanceof Error ? error.message : 'The agent could not respond.',
+              }
+            : m,
+        ),
+      );
       pushToast('error', error instanceof Error ? error.message : 'The agent could not respond.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Apply multi-step execution plan from chat
+  const handleApplyPlan = (messageId: string, plan: ExecutionPlan) => {
+    setIsProcessing(true);
+    let currentWb = workbook;
+    let appliedCount = 0;
+    const updatedSteps = [...plan.steps];
+    let planFailed = false;
+
+    try {
+      for (let i = 0; i < updatedSteps.length; i++) {
+        const step = updatedSteps[i];
+        if (!step) continue;
+        const result = applyOperation(currentWb, step.operation, step.args, {
+          registry,
+          history: historyStack,
+        });
+
+        if (result.ok) {
+          currentWb = result.workbook;
+          appliedCount++;
+          updatedSteps[i] = { ...step, status: 'completed' };
+        } else {
+          planFailed = true;
+          updatedSteps[i] = {
+            ...step,
+            status: 'error',
+            error: result.error.messages.join(', '),
+          };
+          pushToast(
+            'error',
+            `Plan stopped at Step ${i + 1} (${step.operation}): ${result.error.messages.join(', ')}`,
+          );
+          break;
+        }
+      }
+
+      setWorkbook(currentWb);
+      setHistoryRevision((r) => r + 1);
+
+      const finalStatus: 'applied' | 'error' = planFailed ? 'error' : 'applied';
+      const updatedPlan: ExecutionPlan = {
+        ...plan,
+        steps: updatedSteps,
+        status: finalStatus,
+      };
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                plan: updatedPlan,
+                status: finalStatus,
+              }
+            : m,
+        ),
+      );
+
+      if (!planFailed) {
+        pushToast(
+          'success',
+          `Plan "${plan.title}" executed (${appliedCount} steps applied). Invariants verified ✓`,
+        );
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -599,6 +749,7 @@ export const App: React.FC = () => {
           onClearApiKey={handleClearApiKey}
           onSendMessage={handleSendMessage}
           onApplyAction={handleApplyAction}
+          onApplyPlan={handleApplyPlan}
           onUndoLast={handleUndo}
           canUndo={historyStack.canUndo}
         />

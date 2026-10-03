@@ -243,4 +243,6 @@ export const PROVIDER_HOSTS: Record<ProviderName, string> = {
   groq: 'api.groq.com',
   openrouter: 'openrouter.ai',
   gemini: 'generativelanguage.googleapis.com',
+  openai: 'api.openai.com',
+  custom: 'custom endpoint',
 };

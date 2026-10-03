@@ -673,6 +673,234 @@ body {
   margin-top: 4px;
 }
 
+/* Agent Thought / CoT Box */
+.thought-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 11.5px;
+  margin-bottom: 6px;
+  transition: all var(--transition-fast);
+}
+
+.thought-box[open] {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.thought-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 500;
+  user-select: none;
+}
+
+.thought-summary:hover {
+  color: var(--text-main);
+}
+
+.thought-icon {
+  font-size: 12px;
+}
+
+.thought-content {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-main);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Agent Activity Badges / Timeline */
+.activity-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.activity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-main);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.activity-pill.activity-reading {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.activity-pill.activity-planning {
+  background: #faf5ff;
+  border-color: #e9d5ff;
+  color: #7e22ce;
+}
+
+.activity-pill.activity-verifying {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.activity-pill.activity-fallback {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.activity-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.5s infinite;
+}
+
+/* Execution Plan Card */
+.plan-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.plan-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-title {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text-main);
+}
+
+.plan-summary {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.plan-status-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.plan-status-badge.draft {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.plan-status-badge.in_progress {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.plan-status-badge.completed {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.plan-status-badge.failed {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.plan-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.plan-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+}
+
+.plan-step-num {
+  font-weight: 700;
+  font-size: 10px;
+  color: var(--text-subtle);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plan-step-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-step-desc {
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.plan-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-step-status {
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.plan-diff-preview {
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+
 /* Suggestions / Finding Pills */
 .suggestions-drawer {
   padding: 10px 16px;

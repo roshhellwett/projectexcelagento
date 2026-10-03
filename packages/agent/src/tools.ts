@@ -102,6 +102,59 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
     category: 'transform',
     example: { sheet: 'Sheet1', cells: [{ column: 'A', row: 2, value: 'New value' }] },
   },
+  fill_blanks: {
+    description:
+      'Fill empty or blank cells in a column using a strategy (forward fill, backward fill, mean, or static value).',
+    category: 'transform',
+    example: { sheet: 'Sheet1', column: 'B', strategy: 'forward', headerRow: 1 },
+  },
+  add_computed_column: {
+    description:
+      'Create a new calculated column by evaluating an arithmetic or string expression across existing columns.',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      headerName: 'Total',
+      expression: "col('Price') * col('Quantity')",
+      headerRow: 1,
+    },
+  },
+  split_column: {
+    description: 'Split a column into two or more new columns by a delimiter string.',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      column: 'B',
+      delimiter: ' ',
+      newColumnNames: ['First Name', 'Last Name'],
+      headerRow: 1,
+    },
+  },
+  merge_columns: {
+    description: 'Combine multiple columns into a single column joined by a separator string.',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      columns: ['A', 'B'],
+      separator: ' ',
+      headerName: 'Full Name',
+      headerRow: 1,
+    },
+  },
+  lookup_merge: {
+    description:
+      'Merge and match values from another sheet based on a common key column (VLOOKUP / XLOOKUP behavior).',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      keyColumn: 'B',
+      lookupSheet: 'Customers',
+      lookupKeyColumn: 'A',
+      lookupValueColumn: 'B',
+      headerName: 'Customer Name',
+      headerRow: 1,
+    },
+  },
 };
 
 export class ToolCatalogError extends Error {
@@ -155,8 +208,15 @@ export function describeTools(catalog: ToolDescriptor[]): string {
   return catalog
     .map((tool) => {
       const example = JSON.stringify({ name: tool.name, args: tool.example });
+      const schemaObj: Record<string, unknown> = {
+        type: 'object',
+        properties: (tool.jsonSchema as Record<string, unknown>).properties ?? {},
+      };
+      if ((tool.jsonSchema as Record<string, unknown>).required) {
+        schemaObj.required = (tool.jsonSchema as Record<string, unknown>).required;
+      }
       return `- ${tool.name} [${tool.category}]: ${tool.description}\n  schema: ${JSON.stringify(
-        tool.jsonSchema,
+        schemaObj,
       )}\n  example: ${example}`;
     })
     .join('\n');

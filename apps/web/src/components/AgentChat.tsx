@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { type ProposedAction, type ProviderName, type SheetAudit } from '../lib/agent-helper.js';
+import {
+  type ProposedAction,
+  type ProviderName,
+  type SheetAudit,
+  type AgentActivityEvent,
+  type ExecutionPlan,
+} from '../lib/agent-helper.js';
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
 
@@ -7,6 +13,9 @@ export interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
   text: string;
+  thought?: string;
+  activities?: AgentActivityEvent[];
+  plan?: ExecutionPlan;
   /** The user request that produced this message, used for self-learning feedback. */
   sourceQuery?: string;
   proposedAction?: ProposedAction;
@@ -22,10 +31,11 @@ interface AgentChatProps {
   isProcessing: boolean;
   hasApiKey: boolean;
   apiKeyProvider: ProviderName;
-  onSaveApiKey: (provider: ProviderName, key: string) => void;
+  onSaveApiKey: (provider: ProviderName, key: string, baseUrl?: string) => void;
   onClearApiKey: () => void;
   onSendMessage: (query: string) => void;
   onApplyAction: (messageId: string, action: ProposedAction) => void;
+  onApplyPlan?: (messageId: string, plan: ExecutionPlan) => void;
   onUndoLast: () => void;
   canUndo: boolean;
 }
@@ -40,6 +50,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onClearApiKey,
   onSendMessage,
   onApplyAction,
+  onApplyPlan,
   onUndoLast,
   canUndo,
 }) => {
@@ -48,6 +59,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   // BYOK setup state
   const [setupProvider, setSetupProvider] = useState<ProviderName>('groq');
   const [setupKey, setSetupKey] = useState('');
+  const [setupBaseUrl, setSetupBaseUrl] = useState('');
   const [showKeyText, setShowKeyText] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -64,12 +76,29 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleActivateKey = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!setupKey.trim()) return;
-    onSaveApiKey(setupProvider, setupKey.trim());
+    if (!setupKey.trim() && setupProvider !== 'custom') return;
+    onSaveApiKey(setupProvider, setupKey.trim() || 'local-no-key', setupBaseUrl.trim() || undefined);
   };
 
   const handleDemoKey = () => {
     onSaveApiKey('groq', 'demo-local-mode');
+  };
+
+  const getActivityIcon = (type: AgentActivityEvent['type']) => {
+    switch (type) {
+      case 'inspecting':
+        return '🔍';
+      case 'planning':
+        return '📋';
+      case 'guardrail_check':
+        return '🛡️';
+      case 'tool_call':
+        return '⚡';
+      case 'thinking':
+        return '💭';
+      default:
+        return '✨';
+    }
   };
 
   return (
@@ -124,20 +153,27 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
             <h3 className="byok-gate-title">Activate Excel Agent</h3>
             <p className="byok-gate-desc">
-              Enter your BYOK (Bring Your Own Key) to unlock intelligent conversational data
-              cleaning, natural language Excel transformations, and deterministic engine edits.
+              Connect your AI provider to unlock conversational data engineering, multi-step planning,
+              and deterministic Excel transformations directly in your browser.
             </p>
 
             <form onSubmit={handleActivateKey} className="byok-gate-form">
               <div className="form-group">
                 <label className="form-label">Select AI Provider</label>
-                <div className="provider-chips">
+                <div className="provider-chips" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '4px' }}>
                   <button
                     type="button"
                     className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('groq')}
                   >
-                    Groq (Ultra-Fast)
+                    Groq
+                  </button>
+                  <button
+                    type="button"
+                    className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
+                    onClick={() => setSetupProvider('gemini')}
+                  >
+                    Gemini
                   </button>
                   <button
                     type="button"
@@ -148,21 +184,45 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                   <button
                     type="button"
-                    className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('gemini')}
+                    className={`provider-chip ${setupProvider === 'openai' ? 'selected' : ''}`}
+                    onClick={() => setSetupProvider('openai')}
                   >
-                    Google Gemini
+                    OpenAI
+                  </button>
+                  <button
+                    type="button"
+                    className={`provider-chip ${setupProvider === 'custom' ? 'selected' : ''}`}
+                    onClick={() => setSetupProvider('custom')}
+                  >
+                    Ollama/Local
                   </button>
                 </div>
               </div>
+
+              {setupProvider === 'custom' && (
+                <div className="form-group">
+                  <label className="form-label">Endpoint Base URL</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="http://localhost:11434/v1"
+                    value={setupBaseUrl}
+                    onChange={(e) => setSetupBaseUrl(e.target.value)}
+                  />
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">
                   {setupProvider === 'groq'
                     ? 'Groq API Key (starts with gsk_)'
-                    : setupProvider === 'openrouter'
-                      ? 'OpenRouter Key (starts with sk-or-)'
-                      : 'Google Gemini Key'}
+                    : setupProvider === 'gemini'
+                      ? 'Google Gemini Key (AIzaSy...)'
+                      : setupProvider === 'openrouter'
+                        ? 'OpenRouter Key (sk-or-...)'
+                        : setupProvider === 'openai'
+                          ? 'OpenAI Key (sk-...)'
+                          : 'API Key (Optional for Ollama)'}
                 </label>
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
@@ -172,13 +232,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                     placeholder={
                       setupProvider === 'groq'
                         ? 'gsk_...'
-                        : setupProvider === 'openrouter'
-                          ? 'sk-or-...'
-                          : 'AIzaSy...'
+                        : setupProvider === 'gemini'
+                          ? 'AIzaSy...'
+                          : setupProvider === 'openrouter'
+                            ? 'sk-or-...'
+                            : setupProvider === 'openai'
+                              ? 'sk-...'
+                              : 'ollama / none'
                     }
                     value={setupKey}
                     onChange={(e) => setSetupKey(e.target.value)}
-                    required
+                    required={setupProvider !== 'custom'}
                   />
                   <button
                     type="button"
@@ -195,7 +259,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 type="submit"
                 className="btn btn-primary"
                 style={{ width: '100%', justifyContent: 'center', marginTop: '4px' }}
-                disabled={!setupKey.trim()}
+                disabled={!setupKey.trim() && setupProvider !== 'custom'}
               >
                 Activate Excel Agent
               </button>
@@ -258,7 +322,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             Excel Agent
                           </span>
                         </div>
-                        {msg.proposedAction ? (
+                        {msg.plan ? (
+                          <span className="op-badge" style={{ background: '#faf5ff', color: '#7e22ce', borderColor: '#e9d5ff' }}>
+                            {msg.plan.steps.length} Steps Plan
+                          </span>
+                        ) : msg.proposedAction ? (
                           <span className="op-badge">{msg.proposedAction.name}</span>
                         ) : msg.status === 'applied' ? (
                           <span
@@ -269,12 +337,106 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         ) : null}
                       </div>
 
+                      {/* Agent Activity Timeline */}
+                      {msg.activities && msg.activities.length > 0 && (
+                        <div className="activity-timeline">
+                          {msg.activities.map((act, actIdx) => (
+                            <div key={act.id || actIdx} className={`activity-pill activity-${act.type}`}>
+                              <span>{getActivityIcon(act.type)}</span>
+                              <span>{act.summary}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Thought / CoT Accordion */}
+                      {msg.thought && (
+                        <details className="thought-box">
+                          <summary className="thought-summary">
+                            <span className="thought-icon">💡</span>
+                            <span>Reasoning Process</span>
+                          </summary>
+                          <div className="thought-content">{msg.thought}</div>
+                        </details>
+                      )}
+
+                      {/* Message Content */}
                       <div className="assistant-text">
-                        <TypewriterText text={msg.text} animate={isLatestAssistant} speed={10} />
+                        {msg.isStreaming ? (
+                          <div>
+                            <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                            <span
+                              className="activity-pulse-dot"
+                              style={{ display: 'inline-block', marginLeft: '4px', verticalAlign: 'middle' }}
+                            />
+                          </div>
+                        ) : (
+                          <TypewriterText text={msg.text} animate={isLatestAssistant} speed={10} />
+                        )}
                       </div>
 
-                      {/* Operation Preview & Diff Card */}
-                      {msg.proposedAction && msg.preview && (
+                      {/* Multi-Step Execution Plan Card */}
+                      {msg.plan && (
+                        <div className="plan-card">
+                          <div className="plan-header">
+                            <div>
+                              <div className="plan-title">{msg.plan.title}</div>
+                              <div className="plan-summary">{msg.plan.description}</div>
+                            </div>
+                            <span className={`plan-status-badge ${msg.plan.status}`}>
+                              {msg.plan.status}
+                            </span>
+                          </div>
+
+                          <div className="plan-steps-list">
+                            {msg.plan.steps.map((step, sIdx) => (
+                              <div key={step.id || sIdx} className="plan-step-item">
+                                <div className="plan-step-num">{sIdx + 1}</div>
+                                <div className="plan-step-body">
+                                  <div className="plan-step-desc">{step.description}</div>
+                                  <div className="plan-step-meta">
+                                    <span className="op-badge" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
+                                      {step.operation}
+                                    </span>
+                                    <span className="plan-step-status" style={{
+                                      color: step.status === 'completed' ? 'var(--accent-emerald)' : step.status === 'error' ? 'var(--accent-rose)' : 'var(--text-dim)'
+                                    }}>
+                                      {step.status === 'completed' ? '✓ Applied' : step.status === 'error' ? '✕ Failed' : 'Pending'}
+                                    </span>
+                                  </div>
+
+                                  {step.preview?.changes && step.preview.changes.length > 0 && (
+                                    <div className="plan-diff-preview">
+                                      {step.preview.changes.slice(0, 2).map((ch, chIdx) => (
+                                        <div key={chIdx}>
+                                          <strong>{ch.location.column}{ch.location.row}:</strong>{' '}
+                                          <span className="diff-del">{String(ch.before.value ?? '')}</span> →{' '}
+                                          <span className="diff-ins">{String(ch.after.value ?? '')}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {msg.status === 'pending' && onApplyPlan && (
+                            <div className="action-buttons-group">
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => onApplyPlan(msg.id, msg.plan!)}
+                                disabled={isProcessing}
+                              >
+                                Apply All {msg.plan.steps.length} Steps
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Single Operation Preview & Diff Card */}
+                      {msg.proposedAction && msg.preview && !msg.plan && (
                         <div className="preview-summary-box">
                           <div className="preview-stat-row">
                             <span>Affected Cells:</span>
@@ -326,11 +488,12 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       )}
 
                       {/* Action CTA */}
-                      {msg.proposedAction && msg.status === 'pending' && (
+                      {msg.proposedAction && msg.status === 'pending' && !msg.plan && (
                         <div className="action-buttons-group">
                           <button
                             className="btn btn-primary btn-sm"
                             onClick={() => onApplyAction(msg.id, msg.proposedAction!)}
+                            disabled={isProcessing}
                           >
                             Apply Changes
                           </button>

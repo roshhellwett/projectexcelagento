@@ -2,6 +2,7 @@ import type { ZodType } from 'zod';
 
 import { formatDatesOperation } from './format-dates.js';
 import { initialOperations } from './operations.js';
+import { advancedOperations } from './advanced-operations.js';
 import { invariantNoCellsOutsideTargetRange } from './invariants.js';
 import type { HistoryStack } from './history.js';
 import type { Operation, OperationResult, Preview, Workbook } from './types.js';
@@ -47,6 +48,7 @@ export class OperationRegistry {
 export function createOperationRegistry(): OperationRegistry {
   const registry = new OperationRegistry().register(formatDatesOperation);
   for (const operation of initialOperations) registry.register(operation);
+  for (const operation of advancedOperations) registry.register(operation);
   return registry;
 }
 

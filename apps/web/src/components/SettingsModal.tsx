@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 import { forgetLearnedActions, learnedActionCount } from '../lib/agent-runtime.js';
 import {
+  AVAILABLE_MODELS,
   PROVIDER_LABELS,
   defaultModelFor,
   type AgentSettings,
@@ -16,7 +17,7 @@ interface SettingsModalProps {
   onClear: () => void;
 }
 
-const PROVIDERS: ProviderName[] = ['groq', 'openrouter', 'gemini'];
+const PROVIDERS: ProviderName[] = ['groq', 'gemini', 'openrouter', 'openai', 'custom'];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -28,8 +29,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [provider, setProvider] = useState<ProviderName>(settings.provider);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model ?? '');
+  const [baseUrl, setBaseUrl] = useState(settings.baseUrl ?? '');
   const [showKey, setShowKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [testStatus, setTestStatus] = useState<{ testing: boolean; message?: string; ok?: boolean }>({
+    testing: false,
+  });
   const [learnedCount, setLearnedCount] = useState(0);
 
   useEffect(() => {
@@ -37,19 +42,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setProvider(settings.provider);
     setApiKey(settings.apiKey);
     setModel(settings.model ?? '');
+    setBaseUrl(settings.baseUrl ?? '');
     setShowKey(false);
     setSavedSuccess(false);
+    setTestStatus({ testing: false });
     setLearnedCount(learnedActionCount());
   }, [isOpen, settings]);
 
   if (!isOpen) return null;
 
+  const handleProviderChange = (newProvider: ProviderName) => {
+    setProvider(newProvider);
+    const available = AVAILABLE_MODELS[newProvider];
+    if (available && available[0]) {
+      setModel(available[0].id);
+    } else {
+      setModel('');
+    }
+  };
+
   const handleSave = () => {
     const trimmedModel = model.trim();
+    const trimmedBaseUrl = baseUrl.trim();
     onSave({
       provider,
       apiKey: apiKey.trim(),
       ...(trimmedModel ? { model: trimmedModel } : {}),
+      ...(trimmedBaseUrl ? { baseUrl: trimmedBaseUrl } : {}),
     });
     setSavedSuccess(true);
     setTimeout(onClose, 600);
@@ -59,6 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onClear();
     setApiKey('');
     setModel('');
+    setBaseUrl('');
     setSavedSuccess(false);
   };
 
@@ -67,11 +87,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setLearnedCount(0);
   };
 
+  const handleTestConnection = async () => {
+    if (!apiKey.trim() && provider !== 'custom') {
+      setTestStatus({ testing: false, ok: false, message: 'Please enter an API key first.' });
+      return;
+    }
+    setTestStatus({ testing: true, message: 'Testing connection...' });
+    try {
+      const endpoint =
+        provider === 'groq'
+          ? 'https://api.groq.com/openai/v1/models'
+          : provider === 'openai'
+            ? 'https://api.openai.com/v1/models'
+            : provider === 'openrouter'
+              ? 'https://openrouter.ai/api/v1/models'
+              : provider === 'custom'
+                ? `${baseUrl.replace(/\/+$/, '') || 'http://localhost:11434/v1'}/models`
+                : `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey.trim())}`;
+
+      const headers: Record<string, string> = {};
+      if (provider !== 'gemini') {
+        headers.Authorization = `Bearer ${apiKey.trim()}`;
+      }
+
+      const res = await fetch(endpoint, { method: 'GET', headers });
+      if (res.ok) {
+        setTestStatus({ testing: false, ok: true, message: 'Connection successful! Models verified.' });
+      } else {
+        const text = await res.text();
+        setTestStatus({
+          testing: false,
+          ok: false,
+          message: `HTTP ${res.status}: ${text.slice(0, 100) || res.statusText}`,
+        });
+      }
+    } catch (err) {
+      setTestStatus({
+        testing: false,
+        ok: false,
+        message: err instanceof Error ? err.message : 'Network connection failed.',
+      });
+    }
+  };
+
+  const modelsForCurrentProvider = AVAILABLE_MODELS[provider] || [];
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="modal-title">Settings - Model Keys (BYOK)</div>
+          <div className="modal-title">Settings - Model Keys & Providers (BYOK)</div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close settings">
             ✕
           </button>
@@ -79,10 +144,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="modal-body">
           <div className="settings-note">
-            <strong>Local, privacy-preserving architecture</strong>
-            Every transformation runs 100% deterministically in your browser via{' '}
-            <code>@excel-agent/engine</code>. Full spreadsheets never leave your machine - only a
-            compact column profile is sent to your BYOK model. Keys are stored only in this browser.
+            <strong>Enterprise-Grade, Privacy-Preserving Architecture</strong>
+            Excel operations run deterministically inside your browser via{' '}
+            <code>@excel-agent/engine</code>. Only minimal structural column profiles are sent to the AI
+            reasoning model. Your spreadsheet data stays on your machine.
           </div>
 
           <div className="form-group">
@@ -90,7 +155,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <select
               className="select-input"
               value={provider}
-              onChange={(e) => setProvider(e.target.value as ProviderName)}
+              onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
             >
               {PROVIDERS.map((name) => (
                 <option key={name} value={name}>
@@ -100,8 +165,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </select>
           </div>
 
+          {provider === 'custom' && (
+            <div className="form-group">
+              <label className="form-label">Custom API Base URL (Ollama, LM Studio, vLLM)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="http://localhost:11434/v1"
+              />
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label">API Key</label>
+            <label className="form-label">API Key {provider === 'custom' ? '(optional for local)' : ''}</label>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <input
                 type={showKey ? 'text' : 'password'}
@@ -113,7 +191,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ? 'gsk_...'
                     : provider === 'openrouter'
                       ? 'sk-or-...'
-                      : 'AIzaSy...'
+                      : provider === 'openai'
+                        ? 'sk-proj-...'
+                        : provider === 'custom'
+                          ? 'optional or sk-...'
+                          : 'AIzaSy...'
                 }
               />
               <button
@@ -127,17 +209,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <div className="form-group">
-            <label className="form-label">Model Override (optional)</label>
-            <input
-              type="text"
-              className="form-input"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={defaultModelFor(provider)}
-            />
+            <label className="form-label">Model Selection</label>
+            {modelsForCurrentProvider.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <select
+                  className="select-input"
+                  value={modelsForCurrentProvider.some((m) => m.id === model) ? model : 'custom_override'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'custom_override') {
+                      setModel(e.target.value);
+                    }
+                  }}
+                >
+                  {modelsForCurrentProvider.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                  <option value="custom_override">Custom Model ID...</option>
+                </select>
+
+                {(!modelsForCurrentProvider.some((m) => m.id === model) || model === 'custom_override') && (
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={model === 'custom_override' ? '' : model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="Enter custom model ID (e.g. qwen/qwen3.8-27b)"
+                  />
+                )}
+              </div>
+            ) : (
+              <input
+                type="text"
+                className="form-input"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={defaultModelFor(provider)}
+              />
+            )}
           </div>
 
-          <div className="settings-memory-row">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleTestConnection}
+              disabled={testStatus.testing}
+            >
+              {testStatus.testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            {testStatus.message && (
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: testStatus.ok ? 'var(--accent-emerald)' : 'var(--accent-rose)',
+                }}
+              >
+                {testStatus.message}
+              </span>
+            )}
+          </div>
+
+          <div className="settings-memory-row" style={{ marginTop: '16px' }}>
             <span>
               Self-learning memory: <strong>{learnedCount}</strong> verified action
               {learnedCount === 1 ? '' : 's'}
@@ -153,7 +288,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {savedSuccess && (
-            <div style={{ color: 'var(--primary)', fontSize: '13px', fontWeight: 600 }}>
+            <div style={{ color: 'var(--primary)', fontSize: '13px', fontWeight: 600, marginTop: '8px' }}>
               ✓ Settings saved to this browser
             </div>
           )}

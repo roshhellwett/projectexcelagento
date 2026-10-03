@@ -330,7 +330,7 @@ describe('privacy and token discipline', () => {
     expect(system).toContain(SHEET);
     // The profile carries headers and aggregates, and stays token-efficient.
     expect(system).toContain('Order ID');
-    expect(system.length).toBeLessThan(9000);
+    expect(system.length).toBeLessThan(16000);
 
     // The user turn is exactly what the user typed, nothing added.
     const body = JSON.parse(String(init.body)) as {

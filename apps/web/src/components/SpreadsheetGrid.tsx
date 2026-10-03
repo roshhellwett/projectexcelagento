@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { type Workbook, type Sheet, type Cell, indexToColumn } from '@excel-agent/engine';
 
 interface SpreadsheetGridProps {
@@ -11,6 +11,9 @@ interface SpreadsheetGridProps {
   onSelectCell?: (coord: { row: number; column: string; value: unknown }) => void;
   onFileDrop?: (file: File) => void;
 }
+
+const ROW_HEIGHT = 28;
+const OVERSCAN = 25;
 
 export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   workbook,
@@ -31,7 +34,11 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   }>({ row: 1, colIdx: 0 });
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
 
+  const totalRows = currentSheet.rows.length;
   const totalCols = Math.max(...currentSheet.rows.map((r) => r.length), 0);
 
   const selectedColLetter = indexToColumn(selectedCell.colIdx);
@@ -43,6 +50,29 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const cellValue = currentCell?.value;
   const cellFormula = currentCell?.formula;
 
+  // Windowing calculations
+  const isVirtual = totalRows > 120;
+  const startIndex = isVirtual ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
+  const endIndex = isVirtual
+    ? Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
+    : totalRows;
+
+  const topSpacerHeight = isVirtual ? startIndex * ROW_HEIGHT : 0;
+  const bottomSpacerHeight = isVirtual ? Math.max(0, (totalRows - endIndex) * ROW_HEIGHT) : 0;
+
+  const handleScroll = useCallback(() => {
+    if (!scrollWrapperRef.current) return;
+    const el = scrollWrapperRef.current;
+    setScrollTop(el.scrollTop);
+    setViewportHeight(el.clientHeight);
+  }, []);
+
+  useEffect(() => {
+    if (scrollWrapperRef.current) {
+      setViewportHeight(scrollWrapperRef.current.clientHeight);
+    }
+  }, []);
+
   useEffect(() => {
     if (onSelectCell && currentCell) {
       onSelectCell({
@@ -52,6 +82,34 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       });
     }
   }, [selectedCell, currentCell, onSelectCell, selectedColLetter]);
+
+  // Keyboard navigation across cells
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if typing in an input or textarea
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedCell((prev) => ({ ...prev, row: Math.max(1, prev.row - 1) }));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedCell((prev) => ({ ...prev, row: Math.min(totalRows, prev.row + 1) }));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setSelectedCell((prev) => ({ ...prev, colIdx: Math.max(0, prev.colIdx - 1) }));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setSelectedCell((prev) => ({ ...prev, colIdx: Math.min(Math.max(0, totalCols - 1), prev.colIdx + 1) }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [totalRows, totalCols]);
 
   let cellTypeStr = 'empty';
   if (cellFormula) cellTypeStr = 'formula';
@@ -84,6 +142,8 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       onFileDrop(file);
     }
   };
+
+  const visibleRows = currentSheet.rows.slice(startIndex, endIndex);
 
   return (
     <div
@@ -138,7 +198,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       </div>
 
       {/* Grid Scroll Table */}
-      <div className="grid-scroll-wrapper">
+      <div className="grid-scroll-wrapper" ref={scrollWrapperRef} onScroll={handleScroll}>
         <table className="spreadsheet-table">
           <thead>
             <tr>
@@ -184,12 +244,18 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             </tr>
           </thead>
           <tbody>
-            {currentSheet.rows.map((rowCells, rIdx) => {
-              const rowNumber = rIdx + 1;
+            {topSpacerHeight > 0 && (
+              <tr style={{ height: `${topSpacerHeight}px` }}>
+                <td colSpan={totalCols + 1} style={{ padding: 0, border: 'none' }} />
+              </tr>
+            )}
+
+            {visibleRows.map((rowCells, idx) => {
+              const rowNumber = startIndex + idx + 1;
               const isHeaderRow = rowNumber === 1;
 
               return (
-                <tr key={rowNumber}>
+                <tr key={rowNumber} style={{ height: `${ROW_HEIGHT}px` }}>
                   <td className="row-index-cell">{rowNumber}</td>
                   {Array.from({ length: totalCols }).map((_, cIdx) => {
                     const colLetter = indexToColumn(cIdx);
@@ -235,6 +301,12 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                 </tr>
               );
             })}
+
+            {bottomSpacerHeight > 0 && (
+              <tr style={{ height: `${bottomSpacerHeight}px` }}>
+                <td colSpan={totalCols + 1} style={{ padding: 0, border: 'none' }} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

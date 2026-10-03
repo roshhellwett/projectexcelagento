@@ -327,7 +327,7 @@ describe('provider catalogue', () => {
       listProviders()
         .map((adapter) => adapter.name)
         .sort(),
-    ).toEqual(['gemini', 'groq', 'openrouter']);
+    ).toEqual(['custom', 'gemini', 'groq', 'openai', 'openrouter']);
     expect(getAdapter('gemini')).toBe(geminiAdapter);
 
     const fetchMock = stubFetch(async () => jsonResponse(OPENROUTER_FIXTURE));

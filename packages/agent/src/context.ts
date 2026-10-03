@@ -7,22 +7,22 @@ import { describeTools, type ToolDescriptor } from './tools.js';
  * A compact, token-efficient profile of the active sheet. Full cell data is never
  * sent to the model — only headers, types, cardinality, aggregates, and a sample.
  */
-export function buildSheetContext(sheet: Sheet, sampleSize = 8): string {
+export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
   const rowCount = sheet.rows.length;
   const colCount = Math.max(...sheet.rows.map((row) => row.length), 0);
   const profiles = getColumnProfiles(sheet);
 
   const columns = profiles.map((profile) => ({
-    letter: profile.letter,
+    col: profile.letter,
     name: profile.rawName,
     type: profile.isNumeric ? 'numeric' : profile.isDate ? 'date' : 'text',
-    nonBlankRows: profile.nonBlankCount,
-    distinctCount: profile.distinct.size,
-    sampleValues: Array.from(profile.distinct.keys()).slice(0, 5),
+    nonBlank: profile.nonBlankCount,
+    distinct: profile.distinct.size,
+    samples: Array.from(profile.distinct.keys()).slice(0, 3),
     ...(profile.isNumeric && profile.sum !== undefined
       ? {
           sum: Math.round(profile.sum * 100) / 100,
-          average: Math.round((profile.avg ?? 0) * 100) / 100,
+          avg: Math.round((profile.avg ?? 0) * 100) / 100,
           min: profile.min,
           max: profile.max,
         }
@@ -37,17 +37,13 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 8): string {
     return record;
   });
 
-  return JSON.stringify(
-    {
-      sheetName: sheet.name,
-      totalRows: rowCount,
-      totalColumns: colCount,
-      columns,
-      firstRows: sampleRows,
-    },
-    null,
-    2,
-  );
+  return JSON.stringify({
+    sheet: sheet.name,
+    rows: rowCount,
+    cols: colCount,
+    columns,
+    sampleRows,
+  });
 }
 
 export function buildSystemPrompt(sheet: Sheet, catalog: ToolDescriptor[]): string {
