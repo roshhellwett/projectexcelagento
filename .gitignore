@@ -10,3 +10,4 @@ coverage/
 !.env.example
 .vercel
 .DS_Store
+*.csv

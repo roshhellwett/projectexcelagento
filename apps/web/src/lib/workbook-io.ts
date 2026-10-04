@@ -122,12 +122,103 @@ function countNullsAtOddOffsets(bytes: Uint8Array): number {
 const CANDIDATE_DELIMITERS = [',', ';', '\t', '|'] as const;
 
 /**
- * Picks the delimiter that actually produces a consistent column count, or returns null when
+ * Splits CSV text into an array of records (rows), where each record is an array of string fields.
+ * Follows the RFC 4180 standard:
+ * - Honors double quotes and `""` escapes
+ * - Preserves line breaks inside quoted fields without prematurely splitting records
+ * - Only starts a new record on newline `\n` or `\r\n` outside quotes
+ * - If delimiter is null, splits only on unquoted newlines into 1-field records
+ */
+export function parseCsvRecords(
+  text: string,
+  delimiter: string | null,
+  maxRecords = Infinity,
+): string[][] {
+  const records: string[][] = [];
+  let currentRecord: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+  const len = text.length;
+
+  for (let i = 0; i < len; i += 1) {
+    const ch = text[i]!;
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < len && text[i + 1] === '"') {
+          currentField += '"';
+          i += 1; // skip escaped quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentField += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (delimiter !== null && ch === delimiter) {
+      currentRecord.push(currentField);
+      currentField = '';
+    } else if (ch === '\r') {
+      if (i + 1 < len && text[i + 1] === '\n') {
+        i += 1;
+      }
+      currentRecord.push(currentField);
+      currentField = '';
+      records.push(currentRecord);
+      currentRecord = [];
+      if (records.length >= maxRecords) return records;
+    } else if (ch === '\n') {
+      currentRecord.push(currentField);
+      currentField = '';
+      records.push(currentRecord);
+      currentRecord = [];
+      if (records.length >= maxRecords) return records;
+    } else {
+      currentField += ch;
+    }
+  }
+
+  // Push remaining field and record if present
+  if (currentField !== '' || currentRecord.length > 0) {
+    currentRecord.push(currentField);
+    records.push(currentRecord);
+  }
+
+  // Remove trailing blank record if caused by trailing newline
+  while (
+    records.length > 0 &&
+    records[records.length - 1]!.length === 1 &&
+    records[records.length - 1]![0]!.trim() === ''
+  ) {
+    records.pop();
+  }
+
+  return records;
+}
+
+/** Splits one CSV line, honouring quoted fields and `""` escapes. A null delimiter keeps the line whole. */
+export function splitCsvLine(line: string, delimiter: string | null): string[] {
+  if (delimiter === null) return [line];
+  const records = parseCsvRecords(line, delimiter, 1);
+  return records[0] ?? [''];
+}
+
+function countFieldsPerRecord(text: string, delimiter: string): number[] {
+  const records = parseCsvRecords(text, delimiter, 200);
+  return records.map((r) => r.length);
+}
+
+/**
+ * Picks the delimiter that produces a consistent column count, or returns null when
  * the file is genuinely single-column.
  *
  * Counting raw occurrences is not enough: a single-column file of currency amounts contains as
  * many commas as a three-column file has separators, and splitting on them turns `$1,200.50`
- * into two cells. So a candidate must explain the shape of nearly every line before it wins.
+ * into two cells. So a candidate must explain the shape of the lines before it wins.
  */
 export function detectDelimiter(text: string): string | null {
   const sample = text.slice(0, 64 * 1024);
@@ -135,7 +226,7 @@ export function detectDelimiter(text: string): string | null {
   let bestScore = -1;
 
   for (const candidate of CANDIDATE_DELIMITERS) {
-    const counts = countFieldsPerLine(sample, candidate);
+    const counts = countFieldsPerRecord(sample, candidate);
     if (counts.length < 2) continue;
 
     const frequency = new Map<number, number>();
@@ -154,7 +245,10 @@ export function detectDelimiter(text: string): string | null {
 
     if (modal < 2) continue;
     const consistency = modalFrequency / counts.length;
-    if (consistency < 0.7) continue;
+    if (consistency < 0.6) {
+      const firstRowCols = counts[0] ?? 0;
+      if (consistency < 0.4 || firstRowCols < 2) continue;
+    }
 
     const score = consistency * 1000 + modal;
     if (score > bestScore) {
@@ -162,51 +256,29 @@ export function detectDelimiter(text: string): string | null {
       best = candidate;
     }
   }
-  return best;
-}
 
-function countFieldsPerLine(text: string, delimiter: string): number[] {
-  const counts: number[] = [];
-  for (const line of text.split(/\r\n|\n|\r/)) {
-    if (line === '') continue;
-    counts.push(splitCsvLine(line, delimiter).length);
-    if (counts.length >= 200) break;
-  }
-  return counts;
-}
-
-/** Splits one CSV line, honouring quoted fields and `""` escapes. A null delimiter keeps the line whole. */
-function splitCsvLine(line: string, delimiter: string | null): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i]!;
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
-          i += 1;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        current += ch;
+  // Fallback: If no candidate reached the threshold yet the first non-empty line has commas or delimiters,
+  // select the most frequent candidate rather than dumping everything into a single un-split column.
+  if (!best) {
+    const firstNonEmpty = text.split(/\r\n|\n|\r/).find((l) => l.trim().length > 0);
+    if (firstNonEmpty) {
+      const commaCount = (firstNonEmpty.match(/,/g) || []).length;
+      const tabCount = (firstNonEmpty.match(/\t/g) || []).length;
+      const semiCount = (firstNonEmpty.match(/;/g) || []).length;
+      const pipeCount = (firstNonEmpty.match(/\|/g) || []).length;
+      if (commaCount >= 1 && commaCount >= tabCount && commaCount >= semiCount && commaCount >= pipeCount) {
+        best = ',';
+      } else if (tabCount >= 1 && tabCount >= semiCount && tabCount >= pipeCount) {
+        best = '\t';
+      } else if (semiCount >= 1 && semiCount >= pipeCount) {
+        best = ';';
+      } else if (pipeCount >= 1) {
+        best = '|';
       }
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (delimiter !== null && ch === delimiter) {
-      fields.push(current);
-      current = '';
-    } else {
-      current += ch;
     }
   }
-  fields.push(current);
-  return fields;
+
+  return best;
 }
 
 /**
@@ -293,14 +365,28 @@ export function workbookFromCsvText(
   delimiter: string | null,
   sheetName: string,
 ): Sheet {
-  const lines = text.split(/\r\n|\n|\r/);
-  while (lines.length > 0 && lines[lines.length - 1]!.trim() === '') lines.pop();
+  const records = parseCsvRecords(text, delimiter);
+  if (records.length === 0) {
+    return { name: sheetName, rows: [] };
+  }
 
-  const rows: Cell[][] = lines.map((line) =>
-    splitCsvLine(line, delimiter).map((field) =>
-      createCell(parseCsvField(field, delimiter ?? ',')),
-    ),
-  );
+  // Calculate maximum column count across all records to normalize ragged rows
+  let maxCols = 0;
+  for (const r of records) {
+    if (r.length > maxCols) maxCols = r.length;
+  }
+
+  const effectiveDelimiter = delimiter ?? ',';
+  const rows: Cell[][] = records.map((record) => {
+    const rowCells: Cell[] = record.map((field) =>
+      createCell(parseCsvField(field, effectiveDelimiter)),
+    );
+    while (rowCells.length < maxCols) {
+      rowCells.push(createCell(null));
+    }
+    return rowCells;
+  });
+
   return { name: sheetName, rows };
 }
 

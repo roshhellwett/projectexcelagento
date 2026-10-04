@@ -323,6 +323,21 @@ export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnM
   return null;
 }
 
+function cleanHeaderDisplay(header: string, colLetter?: string): string {
+  const trimmed = header.trim();
+  if (!trimmed) return colLetter ? `Column ${colLetter}` : 'Column';
+  if (trimmed.includes(',')) {
+    const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 2) {
+      return `${parts[0]}… (${parts.length} fields)`;
+    }
+  }
+  if (trimmed.length > 24) {
+    return trimmed.slice(0, 22).trim() + '…';
+  }
+  return trimmed;
+}
+
 export function auditSheet(sheet: Sheet): SheetAudit {
   const totalRows = sheet.rows.length;
   const totalCols = maxColumnCount(sheet.rows);
@@ -380,6 +395,7 @@ export function auditSheet(sheet: Sheet): SheetAudit {
   for (let colIdx = 0; colIdx < totalCols; colIdx += 1) {
     const colLetter = indexToColumn(colIdx);
     const colHeader = headers[colIdx] || `Col ${colLetter}`;
+    const displayHeader = cleanHeaderDisplay(colHeader, colLetter);
     const colValues = sheet.rows.slice(1).map((r) => r[colIdx]?.value);
 
     // Date heuristic
@@ -406,11 +422,11 @@ export function auditSheet(sheet: Sheet): SheetAudit {
     if (dateLikeCount >= 2) {
       if (dateFormatsSeen.size > 1) {
         findings.push(
-          `Column "${colHeader}" (${colLetter}) has mixed date formats (${Array.from(dateFormatsSeen).join(', ')}).`,
+          `Column "${displayHeader}" (${colLetter}) has mixed date formats (${Array.from(dateFormatsSeen).join(', ')}).`,
         );
       }
       suggestions.push({
-        prompt: `Normalize dates in ${colHeader} to ISO (YYYY-MM-DD)`,
+        prompt: `Normalize dates in ${displayHeader} to ISO (YYYY-MM-DD)`,
         action: {
           name: 'format_dates',
           args: {
@@ -419,7 +435,7 @@ export function auditSheet(sheet: Sheet): SheetAudit {
             format: 'YYYY-MM-DD',
             headerRow: 1,
           },
-          explanation: `Convert all dates in column ${colLetter} ("${colHeader}") into standard ISO YYYY-MM-DD format.`,
+          explanation: `Convert all dates in column ${colLetter} ("${displayHeader}") into standard ISO YYYY-MM-DD format.`,
           category: 'format',
         },
       });
@@ -437,10 +453,10 @@ export function auditSheet(sheet: Sheet): SheetAudit {
 
     if (untrimmedCount > 0) {
       findings.push(
-        `Column "${colHeader}" (${colLetter}) has ${untrimmedCount} untrimmed value(s).`,
+        `Column "${displayHeader}" (${colLetter}) has ${untrimmedCount} untrimmed value(s).`,
       );
       suggestions.push({
-        prompt: `Trim whitespace in ${colHeader}`,
+        prompt: `Trim whitespace in ${displayHeader}`,
         action: {
           name: 'normalize_text',
           args: {
@@ -451,13 +467,15 @@ export function auditSheet(sheet: Sheet): SheetAudit {
             case: 'none',
             headerRow: 1,
           },
-          explanation: `Trim leading and trailing whitespace in column ${colLetter} ("${colHeader}").`,
+          explanation: `Trim leading and trailing whitespace in column ${colLetter} ("${displayHeader}").`,
           category: 'transform',
         },
       });
     } else if (mixedCaseCount >= 2 && dateLikeCount === 0) {
+      const isNameLike = /name|customer|client|author|user|person|contact|title|city|country/i.test(colHeader);
+      const actionText = isNameLike ? `Capitalize names in ${displayHeader} to Title Case` : `Format ${displayHeader} to Title Case`;
       suggestions.push({
-        prompt: `Capitalize names in ${colHeader} to Title Case`,
+        prompt: actionText,
         action: {
           name: 'normalize_text',
           args: {
@@ -468,7 +486,7 @@ export function auditSheet(sheet: Sheet): SheetAudit {
             case: 'title',
             headerRow: 1,
           },
-          explanation: `Normalize text in column ${colLetter} ("${colHeader}") to proper Title Case.`,
+          explanation: `Normalize text in column ${colLetter} ("${displayHeader}") to proper Title Case.`,
           category: 'transform',
         },
       });
@@ -479,8 +497,9 @@ export function auditSheet(sheet: Sheet): SheetAudit {
   if (totalCols > 0) {
     const colLetter = indexToColumn(0);
     const colHeader = headers[0] || 'Column A';
+    const displayHeader = cleanHeaderDisplay(colHeader, colLetter);
     suggestions.push({
-      prompt: `Sort rows by ${colHeader} (A-Z)`,
+      prompt: `Sort rows by ${displayHeader} (A-Z)`,
       action: {
         name: 'sort_range',
         args: {

@@ -254,4 +254,49 @@ describe('CSV import end to end', () => {
     expect(workbook.sheets[0]?.rows[1]).toHaveLength(1);
     expect(workbook.sheets[0]?.rows[1]?.[0]?.value).toBe(1200.5);
   });
+
+  it('parses Supabase-style log CSV with multiline quotes and JSON without breaking columns', async () => {
+    const csv = [
+      'id,date,method,pathname,status,timestamp,level,event_message,log_type',
+      'row-1,2026-10-04,POST,/rest/v1/users,200,1728000000,info,"{\n  ""user_id"": 123,\n  ""action"": ""login""\n}",api',
+      'row-2,2026-10-04,GET,/auth/v1/user,200,1728000060,info,"user session refreshed\nwith token",auth',
+      'row-3,2026-10-04,DELETE,/rest/v1/items,204,1728000120,info,"deleted",api',
+    ].join('\n');
+
+    const { workbook, report } = await xlsxToWorkbook(toArrayBuffer(new TextEncoder().encode(csv)));
+    const sheet = workbook.sheets[0]!;
+
+    expect(report.delimiter).toBe(',');
+    expect(sheet.rows).toHaveLength(4);
+    // Header row has 9 columns
+    expect(sheet.rows[0]).toHaveLength(9);
+    expect(sheet.rows[0]?.[0]?.value).toBe('id');
+    expect(sheet.rows[0]?.[3]?.value).toBe('pathname');
+    expect(sheet.rows[0]?.[7]?.value).toBe('event_message');
+    expect(sheet.rows[0]?.[8]?.value).toBe('log_type');
+
+    // Data row 1 contains the multiline JSON inside column 7
+    expect(sheet.rows[1]?.[0]?.value).toBe('row-1');
+    expect(sheet.rows[1]?.[2]?.value).toBe('POST');
+    expect(sheet.rows[1]?.[4]?.value).toBe(200);
+    expect(sheet.rows[1]?.[7]?.value).toContain('"user_id": 123');
+    expect(sheet.rows[1]?.[8]?.value).toBe('api');
+
+    // Data row 2 contains multiline string inside column 7
+    expect(sheet.rows[2]?.[0]?.value).toBe('row-2');
+    expect(sheet.rows[2]?.[7]?.value).toBe('user session refreshed\nwith token');
+    expect(sheet.rows[2]?.[8]?.value).toBe('auth');
+  });
+
+  it('normalizes ragged rows by padding with empty cells to the maximum column count', async () => {
+    const csv = 'colA,colB,colC\n1,2\n3,4,5\n';
+    const { workbook } = await xlsxToWorkbook(toArrayBuffer(new TextEncoder().encode(csv)));
+    const sheet = workbook.sheets[0]!;
+
+    expect(sheet.rows[0]).toHaveLength(3);
+    expect(sheet.rows[1]).toHaveLength(3);
+    expect(sheet.rows[1]?.[2]?.value).toBe(null);
+    expect(sheet.rows[2]).toHaveLength(3);
+    expect(sheet.rows[2]?.[2]?.value).toBe(5);
+  });
 });

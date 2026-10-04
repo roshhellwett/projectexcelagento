@@ -797,10 +797,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 {audit.suggestions.map((s, idx) => (
                   <button
                     key={idx}
+                    type="button"
                     className="suggestion-chip"
                     onClick={() => handleSuggestionClick(s.prompt)}
+                    title={s.prompt}
                   >
-                    {s.prompt}
+                    <Sparkles size={12} className="suggestion-chip-icon" />
+                    <span className="suggestion-chip-text">{s.prompt}</span>
                   </button>
                 ))}
               </div>
