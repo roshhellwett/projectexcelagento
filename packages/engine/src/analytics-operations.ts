@@ -385,6 +385,19 @@ function criteriaExpression(
   }
   if (args.criteriaValue === undefined) return { ok: true, expression: args.criteria };
   if (!CRITERIA_OPERATORS.has(args.criteria)) {
+    const normCrit = args.criteria.toLowerCase();
+    if (normCrit === 'contains' || normCrit === 'includes' || normCrit === 'like') {
+      return { ok: true, expression: `*${args.criteriaValue ?? ''}*` };
+    }
+    if (normCrit === 'equals' || normCrit === 'exact' || normCrit === 'is') {
+      return { ok: true, expression: `${args.criteriaValue ?? ''}` };
+    }
+    if (normCrit === 'startswith' || normCrit === 'starts_with') {
+      return { ok: true, expression: `${args.criteriaValue ?? ''}*` };
+    }
+    if (normCrit === 'endswith' || normCrit === 'ends_with') {
+      return { ok: true, expression: `*${args.criteriaValue ?? ''}` };
+    }
     return {
       ok: false,
       message: `criteria "${args.criteria}" is not a comparison operator. Pass a complete expression such as ">=100", or pass a bare operator together with criteriaValue.`,

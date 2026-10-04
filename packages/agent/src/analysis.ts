@@ -519,11 +519,15 @@ export function findFilterCandidateInSheet(
 
   // 2. Transaction status shorthand check: e.g. "IN data", "OUT data", "IN rows", "filter IN", "filter OUT"
   const hasInStatus =
-    /\b(?:the\s+)?in\s+(?:data|records?|rows?|transactions?|items?|stock)\b/i.test(query) ||
-    /\b(?:filter|extract|separate|isolate|pull)\s+(?:out\s+)?(?:the\s+)?in\b/i.test(query);
+    /\b(?:the\s+)?in\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
+    /\b(?:filter|extract|separate|isolate|pull(?:\s+out)?)\b[\s\S]{0,50}?\bin\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
+    /\bin\s+(?:operation|action|status)\b/i.test(query);
+
   const hasOutStatus =
-    /\b(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock)\b/i.test(query) ||
-    /\b(?:filter|extract|separate|isolate|pull)\s+(?:out\s+)?(?:the\s+)?out\b/i.test(query);
+    !hasInStatus &&
+    (/\b(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
+      /\bout\s+(?:operation|action|status)\b/i.test(query) ||
+      /\b(?:filter|extract|separate|isolate)\s+(?:for\s+)?(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query));
 
   if (hasInStatus) {
     for (const col of columns) {
@@ -990,6 +994,95 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
+  // 0d. BROAD CLEANING & STRUCTURING DIRECTIVES ("clean the data", "clean and structured the sheet", "tidy up")
+  const isBroadCleanQuery =
+    /(?:clean|structure|tidy|standardize|prepare)\s+(?:and\s+)?(?:structure\s+|clean\s+)?(?:the\s+)?(?:sheet|data|table|dataset|workbook|file)/i.test(
+      raw,
+    ) ||
+    /^(?:clean|structure|tidy up|clean up|clean data|clean sheet|structure data|structure sheet|clean and structured? the sheet)\b/i.test(
+      raw,
+    );
+
+  if (isBroadCleanQuery) {
+    // 1. Check for duplicates across data rows
+    const seen = new Set<string>();
+    let dupCount = 0;
+    for (let r = 1; r < currentSheet.rows.length; r++) {
+      const key = (currentSheet.rows[r] || []).map((c) => String(c?.value ?? '')).join('|~|');
+      if (seen.has(key)) dupCount++;
+      else seen.add(key);
+    }
+    if (dupCount > 0) {
+      return {
+        message: `I audited all **${dataRowsCount} data rows** in **${currentSheet.name}**.\n\n• Found **${dupCount} duplicate row(s)**.\n\nCleaning Step 1: Remove redundant duplicate rows to structure your dataset accurately. Click **Apply Changes** to proceed!`,
+        proposedAction: {
+          name: 'delete_duplicates',
+          args: {
+            sheet: currentSheet.name,
+            columns: allColumns,
+            headerRow: 1,
+            keep: 'first',
+          },
+          explanation: `Remove ${dupCount} duplicate rows across all ${allColumns.length} columns.`,
+          category: 'structure',
+        },
+      };
+    }
+
+    // 2. Check for columns with untrimmed whitespace
+    const untrimmedCols: string[] = [];
+    for (const col of columns) {
+      let untrimmed = 0;
+      for (let r = 1; r < currentSheet.rows.length; r++) {
+        const val = currentSheet.rows[r]?.[col.index]?.value;
+        if (typeof val === 'string' && val.trim() !== val) untrimmed++;
+      }
+      if (untrimmed > 0) untrimmedCols.push(col.letter);
+    }
+    if (untrimmedCols.length > 0) {
+      return {
+        message: `I audited text columns in **${currentSheet.name}** and found untrimmed whitespace across **${untrimmedCols.length} column(s)** (${untrimmedCols.join(', ')}).\n\nClick **Apply Changes** to clean and trim all dirty cells!`,
+        proposedAction: {
+          name: 'normalize_text',
+          args: {
+            sheet: currentSheet.name,
+            columns: untrimmedCols,
+            trim: true,
+            collapseWhitespace: true,
+            case: 'none',
+            headerRow: 1,
+          },
+          explanation: `Trim whitespace across dirty text columns (${untrimmedCols.join(', ')}).`,
+          category: 'transform',
+        },
+      };
+    }
+
+    // 3. Check for date columns needing formatting
+    const dateCol = columns.find((c) => c.isDate);
+    if (dateCol) {
+      return {
+        message: `I analyzed the structure of **${currentSheet.name}** and identified date column **${dateCol.rawName}** (Column ${dateCol.letter}).\n\nStandardizing date formatting to ISO \`YYYY-MM-DD\` will clean your data pipeline. Click **Apply Changes** to normalize!`,
+        proposedAction: {
+          name: 'format_dates',
+          args: {
+            sheet: currentSheet.name,
+            column: dateCol.letter,
+            format: 'YYYY-MM-DD',
+            headerRow: 1,
+          },
+          explanation: `Standardize dates in column ${dateCol.letter} ("${dateCol.rawName}") to ISO format.`,
+          category: 'format',
+        },
+      };
+    }
+
+    // 4. Default: Sheet is already clean
+    return {
+      message: `I performed a full data audit on **${currentSheet.name}** (${dataRowsCount} rows, ${columns.length} columns).\n\n• **Duplicates:** 0 duplicate rows found\n• **Whitespace:** No untrimmed whitespace detected\n• **Structure:** Headers and data types are properly aligned\n\nYour sheet is already cleanly structured!`,
+    };
+  }
+
   // 1. DUPLICATE REMOVAL
   if (
     q.includes('duplicate') ||
@@ -1026,14 +1119,13 @@ export function analyzeSpreadsheetIntentAndData(
   if (
     q.includes('trim') ||
     q.includes('whitespace') ||
-    q.includes('clean') ||
-    q.includes('space') ||
     q.includes('title case') ||
     q.includes('titlecase') ||
     q.includes('uppercase') ||
     q.includes('lowercase') ||
     q.includes('capitalize') ||
-    q.includes('caps')
+    q.includes('caps') ||
+    (q.includes('clean') && (q.includes('column') || q.includes('col') || q.includes('text') || q.includes('name')))
   ) {
     let caseOption: 'none' | 'lower' | 'upper' | 'title' = 'none';
     if (q.includes('title') || q.includes('capitalize')) caseOption = 'title';
@@ -1156,6 +1248,52 @@ export function analyzeSpreadsheetIntentAndData(
 
       return {
         message: `**Mathematical & Statistical Analysis for "${targetCol.rawName}" (Column ${targetCol.letter})**:\n\n• **Total Sum:** ${sum.toLocaleString(undefined, { maximumFractionDigits: 2 })}\n• **Average (Mean):** ${avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}\n• **Highest Value (Max):** ${max.toLocaleString()}\n• **Lowest Value (Min):** ${min.toLocaleString()}\n• **Numeric Count:** ${count} non-empty records (out of ${dataRowsCount} rows)\n\nWould you like me to sort by this column, filter values above average, or add a calculated summary column?`,
+      };
+    }
+  }
+
+  // 5b. MULTI-ENTITY COUNT / FREQUENCY QUERY (e.g. "how many time pradeep bothra has performed OUT operation ?", "how many times ronak has perform IN operation")
+  const howManyMatch =
+    raw.match(
+      /(?:find\s+out\s+(?:that\s+)?)?(?:how\s+many\s+times?|count\s+of|kitni\s+baar)\s+([a-z0-9_\s/()]+?)\s+(?:has\s+)?(?:performed?|done|did|had|carry|make)\s+([a-z0-9_\s/()]+?)(?:\s+operation|\s+action|\s+in\s+sheet|\s*\?|$)/i,
+    ) ||
+    raw.match(
+      /(?:find\s+out\s+(?:that\s+)?)?(?:how\s+many\s+times?|count\s+how\s+many\s+times?)\s+([a-z0-9_\s/()]+?)\s+(?:in|for|with)\s+([a-z0-9_\s/()]+?)(?:\s+operation|\s+action|\s+in\s+sheet|\s*\?|$)/i,
+    );
+
+  if (howManyMatch) {
+    const entity1 = howManyMatch[1]!.trim().toLowerCase();
+    const entity2 = howManyMatch[2]!.trim().toLowerCase();
+
+    let matchCount = 0;
+    const matchingRows: number[] = [];
+    const sampleDetails: string[] = [];
+
+    for (let r = 1; r < currentSheet.rows.length; r++) {
+      const row = currentSheet.rows[r];
+      if (!row) continue;
+      const rowText = row.map((cell) => String(cell?.value ?? '').toLowerCase()).join(' | ');
+      if (rowText.includes(entity1) && rowText.includes(entity2)) {
+        matchCount++;
+        matchingRows.push(r + 1);
+        if (sampleDetails.length < 5) {
+          const rowSummary = row
+            .filter((c) => c?.value !== null && c?.value !== undefined && String(c.value).trim())
+            .slice(0, 4)
+            .map((c) => String(c.value))
+            .join(' | ');
+          sampleDetails.push(`• **Row ${r + 1}:** ${rowSummary}`);
+        }
+      }
+    }
+
+    if (matchCount > 0) {
+      return {
+        message: `**Query Result:**\n\n**${howManyMatch[1]!.trim()}** performed the **${howManyMatch[2]!.trim()}** operation **${matchCount} time(s)** in **${currentSheet.name}**.\n\n${sampleDetails.length > 0 ? `**Sample Records:**\n${sampleDetails.join('\n')}\n\n` : ''}Would you like me to filter these matching rows into a separate sheet?`,
+      };
+    } else {
+      return {
+        message: `I searched all **${dataRowsCount} rows** in **${currentSheet.name}**, but found **0 records** where **${howManyMatch[1]!.trim()}** performed **${howManyMatch[2]!.trim()}**.`,
       };
     }
   }

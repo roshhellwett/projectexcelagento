@@ -89,6 +89,22 @@ export class ExcelAgentOrchestrator {
     return this.catalog;
   }
 
+  private saveWorkingStep(
+    input: DecideInput,
+    stepType: string,
+    payload: Record<string, unknown>,
+  ): void {
+    if (
+      !input.sessionId ||
+      !this.memory?.saveWorkingMemory ||
+      !input.config ||
+      isDemoKey(input.config.apiKey)
+    ) {
+      return;
+    }
+    void this.memory.saveWorkingMemory(input.sessionId, stepType, payload);
+  }
+
   private buildAllToolDefinitions(): ToolDefinition[] {
     const definitions: ToolDefinition[] = [...READ_TOOL_DEFINITIONS];
 
@@ -174,6 +190,14 @@ export class ExcelAgentOrchestrator {
       input.workbook.sheets.find((candidate) => candidate.name === input.sheetName) ??
       input.workbook.sheets[0];
     const sheetName = sheet?.name ?? input.sheetName;
+
+    this.saveWorkingStep(input, 'turn_started', {
+      query: input.query,
+      sheetName,
+      rowCount: sheet?.rows.length ?? 0,
+      colCount: sheet?.rows[0]?.length ?? 0,
+      timestamp: Date.now(),
+    });
 
     // Layer 1 - Intent: Social greetings
     if (GREETING.test(input.query.trim())) {
@@ -466,6 +490,12 @@ export class ExcelAgentOrchestrator {
                 fnArgs,
               );
               const toolOutput = this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
+              this.saveWorkingStep(input, 'read_tool_inspection', {
+                tool: fnName,
+                args: fnArgs,
+                summary: `Inspected ${sheetName} via ${fnName}`,
+                timestamp: Date.now(),
+              });
               messages.push({
                 role: 'tool',
                 name: fnName,
@@ -492,6 +522,11 @@ export class ExcelAgentOrchestrator {
                   typeof fnArgs.description === 'string'
                     ? fnArgs.description
                     : `Created a ${plan.steps.length}-step plan to update **${sheetName}**.`;
+                this.saveWorkingStep(input, 'plan_created', {
+                  title: fnArgs.title,
+                  steps: plan.steps.map((s) => s.operation),
+                  timestamp: Date.now(),
+                });
               }
               resolved = true;
               break;
@@ -602,6 +637,12 @@ export class ExcelAgentOrchestrator {
         `Verifying plan: ${llmPlan.steps.length} steps...`,
       );
       const failedSteps = llmPlan.steps.filter((s) => s.status === 'error').length;
+      this.saveWorkingStep(input, 'plan_prepared', {
+        title: llmPlan.title,
+        steps: llmPlan.steps.map((s) => s.operation),
+        status: llmPlan.status,
+        timestamp: Date.now(),
+      });
       return {
         message:
           llmPlan.status === 'error'
@@ -649,10 +690,15 @@ export class ExcelAgentOrchestrator {
       });
       if (guardrail.passed) {
         emitActivity('status', 'Guardrail', `Approved operation "${candidate.name}".`);
+        const isLlmCandidate = llmAction !== undefined && candidate === llmAction;
+        this.saveWorkingStep(input, 'decision_approved', {
+          action: candidate.name,
+          source: isLlmCandidate ? 'llm' : 'heuristic',
+          timestamp: Date.now(),
+        });
         // The message must describe the action that is actually being offered. Pairing the
         // model's prose about setting C5 to 999 with a different mutation - a normalize_text
         // the guardrail happened to accept - tells the user one thing and does another.
-        const isLlmCandidate = llmAction !== undefined && candidate === llmAction;
         return {
           message: isLlmCandidate ? llmMessage || heuristic.message : heuristic.message,
           thought: isLlmCandidate ? llmThought : undefined,

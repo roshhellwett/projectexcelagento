@@ -224,6 +224,14 @@ export interface MemoryStore {
   toJSON(): string;
   confidenceOf?(record: MemoryRecord): number;
   clear(): void;
+  saveWorkingMemory?(
+    sessionId: string,
+    stepType: string,
+    payload: Record<string, unknown>,
+    ttlSeconds?: number,
+  ): Promise<boolean>;
+  clearWorkingMemory?(sessionId: string): Promise<boolean>;
+  getWorkingMemory?(sessionId: string): Promise<unknown[]>;
 }
 
 export interface OrchestratorOptions {
