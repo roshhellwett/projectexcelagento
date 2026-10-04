@@ -10,6 +10,7 @@ import type {
 import type { Workbook } from '@excel-agent/engine';
 
 import { orchestrator } from './agent-runtime.js';
+import { getTabSessionId } from './session.js';
 import { defaultModelFor, isDemoKey } from './settings.js';
 
 export interface LLMConfig {
@@ -49,11 +50,13 @@ export async function askExcelAgent(
     signal?: AbortSignal;
   } = {},
 ): Promise<AgentResponse> {
+  const sessionId = getTabSessionId();
   const decision = await orchestrator.decide({
     query: userQuery,
     workbook,
     sheetName: activeSheetName,
     signal: options.signal,
+    sessionId,
     config:
       config && !isDemoKey(config.apiKey)
         ? {

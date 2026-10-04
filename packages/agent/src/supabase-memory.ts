@@ -117,48 +117,17 @@ export class SupabaseMemoryStore implements MemoryStore {
     args: Record<string, unknown>,
   ): Promise<void> {
     try {
-      // Check if this pattern already exists for the given schema
-      const searchRes = await this.fetchWithTimeout(
-        `/rest/v1/agent_learned_cortex?schema_fingerprint=eq.${encodeURIComponent(
-          schemaFingerprint,
-        )}&normalized_query=eq.${encodeURIComponent(normalizedQuery)}&operation=eq.${encodeURIComponent(
-          operation,
-        )}&select=id,success_count`,
-        { headers: this.headers() },
-      );
-
-      if (searchRes.ok) {
-        const existing = (await searchRes.json()) as Array<{ id: string; success_count: number }>;
-        if (existing.length > 0 && existing[0]) {
-          // Increment success count and update last used
-          await this.fetchWithTimeout(
-            `/rest/v1/agent_learned_cortex?id=eq.${existing[0].id}`,
-            {
-              method: 'PATCH',
-              headers: this.headers(),
-              body: JSON.stringify({
-                success_count: (existing[0].success_count || 1) + 1,
-                last_used_at: new Date().toISOString(),
-                args,
-              }),
-            },
-          );
-          return;
-        }
-      }
-
-      // Insert new record
-      await this.fetchWithTimeout(`/rest/v1/agent_learned_cortex`, {
+      // Enterprise atomic PostgreSQL RPC transaction with ON CONFLICT DO UPDATE
+      // Eliminates race conditions and duplicate entries when millions of concurrent users run similar queries
+      await this.fetchWithTimeout(`/rest/v1/rpc/atomic_upsert_cortex`, {
         method: 'POST',
         headers: this.headers(),
         body: JSON.stringify({
-          raw_query: rawQuery,
-          normalized_query: normalizedQuery,
-          schema_fingerprint: schemaFingerprint,
-          operation,
-          args,
-          success_count: 1,
-          failure_count: 0,
+          p_raw_query: rawQuery,
+          p_normalized_query: normalizedQuery,
+          p_schema_fingerprint: schemaFingerprint,
+          p_operation: operation,
+          p_args: args,
         }),
       });
     } catch {
@@ -181,32 +150,17 @@ export class SupabaseMemoryStore implements MemoryStore {
     success: boolean,
   ): Promise<void> {
     try {
-      const searchRes = await this.fetchWithTimeout(
-        `/rest/v1/agent_learned_cortex?normalized_query=eq.${encodeURIComponent(
-          normalizedQuery,
-        )}&operation=eq.${encodeURIComponent(operation)}&select=id,success_count,failure_count&limit=1`,
-        { headers: this.headers() },
-      );
-
-      if (searchRes.ok) {
-        const rows = (await searchRes.json()) as Array<{
-          id: string;
-          success_count: number;
-          failure_count: number;
-        }>;
-        if (rows.length > 0 && rows[0]) {
-          const row = rows[0];
-          await this.fetchWithTimeout(`/rest/v1/agent_learned_cortex?id=eq.${row.id}`, {
-            method: 'PATCH',
-            headers: this.headers(),
-            body: JSON.stringify({
-              success_count: success ? (row.success_count || 0) + 1 : row.success_count,
-              failure_count: !success ? (row.failure_count || 0) + 1 : row.failure_count,
-              last_used_at: new Date().toISOString(),
-            }),
-          });
-        }
-      }
+      // Enterprise atomic PostgreSQL RPC with row-level locks
+      // Serializes concurrent user updates with zero lost increments
+      await this.fetchWithTimeout(`/rest/v1/rpc/atomic_record_outcome`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          p_normalized_query: normalizedQuery,
+          p_operation: operation,
+          p_success: success,
+        }),
+      });
     } catch {
       // Non-blocking
     }
@@ -305,17 +259,23 @@ export class SupabaseMemoryStore implements MemoryStore {
     sessionId: string,
     stepType: string,
     payload: Record<string, unknown>,
+    ttlSeconds?: number,
   ): Promise<boolean> {
     if (!this.enabled) return true;
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return false;
     try {
+      const body: Record<string, unknown> = {
+        session_id: sessionId.trim(),
+        step_type: stepType,
+        payload,
+      };
+      if (typeof ttlSeconds === 'number' && ttlSeconds > 0) {
+        body.expires_at = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+      }
       const res = await this.fetchWithTimeout(`/rest/v1/agent_working_memory`, {
         method: 'POST',
         headers: this.headers(),
-        body: JSON.stringify({
-          session_id: sessionId,
-          step_type: stepType,
-          payload,
-        }),
+        body: JSON.stringify(body),
       });
       return res.ok;
     } catch {
@@ -325,9 +285,10 @@ export class SupabaseMemoryStore implements MemoryStore {
 
   async clearWorkingMemory(sessionId: string): Promise<boolean> {
     if (!this.enabled) return true;
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return false;
     try {
       const res = await this.fetchWithTimeout(
-        `/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(sessionId)}`,
+        `/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(sessionId.trim())}`,
         {
           method: 'DELETE',
           headers: this.headers(),
@@ -341,10 +302,11 @@ export class SupabaseMemoryStore implements MemoryStore {
 
   async getWorkingMemory(sessionId: string): Promise<WorkingMemoryEntry[]> {
     if (!this.enabled) return [];
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return [];
     try {
       const res = await this.fetchWithTimeout(
         `/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(
-          sessionId,
+          sessionId.trim(),
         )}&order=created_at.asc`,
         { headers: this.headers() },
       );

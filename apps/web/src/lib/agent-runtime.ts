@@ -85,3 +85,5 @@ export function forgetLearnedActions(): void {
 export function learnedActionCount(): number {
   return memory.entries().length;
 }
+
+export { getTabSessionId, clearCurrentTabWorkingMemory } from './session';

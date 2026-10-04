@@ -250,4 +250,6 @@ export type DecideInput = {
   onActivity?: (activity: AgentActivityEvent) => void;
   /** Aborts the in-flight provider request (used by the stop button). */
   signal?: AbortSignal;
+  /** Unique session ID for isolating working memory in multi-tenant/multi-tab environments. */
+  sessionId?: string;
 };

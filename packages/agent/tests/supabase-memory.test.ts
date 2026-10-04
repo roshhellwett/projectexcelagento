@@ -172,7 +172,7 @@ describe('SupabaseMemoryStore', () => {
       }),
     );
 
-    const saved = await store.saveWorkingMemory('session-123', 'analysis', { candidateCol: 'D' });
+    const saved = await store.saveWorkingMemory('session-123', 'analysis', { candidateCol: 'D' }, 120);
     expect(saved).toBe(true);
 
     const entries = await store.getWorkingMemory('session-123');
@@ -182,5 +182,61 @@ describe('SupabaseMemoryStore', () => {
     const cleared = await store.clearWorkingMemory('session-123');
     expect(cleared).toBe(true);
     expect(calls.some((c) => c.startsWith('DELETE'))).toBe(true);
+
+    // Rejects empty session IDs to prevent cross-tenant collision or wildcard deletion
+    expect(await store.saveWorkingMemory('', 'step', {})).toBe(false);
+    expect(await store.clearWorkingMemory('   ')).toBe(false);
+    expect(await store.getWorkingMemory('')).toEqual([]);
+  });
+
+  it('routes cloud remember and outcomes through atomic PostgreSQL RPC endpoints', async () => {
+    const store = new SupabaseMemoryStore({
+      url: 'https://test.supabase.co',
+      apiKey: 'test-key',
+    });
+
+    const rpcCalls: Array<{ url: string; body: any }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const urlStr = String(input);
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        rpcCalls.push({ url: urlStr, body });
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+
+    // Call remember -> triggers async atomic_upsert_cortex RPC
+    store.remember({
+      key: 'sort by revenue',
+      rawQuery: 'sort by revenue descending',
+      sheetName: 'Sheet1',
+      operation: 'sort_range',
+      args: { column: 'E', ascending: false },
+      schemaFingerprint: 'id\u0001name\u0001revenue',
+    });
+
+    // Call recordOutcome -> triggers async atomic_record_outcome RPC
+    store.recordOutcome('sort_range', 'Sheet1', true, 'sort by revenue');
+
+    // Wait a tick for microtask resolution
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(rpcCalls.some((c) => c.url.includes('/rest/v1/rpc/atomic_upsert_cortex'))).toBe(true);
+    const upsertCall = rpcCalls.find((c) => c.url.includes('/rest/v1/rpc/atomic_upsert_cortex'));
+    expect(upsertCall?.body).toMatchObject({
+      p_operation: 'sort_range',
+      p_schema_fingerprint: 'id\u0001name\u0001revenue',
+    });
+
+    expect(rpcCalls.some((c) => c.url.includes('/rest/v1/rpc/atomic_record_outcome'))).toBe(true);
+    const outcomeCall = rpcCalls.find((c) => c.url.includes('/rest/v1/rpc/atomic_record_outcome'));
+    expect(outcomeCall?.body).toMatchObject({
+      p_operation: 'sort_range',
+      p_success: true,
+    });
   });
 });
