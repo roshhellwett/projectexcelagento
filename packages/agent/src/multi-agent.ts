@@ -517,14 +517,15 @@ export async function runMultiAgentTurn(
   }
 
   const finalTotalTokens = cumulativePromptTokens + cumulativeCompletionTokens;
+  const elapsed = Date.now() - pipelineStarted;
   const telemetry: LlmTelemetry = {
     provider: input.config.provider,
     model: input.config.model,
     promptTokens: cumulativePromptTokens,
     completionTokens: cumulativeCompletionTokens,
     totalTokens: finalTotalTokens,
-    durationMs: Date.now() - pipelineStarted,
-    costUsd: 0,
+    latencyMs: elapsed,
+    ok: true,
   };
 
   if (!finalPlan || finalPlan.steps.length === 0) {

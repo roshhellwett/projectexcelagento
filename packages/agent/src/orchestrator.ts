@@ -965,7 +965,7 @@ export class ExcelAgentOrchestrator {
     return {
       message: finalMsg,
       thought: llmThought,
-      source: 'fallback',
+      source: llmMessage ? 'llm' : 'fallback',
       trace,
       activities,
       ...(telemetry ? { telemetry } : {}),

@@ -21,6 +21,10 @@ import { HistoryDrawer } from './components/HistoryDrawer.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { ModelUsagePage } from './components/ModelUsagePage.js';
+import { AgentsPage } from './components/AgentsPage.js';
+import { PrivacyPolicyPage } from './components/PrivacyPolicyPage.js';
+import { TermsPage } from './components/TermsPage.js';
+import { DocsPage } from './components/DocsPage.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 
@@ -66,8 +70,8 @@ import {
 
 const initialWorkbook = createSampleWorkbook();
 
-/** Top-level pages. The usage view is URL-addressable via `#/usage`. */
-export type WorkspaceView = 'workspace' | 'usage';
+/** Top-level pages. The views are URL-addressable via `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
+export type WorkspaceView = 'workspace' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
 
 /** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
 function describeDelimiter(delimiter: string): string {
@@ -81,7 +85,13 @@ function describeDelimiter(delimiter: string): string {
 function readViewFromHash(): WorkspaceView {
   try {
     if (typeof window === 'undefined') return 'workspace';
-    return window.location.hash.replace(/^#\/?/, '') === 'usage' ? 'usage' : 'workspace';
+    const clean = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+    if (clean === 'usage') return 'usage';
+    if (clean === 'agents') return 'agents';
+    if (clean === 'privacy') return 'privacy';
+    if (clean === 'terms') return 'terms';
+    if (clean === 'docs') return 'docs';
+    return 'workspace';
   } catch {
     return 'workspace';
   }
@@ -126,7 +136,7 @@ export const App: React.FC = () => {
   const navigate = useCallback((next: WorkspaceView) => {
     setView(next);
     try {
-      window.location.hash = next === 'usage' ? '#/usage' : '';
+      window.location.hash = next === 'workspace' ? '' : `#/${next}`;
     } catch {
       // Hash updates are best-effort; the in-memory view state still switches.
     }
@@ -553,6 +563,7 @@ export const App: React.FC = () => {
     setIsProcessing(true);
     const turnAbort = new AbortController();
     turnAbortRef.current = turnAbort;
+    const turnStarted = Date.now();
 
     try {
       // Build conversation history for multi-turn reasoning context
@@ -711,6 +722,23 @@ export const App: React.FC = () => {
     } catch (error) {
       const aborted =
         turnAbort.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
+      if (!aborted && hasApiKey) {
+        setUsageEntries(
+          appendUsageEntry(
+            createUsageEntry({
+              query,
+              source: 'llm',
+              telemetry: {
+                provider: settings.provider,
+                model: settings.model || 'unknown',
+                latencyMs: Math.max(1, Date.now() - turnStarted),
+                ok: false,
+                error: error instanceof Error ? error.message : 'The agent could not respond.',
+              },
+            }),
+          ),
+        );
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistMsgId
@@ -974,6 +1002,104 @@ export const App: React.FC = () => {
     );
   }
 
+  // Dedicated Autonomous Multi-Agent Workforce Showcase
+  if (view === 'agents') {
+    return (
+      <div className="app-container">
+        <ErrorBoundary variant="panel" label="Agents Showcase">
+          <AgentsPage
+            onBack={() => navigate('workspace')}
+            onSelectPrompt={(prompt) => {
+              navigate('workspace');
+              setTimeout(() => handleSendMessage(prompt), 100);
+            }}
+          />
+        </ErrorBoundary>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  // Dedicated Privacy Policy & DPDP Act 2023 Statutory Notice
+  if (view === 'privacy') {
+    return (
+      <div className="app-container">
+        <ErrorBoundary variant="panel" label="Privacy Policy">
+          <PrivacyPolicyPage
+            onBack={() => navigate('workspace')}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onForgetLearned={handleForgetLearned}
+            onClearUsage={handleClearUsage}
+          />
+        </ErrorBoundary>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  // Dedicated Terms of Service & Open Source Governance
+  if (view === 'terms') {
+    return (
+      <div className="app-container">
+        <ErrorBoundary variant="panel" label="Terms of Service">
+          <TermsPage onBack={() => navigate('workspace')} />
+        </ErrorBoundary>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  // Dedicated Developer Architecture & Documentation
+  if (view === 'docs') {
+    return (
+      <div className="app-container">
+        <ErrorBoundary variant="panel" label="Documentation">
+          <DocsPage
+            onBack={() => navigate('workspace')}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+          />
+        </ErrorBoundary>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Top Navigation */}
@@ -1000,6 +1126,8 @@ export const App: React.FC = () => {
         onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenUsage={() => navigate('usage')}
+        onOpenAgents={() => navigate('agents')}
+        onOpenDocs={() => navigate('docs')}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       />
 
@@ -1082,6 +1210,45 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         activeSheetName={activeSheetName}
       />
+
+      {/* Workspace Footer with Zenith OS Branding and Statutory Links */}
+      <footer className="workspace-footer">
+        <div className="workspace-footer-left">
+          <a
+            href="https://zenithopensourceprojects.vercel.app/os"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="footer-brand-link"
+            title="Zenith Open Source Projects Official Hub"
+          >
+            <span className="zenith-sparkle-dot" />
+            <strong>Zenith Open Source Projects</strong>
+          </a>
+          <span className="footer-sep">•</span>
+          <span className="footer-tagline">Autonomous Spreadsheet AI Engine</span>
+        </div>
+        <div className="workspace-footer-right">
+          <button className="footer-link-btn" onClick={() => navigate('agents')}>
+            Autonomous Agents
+          </button>
+          <span className="footer-sep">•</span>
+          <button className="footer-link-btn" onClick={() => navigate('docs')}>
+            Documentation
+          </button>
+          <span className="footer-sep">•</span>
+          <button className="footer-link-btn" onClick={() => navigate('privacy')}>
+            Privacy (DPDP 2023)
+          </button>
+          <span className="footer-sep">•</span>
+          <button className="footer-link-btn" onClick={() => navigate('terms')}>
+            Terms
+          </button>
+          <span className="footer-sep">•</span>
+          <button className="footer-link-btn" onClick={() => navigate('usage')}>
+            Token Ledger
+          </button>
+        </div>
+      </footer>
 
       {/* Non-blocking notifications */}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />

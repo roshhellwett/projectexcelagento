@@ -56,9 +56,9 @@ function formatTimestamp(timestamp: number): string {
   }
 }
 
-function formatLatency(ms: number): string {
-  if (ms <= 0) return '—';
-  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
+function formatLatency(ms: number | undefined | null): string {
+  if (typeof ms !== 'number' || isNaN(ms) || ms <= 0) return '—';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
 }
 
 export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({

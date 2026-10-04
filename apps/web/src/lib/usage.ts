@@ -83,8 +83,14 @@ export function loadUsageLog(): UsageEntry[] {
     const raw = store.getItem(USAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isUsageEntry).slice(-MAX_USAGE_ENTRIES);
+    return parsed
+      .filter(isUsageEntry)
+      .map((e) => ({
+        ...e,
+        latencyMs: typeof e.latencyMs === 'number' && !isNaN(e.latencyMs) ? e.latencyMs : 0,
+        ok: typeof e.ok === 'boolean' ? e.ok : true,
+      }))
+      .slice(-MAX_USAGE_ENTRIES);
   } catch {
     return [];
   }
@@ -148,6 +154,13 @@ export function createUsageEntry(input: {
   const telemetry = input.telemetry;
   const promptTokens = telemetry.promptTokens ?? 0;
   const completionTokens = telemetry.completionTokens ?? 0;
+  const latency =
+    typeof telemetry.latencyMs === 'number' && !isNaN(telemetry.latencyMs)
+      ? telemetry.latencyMs
+      : typeof (telemetry as unknown as { durationMs?: number }).durationMs === 'number'
+        ? (telemetry as unknown as { durationMs: number }).durationMs
+        : 0;
+
   return {
     id: nextUsageId(),
     timestamp: Date.now(),
@@ -158,8 +171,8 @@ export function createUsageEntry(input: {
     promptTokens,
     completionTokens,
     totalTokens: telemetry.totalTokens ?? promptTokens + completionTokens,
-    latencyMs: telemetry.latencyMs,
-    ok: telemetry.ok,
+    latencyMs: latency,
+    ok: telemetry.ok ?? true,
     ...(telemetry.error ? { error: telemetry.error } : {}),
     query,
   };

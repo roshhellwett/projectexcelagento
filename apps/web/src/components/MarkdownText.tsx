@@ -22,10 +22,49 @@ type Block =
   | { type: 'code'; code: string }
   | { type: 'list'; ordered: boolean; items: string[] }
   | { type: 'quote'; text: string }
+  | {
+      type: 'table';
+      headers: string[];
+      alignments: ('left' | 'center' | 'right')[];
+      rows: string[][];
+    }
   | { type: 'paragraph'; text: string };
 
+function isDelimiterRow(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes('-')) return false;
+  return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(trimmed);
+}
+
+function extractCells(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((c) => c.trim());
+}
+
+function parseAlignments(delimiterLine: string): ('left' | 'center' | 'right')[] {
+  return extractCells(delimiterLine).map((cell) => {
+    const trimmed = cell.trim();
+    const startColon = trimmed.startsWith(':');
+    const endColon = trimmed.endsWith(':');
+    if (startColon && endColon) return 'center';
+    if (endColon) return 'right';
+    return 'left';
+  });
+}
+
+function normalizeMarkdownText(raw: string): string[] {
+  let preprocessed = raw
+    .replace(/\|\s*\|\s*---/g, '|\n|---')
+    .replace(/\|\s*\|\s*/g, '|\n|')
+    .replace(/\|\s*(\r?\n)+\s*\|/g, '|\n|')
+    .replace(/\|\s+\|\s*---/g, '|\n|---');
+  return preprocessed.split(/\r?\n/);
+}
+
 function parseBlocks(text: string): Block[] {
-  const lines = text.split('\n');
+  const lines = normalizeMarkdownText(text);
   const blocks: Block[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -45,6 +84,26 @@ function parseBlocks(text: string): Block[] {
       i += 1;
       continue;
     }
+
+    // Markdown Table detection
+    if (
+      line.includes('|') &&
+      i + 1 < lines.length &&
+      isDelimiterRow(lines[i + 1] ?? '')
+    ) {
+      const headers = extractCells(line);
+      const alignments = parseAlignments(lines[i + 1] ?? '');
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && (lines[i] ?? '').includes('|') && (lines[i] ?? '').trim() !== '') {
+        const rowCells = extractCells(lines[i] ?? '');
+        rows.push(rowCells);
+        i += 1;
+      }
+      blocks.push({ type: 'table', headers, alignments, rows });
+      continue;
+    }
+
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
     if (heading) {
       blocks.push({ type: 'heading', level: heading[1]!.length, text: heading[2]! });
@@ -74,6 +133,7 @@ function parseBlocks(text: string): Block[] {
       blocks.push({ type: 'list', ordered: true, items });
       continue;
     }
+
     // Paragraph: gather consecutive non-empty, non-special lines
     const paraLines: string[] = [];
     while (
@@ -83,7 +143,8 @@ function parseBlocks(text: string): Block[] {
       !/^(#{1,3})\s+/.test(lines[i]!) &&
       !/^\s*[-*•]\s+/.test(lines[i]!) &&
       !/^\s*\d+[.)]\s+/.test(lines[i]!) &&
-      !/^\s*>\s?/.test(lines[i]!)
+      !/^\s*>\s?/.test(lines[i]!) &&
+      !(lines[i]!.includes('|') && i + 1 < lines.length && isDelimiterRow(lines[i + 1] ?? ''))
     ) {
       paraLines.push(lines[i] ?? '');
       i += 1;
@@ -121,6 +182,39 @@ const BlockView: React.FC<{ block: Block }> = ({ block }) => {
     }
     case 'quote':
       return <blockquote className="md-quote">{renderInline(block.text)}</blockquote>;
+    case 'table':
+      return (
+        <div className="md-table-wrapper" tabIndex={0}>
+          <table className="md-table">
+            <thead>
+              <tr>
+                {block.headers.map((hdr, hIdx) => (
+                  <th
+                    key={hIdx}
+                    style={{ textAlign: block.alignments[hIdx] ?? 'left' }}
+                  >
+                    {renderInline(hdr)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rIdx) => (
+                <tr key={rIdx}>
+                  {row.map((cell, cIdx) => (
+                    <td
+                      key={cIdx}
+                      style={{ textAlign: block.alignments[cIdx] ?? 'left' }}
+                    >
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     case 'paragraph':
       return <p className="md-paragraph">{renderInline(block.text)}</p>;
   }

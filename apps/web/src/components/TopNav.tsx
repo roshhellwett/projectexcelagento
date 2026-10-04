@@ -15,6 +15,8 @@ import {
   Settings,
   Sparkles,
   FileSpreadsheet,
+  Bot,
+  BookOpen,
 } from 'lucide-react';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 
@@ -60,6 +62,8 @@ interface TopNavProps {
   onToggleHistory: () => void;
   onOpenSettings: () => void;
   onOpenUsage?: () => void;
+  onOpenAgents?: () => void;
+  onOpenDocs?: () => void;
   onOpenCommandPalette?: () => void;
 }
 
@@ -99,6 +103,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   onToggleHistory,
   onOpenSettings,
   onOpenUsage,
+  onOpenAgents,
+  onOpenDocs,
   onOpenCommandPalette,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +133,17 @@ export const TopNav: React.FC<TopNavProps> = ({
           </span>
           <span className="logo-version-tag">PRO</span>
         </div>
+
+        <a
+          href="https://zenithopensourceprojects.vercel.app/os"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="zenith-nav-badge"
+          title="Zenith Open Source Projects Hub (https://zenithopensourceprojects.vercel.app/os)"
+        >
+          <span className="zenith-nav-dot" />
+          <span>Zenith OS</span>
+        </a>
 
         <span className="nav-vertical-divider" aria-hidden="true" />
 
@@ -311,6 +328,26 @@ export const TopNav: React.FC<TopNavProps> = ({
         >
           <History size={14} />
           History ({historyPosition}/{historyLength})
+        </button>
+
+        <button
+          className="btn btn-ghost btn-sm nav-agents-btn"
+          onClick={onOpenAgents}
+          title="Meet our autonomous multi-agent workforce"
+          data-testid="open-agents"
+        >
+          <Bot size={14} className="text-emerald" />
+          <span>Agents</span>
+        </button>
+
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onOpenDocs}
+          title="Architecture & Developer Docs"
+          data-testid="open-docs"
+        >
+          <BookOpen size={14} />
+          <span>Docs</span>
         </button>
 
         <button
