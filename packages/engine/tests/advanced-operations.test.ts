@@ -223,6 +223,38 @@ describe('advanced operations', () => {
       expect(values(result.workbook, 3)).toEqual([2, 'Bob', 'Jones', 'Engineering']);
       expect(splitColumnOperation.invariants(before, result.workbook, args).valid).toBe(true);
     });
+
+    it('splits a single-column raw CSV blob into 12 columns without invariant target range errors', () => {
+      const before = workbook([
+        row('id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user'),
+        row('3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET statement_timeout=\'58s\';\nCREATE FUNCTION test();",postgres,null,[],null'),
+      ]);
+
+      const columnNames = [
+        'id', 'date', 'method', 'pathname', 'status', 'timestamp',
+        'level', 'event_message', 'log_type', 'log_count', 'logs', 'auth_user',
+      ];
+
+      const args = splitColumnOperation.schema.parse({
+        sheet: 'Data',
+        column: 'A',
+        delimiter: ',',
+        newColumnNames: columnNames,
+      });
+
+      const preview = splitColumnOperation.preview(before, args);
+      expect(preview.affectedCells).toBeGreaterThan(0);
+
+      const result = splitColumnOperation.apply(before, args);
+      expect(values(result.workbook, 1)).toEqual(columnNames);
+      expect(values(result.workbook, 2)).toHaveLength(12);
+      expect(values(result.workbook, 2)[4]).toBe('00000');
+      expect(values(result.workbook, 2)[7]).toContain('statement:');
+
+      const inv = splitColumnOperation.invariants(before, result.workbook, args);
+      expect(inv.valid).toBe(true);
+      expect(inv.errors).toHaveLength(0);
+    });
   });
 
   describe('merge_columns', () => {

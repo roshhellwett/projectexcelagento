@@ -587,9 +587,55 @@ export const splitColumnArgsSchema = z.object({
 });
 export type SplitColumnArgs = z.infer<typeof splitColumnArgsSchema>;
 
+function splitRespectingQuotes(val: string, delimiter: string): string[] {
+  if (delimiter !== ',' || !val.includes('"')) {
+    return val.split(delimiter);
+  }
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < val.length; i++) {
+    const char = val[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === delimiter && !inQuotes) {
+      result.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  result.push(current);
+  return result;
+}
+
+function cleanSplitValue(raw: string | undefined): string | null {
+  if (raw === undefined || raw === null) return null;
+  let s = raw.trim();
+  if (s.startsWith('"""') && s.endsWith('"""') && s.length >= 6) {
+    s = s.slice(3, -3).trim();
+  } else if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) {
+    s = s.slice(1, -1).trim();
+  }
+  return s.length > 0 ? s : null;
+}
+
 function splitColumnTarget(workbook: Workbook, args: SplitColumnArgs): CellRange[] {
   const colIdx = columnToIndex(args.column) ?? 0;
-  return [columnRange(workbook, args.sheet, 1, colIdx, maxColumn(workbook, args.sheet) + 2)];
+  let maxParts = Math.max(args.newColumnNames?.length ?? 2, 2);
+  const sheet = getSheet(workbook, args.sheet);
+  if (sheet && sheet.rows.length > 0) {
+    for (let r = 0; r < Math.min(sheet.rows.length, 30); r++) {
+      const val = sheet.rows[r]?.[colIdx]?.value;
+      if (typeof val === 'string' && val.includes(args.delimiter)) {
+        const partsCount = splitRespectingQuotes(val, args.delimiter).length;
+        if (partsCount > maxParts) maxParts = partsCount;
+      }
+    }
+  }
+  const currentCols = maxColumn(workbook, args.sheet);
+  const endColIdx = Math.max(colIdx + maxParts, currentCols + maxParts + 2);
+  return [columnRange(workbook, args.sheet, 1, colIdx, endColIdx)];
 }
 
 function validateSplitColumn(workbook: Workbook, args: SplitColumnArgs): ValidationResult {
@@ -621,12 +667,14 @@ function applySplitColumn(workbook: Workbook, args: SplitColumnArgs): OperationR
       } else if (r > headerRowIdx) {
         const cellVal = row[colIdx]?.value;
         const parts =
-          cellVal !== null && cellVal !== undefined ? String(cellVal).split(args.delimiter) : [];
-        const p0 = parts[0]?.trim();
-        row[colIdx] = createCell(p0 ? p0 : null);
+          cellVal !== null && cellVal !== undefined
+            ? splitRespectingQuotes(String(cellVal), args.delimiter)
+            : [];
+        const p0 = cleanSplitValue(parts[0]);
+        row[colIdx] = createCell(p0);
         for (let i = 1; i < partsCount; i++) {
-          const pi = parts[i]?.trim();
-          row.splice(colIdx + i, 0, createCell(pi ? pi : null));
+          const pi = cleanSplitValue(parts[i]);
+          row.splice(colIdx + i, 0, createCell(pi));
         }
       } else {
         for (let i = 1; i < partsCount; i++) {
