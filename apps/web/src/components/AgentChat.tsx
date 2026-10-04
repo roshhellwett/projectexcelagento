@@ -137,21 +137,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const getActivityIcon = (type: AgentActivityEvent['type']) => {
     switch (type) {
       case 'inspecting':
-        return <Search size={12} style={{ color: '#2563eb' }} />;
+        return <Search size={12} style={{ color: 'var(--accent-blue)' }} />;
       case 'planning':
-        return <Layers size={12} style={{ color: '#7c3aed' }} />;
+        return <Layers size={12} style={{ color: 'var(--accent-purple)' }} />;
       case 'guardrail_check':
-        return <ShieldCheck size={12} style={{ color: '#16a34a' }} />;
+        return <ShieldCheck size={12} style={{ color: 'var(--brand-emerald)' }} />;
       case 'tool_call':
-        return <Zap size={12} style={{ color: '#d97706' }} />;
+        return <Zap size={12} style={{ color: 'var(--accent-amber)' }} />;
       case 'thinking':
-        return <Brain size={12} style={{ color: '#0284c7' }} />;
+        return <Brain size={12} style={{ color: 'var(--accent-cyan)' }} />;
       case 'warning':
-        return <AlertTriangle size={12} style={{ color: '#e11d48' }} />;
+        return <AlertTriangle size={12} style={{ color: 'var(--accent-rose)' }} />;
       case 'status':
-        return <CheckCircle2 size={12} style={{ color: '#16a34a' }} />;
+        return <CheckCircle2 size={12} style={{ color: 'var(--brand-emerald)' }} />;
       default:
-        return <Sparkles size={12} style={{ color: '#0284c7' }} />;
+        return <Sparkles size={12} style={{ color: 'var(--accent-cyan)' }} />;
     }
   };
 

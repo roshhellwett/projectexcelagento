@@ -1,4 +1,5 @@
 import React from 'react';
+import { BarChart2, ArrowLeft, Sparkles, ExternalLink, Sliders } from 'lucide-react';
 
 import {
   PROVIDER_HOSTS,
@@ -79,21 +80,41 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
   const recent = [...entries].reverse().slice(0, 50);
 
   return (
-    <div className="usage-page" data-testid="usage-page">
-      <header className="usage-header">
-        <div>
-          <h1 className="usage-title">Model &amp; Usage</h1>
-          <p className="usage-subtitle">
-            Every inference call this workspace has made, with real token counts reported by the
-            provider. Nothing here is estimated.
-          </p>
+    <div className="usage-page docs-page" data-testid="usage-page">
+      {/* Unified Top Bar with Zenith OS Branding */}
+      <div className="docs-top-bar">
+        <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
+          <ArrowLeft size={14} /> Back to workspace
+        </button>
+
+        <a
+          href="https://zenithopensourceprojects.vercel.app/os"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="zenith-brand-badge"
+          title="Visit Zenith Open Source Projects Official Hub"
+        >
+          <Sparkles size={13} className="zenith-sparkle-icon" />
+          <span>Zenith Open Source Projects (zenithopensourceprojects.vercel.app/os)</span>
+          <ExternalLink size={12} />
+        </a>
+      </div>
+
+      <header className="docs-header usage-header">
+        <div className="docs-badge">
+          <BarChart2 size={14} />
+          <span>TELEMETRY &amp; REAL-TIME TOKEN AUDIT LEDGER</span>
         </div>
-        <div className="usage-header-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenSettings}>
-            Model settings
-          </button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={onBack}>
-            Back to workspace
+        <h1 className="docs-title usage-title">
+          Model &amp; <span className="text-emerald">Usage</span>
+        </h1>
+        <p className="docs-subtitle usage-subtitle">
+          Every inference call this workspace has made, with real token counts reported by the
+          provider. Zero remote telemetry; all accounting is held client-side in session memory.
+        </p>
+        <div className="usage-header-actions" style={{ justifyContent: 'center', marginTop: '16px' }}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenSettings}>
+            <Sliders size={13} /> Model settings
           </button>
         </div>
       </header>

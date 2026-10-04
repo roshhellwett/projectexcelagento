@@ -141,44 +141,25 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={onClose}
-      style={{ alignItems: 'flex-start', paddingTop: '12vh' }}
-    >
+    <div className="modal-overlay command-palette-overlay" onClick={onClose}>
       <div
-        className="modal-card"
+        className="modal-card command-palette-card"
         ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         data-dialog-open="true"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: '620px',
-          borderRadius: '8px',
-          border: '1px solid var(--border-strong)',
-          boxShadow:
-            '0 20px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1)',
-        }}
       >
         {/* Search Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border-main)',
-            background: 'var(--bg-surface)',
-          }}
-        >
+        <div className="command-palette-header">
           <svg
+            className="command-palette-search-icon"
             width="16"
             height="16"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="var(--text-dim)"
+            stroke="currentColor"
             strokeWidth="2"
           >
             <circle cx="11" cy="11" r="8" />
@@ -192,134 +173,68 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             id="command-palette-input"
             data-autofocus
             type="text"
+            className="command-palette-input"
             placeholder="Type a command, transformation, or audit query… (Esc to close)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontSize: '13.5px',
-              fontFamily: 'var(--font-sans)',
-              color: 'var(--text-main)',
-            }}
           />
-          <span
-            style={{
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono)',
-              padding: '2px 6px',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-main)',
-              borderRadius: '4px',
-              color: 'var(--text-dim)',
-            }}
-          >
-            ESC
-          </span>
+          <span className="command-palette-esc">ESC</span>
         </div>
 
         {/* Command List */}
         <div
-          className="command-list"
+          className="command-list command-palette-list"
           role="listbox"
           aria-label="Commands"
           aria-activedescendant={
             filtered[selectedIndex] ? `command-${filtered[selectedIndex]!.id}` : undefined
           }
-          style={{ maxHeight: '340px', overflowY: 'auto', padding: '6px' }}
         >
           {filtered.length === 0 ? (
-            <div
-              style={{
-                padding: '24px',
-                textAlign: 'center',
-                color: 'var(--text-dim)',
-                fontSize: '13px',
-              }}
-            >
+            <div className="command-empty">
               No commands matching &quot;{search}&quot;
             </div>
           ) : (
             filtered.map((item, index) => {
               const isSelected = index === selectedIndex;
+              const badgeClass =
+                item.category === 'Transform'
+                  ? 'command-badge-transform'
+                  : item.category === 'Audit'
+                    ? 'command-badge-audit'
+                    : item.category === 'Navigation'
+                      ? 'command-badge-nav'
+                      : 'command-badge-system';
+
               return (
                 <div
                   key={item.id}
                   id={`command-${item.id}`}
                   role="option"
                   aria-selected={isSelected}
+                  className={`command-item ${isSelected ? 'selected' : ''}`}
                   onClick={() => {
                     item.action();
                     onClose();
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    background: isSelected ? 'var(--bg-elevated)' : 'transparent',
-                    border: isSelected ? '1px solid var(--border-main)' : '1px solid transparent',
-                    transition: 'all 120ms ease',
-                  }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span
-                        style={{
-                          fontSize: '9.5px',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          fontFamily: 'var(--font-mono)',
-                          padding: '1px 5px',
-                          borderRadius: '3px',
-                          background:
-                            item.category === 'Transform'
-                              ? '#eff6ff'
-                              : item.category === 'Audit'
-                                ? '#f0fdf4'
-                                : 'var(--bg-canvas)',
-                          color:
-                            item.category === 'Transform'
-                              ? '#1d4ed8'
-                              : item.category === 'Audit'
-                                ? '#166534'
-                                : 'var(--text-dim)',
-                          border: '1px solid var(--border-main)',
-                          fontWeight: 600,
-                        }}
-                      >
+                  <div className="command-item-left">
+                    <div className="command-item-header">
+                      <span className={`command-badge ${badgeClass}`}>
                         {item.category}
                       </span>
-                      <span
-                        style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}
-                      >
+                      <span className="command-item-title">
                         {item.title}
                       </span>
                     </div>
-                    <span
-                      style={{ fontSize: '11.5px', color: 'var(--text-muted)', paddingLeft: '2px' }}
-                    >
+                    <span className="command-item-subtitle">
                       {item.subtitle}
                     </span>
                   </div>
 
                   {item.shortcut && (
-                    <span
-                      style={{
-                        fontSize: '10.5px',
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        background: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-main)',
-                        color: 'var(--text-dim)',
-                      }}
-                    >
+                    <span className="command-shortcut">
                       {item.shortcut}
                     </span>
                   )}
@@ -330,19 +245,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
 
         {/* Footer HUD info */}
-        <div
-          style={{
-            padding: '8px 16px',
-            borderTop: '1px solid var(--border-main)',
-            background: 'var(--bg-canvas)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '11px',
-            color: 'var(--text-dim)',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
+        <div className="command-palette-footer">
           <span>Use ↑↓ to navigate • Enter to run</span>
           <span>Deterministic Invariant Sandbox Active</span>
         </div>

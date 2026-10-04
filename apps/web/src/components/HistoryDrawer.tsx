@@ -34,9 +34,10 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
       aria-label="Operation audit log"
       data-dialog-open="true"
     >
-      <div className="agent-header">
-        <div className="agent-title-group">
+      <div className="history-header">
+        <div className="history-title-group">
           <svg
+            className="history-icon"
             width="16"
             height="16"
             viewBox="0 0 24 24"
@@ -48,8 +49,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             <polyline points="12 6 12 12 14 14" />
           </svg>
           <div>
-            <div className="agent-title">Operation Audit Log</div>
-            <div className="agent-subtitle">
+            <div className="history-title">Operation Audit Log</div>
+            <div className="history-subtitle">
               {currentPosition} of {entries.length} steps applied
             </div>
           </div>
@@ -68,20 +69,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
       <div className="history-list">
         {/* Initial Baseline Item */}
         <div className={`history-item ${currentPosition === 0 ? 'active' : ''}`}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 600, fontSize: '13px' }}>0. Initial State</span>
+          <div className="history-item-row">
+            <span className="history-item-title">0. Initial State</span>
             {currentPosition === 0 && (
-              <span style={{ fontSize: '10px', color: 'var(--primary)', fontWeight: 700 }}>
-                ● Current
-              </span>
+              <span className="history-current-tag">● Current</span>
             )}
           </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Original loaded workbook</p>
+          <p className="history-item-desc">Original loaded workbook</p>
           {currentPosition !== 0 && (
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
-              style={{ marginTop: '4px' }}
+              className="btn btn-secondary btn-sm history-step-btn"
               onClick={() => onStepBack(0)}
             >
               Restore to Origin
@@ -95,26 +93,21 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
 
           return (
             <div key={idx} className={`history-item ${isCurrent ? 'active' : ''}`}>
-              <div
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
+              <div className="history-item-row">
                 <span className="op-badge">{entry.operationName}</span>
                 {isCurrent && (
-                  <span style={{ fontSize: '10px', color: 'var(--primary)', fontWeight: 700 }}>
-                    ● Current
-                  </span>
+                  <span className="history-current-tag">● Current</span>
                 )}
               </div>
 
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              <div className="history-item-meta">
                 Step {stepNum} • {entry.patch.length} patch entries
               </div>
 
               {!isCurrent && (
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ marginTop: '4px' }}
+                  className="btn btn-secondary btn-sm history-step-btn"
                   onClick={() => onStepBack(stepNum)}
                 >
                   Step to this State
