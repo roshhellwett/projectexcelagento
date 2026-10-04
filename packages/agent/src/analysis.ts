@@ -270,6 +270,15 @@ export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnM
     'col',
     'sheet',
     'data',
+    'dataset',
+    'table',
+    'records',
+    'record',
+    'entries',
+    'entry',
+    'logs',
+    'log',
+    'file',
   ]);
 
   // 2. Exact or substring match in header name (only for meaningful query lengths)
@@ -463,7 +472,7 @@ export function auditSheet(sheet: Sheet): SheetAudit {
             sheet: sheet.name,
             columns: [colLetter],
             trim: true,
-            collapseWhitespace: true,
+            collapseWhitespace: false,
             case: 'none',
             headerRow: 1,
           },
@@ -482,7 +491,7 @@ export function auditSheet(sheet: Sheet): SheetAudit {
             sheet: sheet.name,
             columns: [colLetter],
             trim: true,
-            collapseWhitespace: true,
+            collapseWhitespace: false,
             case: 'title',
             headerRow: 1,
           },
@@ -842,9 +851,14 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  const deleteColMatch = raw.match(
-    /(?:delete|remove|drop)\s+(?:the\s+)?(?:column\s+)?([a-z0-9_\s/()]+?)(?:\s+column)?\s*$/i,
-  );
+  const isDeleteRowOrDedupe =
+    /\b(?:row|rows|duplicate|duplicates|dedup|dup|blank|empty)\b/i.test(raw);
+
+  const deleteColMatch =
+    !isDeleteRowOrDedupe &&
+    raw.match(
+      /(?:delete|remove|drop)\s+(?:the\s+)?(?:column\s+)?([a-z0-9_\s/()]+?)(?:\s+column)?\s*$/i,
+    );
   if (deleteColMatch && deleteColMatch[1]) {
     const targetCol = resolveColumn(deleteColMatch[1], columns);
     if (targetCol) {
@@ -1229,7 +1243,7 @@ export function analyzeSpreadsheetIntentAndData(
             sheet: currentSheet.name,
             columns: untrimmedCols,
             trim: true,
-            collapseWhitespace: true,
+            collapseWhitespace: false,
             case: 'none',
             headerRow: 1,
           },
@@ -1273,24 +1287,36 @@ export function analyzeSpreadsheetIntentAndData(
     q.includes('repeated') ||
     q.includes('doublon')
   ) {
+    const explicitCol = q.match(/(?:column|col)\s+([a-z])\b/i);
+    const colRefMatch = q.match(/(?:by|on|based on|in|for)\s+([a-z0-9_ -]+)/i);
+    const targetCol =
+      (explicitCol?.[1] ? resolveColumn(explicitCol[1], columns) : null) ||
+      (colRefMatch?.[1] ? resolveColumn(colRefMatch[1], columns) : null);
+
+    const dupColumns = targetCol ? [targetCol.letter] : allColumns;
+    const colIndices = dupColumns.map((l) => columnToIndex(l) ?? 0);
     const seen = new Set<string>();
     let dupCount = 0;
     for (let r = 1; r < currentSheet.rows.length; r++) {
-      const key = (currentSheet.rows[r] || []).map((c) => String(c?.value ?? '')).join('|~|');
+      const key = colIndices.map((idx) => String(currentSheet.rows[r]?.[idx]?.value ?? '')).join('|~|');
       if (seen.has(key)) dupCount++;
       else seen.add(key);
     }
+
+    const scopeExplanation = targetCol
+      ? `based on column ${targetCol.letter} ("${targetCol.rawName}")`
+      : `across all ${allColumns.length} columns`;
     return {
-      message: `I audited all **${dataRowsCount} data rows** in **${currentSheet.name}**.\n\n• Found **${dupCount} duplicate row(s)** across the dataset.\n\nI've generated a clean deduplication action for you. Review the card below and click **Apply Changes** to remove them instantly!`,
+      message: `I audited all **${dataRowsCount} data rows** in **${currentSheet.name}**.\n\n• Found **${dupCount} duplicate row(s)** ${scopeExplanation}.\n\nI've generated a clean deduplication action for you. Review the card below and click **Apply Changes** to remove them instantly!`,
       proposedAction: {
         name: 'delete_duplicates',
         args: {
           sheet: currentSheet.name,
-          columns: allColumns,
+          columns: dupColumns,
           headerRow: 1,
           keep: 'first',
         },
-        explanation: `Remove ${dupCount} duplicate rows across all ${allColumns.length} columns, keeping the first occurrence.`,
+        explanation: `Remove ${dupCount} duplicate rows ${scopeExplanation}, keeping the first occurrence.`,
         category: 'structure',
       },
     };
@@ -1328,7 +1354,7 @@ export function analyzeSpreadsheetIntentAndData(
           sheet: currentSheet.name,
           columns: [targetCol.letter],
           trim: true,
-          collapseWhitespace: true,
+          collapseWhitespace: q.includes('collapse') || q.includes('extra space') || q.includes('squash'),
           case: caseOption,
           headerRow: 1,
         },

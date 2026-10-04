@@ -289,8 +289,13 @@ export function detectDelimiter(text: string): string | null {
  * downstream can recover it.
  */
 export function parseCsvField(raw: string, delimiter: string): CellValue {
-  const text = raw.trim();
-  if (text === '') return null;
+  let text = raw.trim();
+  if (text === '' || text.toLowerCase() === 'null') return null;
+  // Strip redundant surrounding quotes if the field is wrapped in literal quotes from exports like """..."""
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"') && !text.slice(1, -1).includes('"')) {
+    text = text.slice(1, -1).trim();
+    if (text === '' || text.toLowerCase() === 'null') return null;
+  }
   if (text.startsWith('=')) return text;
 
   // Accounting notation: (450) means negative 450.
