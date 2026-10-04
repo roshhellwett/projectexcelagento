@@ -592,11 +592,30 @@ export class ExcelAgentOrchestrator {
                 fnArgs,
                 { promptTokens: approxPromptTokens, totalTokens: approxPromptTokens },
               );
+              const argsSummary = Object.keys(fnArgs).length > 0 ? ` (${JSON.stringify(fnArgs)})` : '';
+              input.callbacks?.onThinking?.(
+                `\n[Data Scientist] Reading sheet data via "${fnName}"${argsSummary}...\n`,
+              );
               input.callbacks?.onTokenCount?.({
                 promptTokens: approxPromptTokens,
                 totalTokens: approxPromptTokens,
               });
               const toolOutput = await this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
+              let observationText = '';
+              if (typeof toolOutput === 'object' && toolOutput !== null) {
+                if (Array.isArray(toolOutput)) {
+                  observationText = `Retrieved ${toolOutput.length} record(s).`;
+                } else if ('aggregates' in toolOutput && typeof (toolOutput as any).aggregates === 'object') {
+                  observationText = `Computed aggregates: ${JSON.stringify((toolOutput as any).aggregates)}`;
+                } else if ('values' in toolOutput && Array.isArray((toolOutput as any).values)) {
+                  observationText = `Extracted ${(toolOutput as any).values.length} cell value(s).`;
+                } else {
+                  observationText = `Inspected schema with keys: ${Object.keys(toolOutput).slice(0, 5).join(', ')}.`;
+                }
+              } else {
+                observationText = String(toolOutput).slice(0, 120);
+              }
+              input.callbacks?.onThinking?.(`[Data Scientist] Observation: ${observationText}\n`);
               this.saveWorkingStep(input, 'read_tool_inspection', {
                 tool: fnName,
                 args: fnArgs,
@@ -630,6 +649,9 @@ export class ExcelAgentOrchestrator {
                 'Planner',
                 `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`,
               );
+              input.callbacks?.onThinking?.(
+                `\n[Planner] Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...\n`,
+              );
               const plan = this.buildExecutionPlan(input.workbook, sheetName, fnArgs);
               if (plan) {
                 llmPlan = plan;
@@ -642,6 +664,9 @@ export class ExcelAgentOrchestrator {
                   steps: plan.steps.map((s) => s.operation),
                   timestamp: Date.now(),
                 });
+                input.callbacks?.onThinking?.(
+                  `[Sentinel] Verifying ${plan.steps.length} operation(s) against mathematical invariants and schema safety...\n`,
+                );
               }
               resolved = true;
               break;
@@ -653,6 +678,9 @@ export class ExcelAgentOrchestrator {
                 'guardrail_check',
                 'Guardrail',
                 `Validating proposed operation "${fnName}"...`,
+              );
+              input.callbacks?.onThinking?.(
+                `\n[Sentinel] Validating proposed operation "${fnName}" against engine invariants...\n`,
               );
               llmAction = {
                 name: fnName,
@@ -708,8 +736,10 @@ export class ExcelAgentOrchestrator {
 
           finalResponseContent = followUp.content;
           currentToolCalls = followUp.toolCalls;
-          if (followUp.thought)
+          if (followUp.thought) {
             llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
+            input.callbacks?.onThinking?.(`\n${followUp.thought}\n`);
+          }
 
           // If the model produced text with no tool calls, check if it's an incomplete thought or self-directed preamble
           const isIncomplete =
@@ -761,8 +791,10 @@ export class ExcelAgentOrchestrator {
                 }
                 finalResponseContent = continuation.content;
                 currentToolCalls = continuation.toolCalls;
-                if (continuation.thought)
+                if (continuation.thought) {
                   llmThought = (llmThought ? `${llmThought}\n` : '') + continuation.thought;
+                  input.callbacks?.onThinking?.(`\n${continuation.thought}\n`);
+                }
                 usedModel = fallbackModel;
                 break;
               } catch {

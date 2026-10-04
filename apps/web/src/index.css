@@ -5126,26 +5126,144 @@ input:focus-visible,
 .node-sentinel { color: var(--brand-emerald); }
 .node-engine { color: var(--accent-amber); }
 
-.swarm-node.pulse-node {
-  animation: swarmNodeGlow 2s infinite ease-in-out;
-  border-color: var(--accent-cyan);
+/* Real Live Swarm Node Active Glowing States */
+.swarm-node.is-working-now {
+  position: relative;
+  font-weight: 700;
   color: var(--text-main);
+  transform: translateY(-1px);
+  z-index: 2;
 }
 
-.swarm-node.pulse-node.delay-1 { animation-delay: 0.3s; }
-.swarm-node.pulse-node.delay-2 { animation-delay: 0.6s; }
-.swarm-node.pulse-node.delay-3 { animation-delay: 0.9s; }
+.swarm-node.glow-conductor {
+  background: rgba(168, 85, 247, 0.18) !important;
+  border-color: #a855f7 !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.45), inset 0 0 8px rgba(168, 85, 247, 0.2) !important;
+  animation: glow-pulse-conductor 1.6s infinite ease-in-out;
+}
 
-@keyframes swarmNodeGlow {
+@keyframes glow-pulse-conductor {
   0%, 100% {
-    background: var(--bg-surface-glass-subtle);
-    border-color: var(--border-glass-subtle);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.35), inset 0 0 6px rgba(168, 85, 247, 0.15);
+    border-color: #a855f7;
   }
   50% {
-    background: rgba(6, 182, 212, 0.15);
-    border-color: rgba(6, 182, 212, 0.45);
-    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.7), inset 0 0 12px rgba(168, 85, 247, 0.35);
+    border-color: #c084fc;
   }
+}
+
+.swarm-node.glow-scientist {
+  background: rgba(2, 132, 199, 0.18) !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 14px rgba(2, 132, 199, 0.45), inset 0 0 8px rgba(2, 132, 199, 0.2) !important;
+  animation: glow-pulse-scientist 1.6s infinite ease-in-out;
+}
+
+@keyframes glow-pulse-scientist {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(2, 132, 199, 0.35), inset 0 0 6px rgba(2, 132, 199, 0.15);
+    border-color: #0284c7;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(2, 132, 199, 0.7), inset 0 0 12px rgba(2, 132, 199, 0.35);
+    border-color: #38bdf8;
+  }
+}
+
+.swarm-node.glow-sentinel {
+  background: rgba(16, 185, 129, 0.18) !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.45), inset 0 0 8px rgba(16, 185, 129, 0.2) !important;
+  animation: glow-pulse-sentinel 1.6s infinite ease-in-out;
+}
+
+@keyframes glow-pulse-sentinel {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.35), inset 0 0 6px rgba(16, 185, 129, 0.15);
+    border-color: #10b981;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.7), inset 0 0 12px rgba(16, 185, 129, 0.35);
+    border-color: #34d399;
+  }
+}
+
+.swarm-node.glow-engine {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.45), inset 0 0 8px rgba(245, 158, 11, 0.2) !important;
+  animation: glow-pulse-engine 1.6s infinite ease-in-out;
+}
+
+@keyframes glow-pulse-engine {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.35), inset 0 0 6px rgba(245, 158, 11, 0.15);
+    border-color: #f59e0b;
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.7), inset 0 0 12px rgba(245, 158, 11, 0.35);
+    border-color: #fbbf24;
+  }
+}
+
+.swarm-node.has-contributed {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.node-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.node-live-status {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.95;
+  white-space: nowrap;
+}
+
+.glow-conductor .node-live-status { color: #c084fc; }
+.glow-scientist .node-live-status { color: #38bdf8; }
+.glow-sentinel .node-live-status { color: #34d399; }
+.glow-engine .node-live-status { color: #fbbf24; }
+
+.icon-live-spin {
+  animation: iconPulseLive 1.4s infinite ease-in-out;
+}
+
+@keyframes iconPulseLive {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+}
+
+.swarm-hud-status-badge.active.conductor {
+  background: rgba(168, 85, 247, 0.16);
+  color: #a855f7;
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.swarm-hud-status-badge.active.scientist {
+  background: rgba(2, 132, 199, 0.16);
+  color: #0284c7;
+  border-color: rgba(2, 132, 199, 0.4);
+}
+
+.swarm-hud-status-badge.active.sentinel {
+  background: rgba(16, 185, 129, 0.16);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.swarm-hud-status-badge.active.engine {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
 }
 
 /* Superhuman Autopilot Toolbar */

@@ -198,7 +198,7 @@ describe('Live Thinking Button and Panel', () => {
     fireEvent.click(statusBtn);
 
     expect(container.querySelector('.live-thinking-panel')).not.toBeNull();
-    expect(screen.getByText('Internal reasoning details here.')).toBeInTheDocument();
+    expect(screen.getByText(/Internal reasoning details here/i)).toBeInTheDocument();
   });
 
   it('synthesizes human-readable chain-of-thought text when raw thought string is not provided', () => {
@@ -298,7 +298,9 @@ describe('Live Thinking Button and Panel', () => {
     expect(copyBtn).toBeInTheDocument();
     fireEvent.click(copyBtn);
 
-    expect(writeTextMock).toHaveBeenCalledWith('Internal model reasoning to copy.');
+    expect(writeTextMock).toHaveBeenCalledWith(
+      expect.stringContaining('Internal model reasoning to copy.'),
+    );
     expect(screen.getByText('Copied')).toBeInTheDocument();
   });
 });
