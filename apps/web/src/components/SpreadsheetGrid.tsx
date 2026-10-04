@@ -1124,8 +1124,8 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
               className={`sheet-tab ${isActive ? 'active' : ''}`}
               onClick={() => onSelectSheet(sheet.name)}
             >
-              <span>{sheet.name}</span>
-              <span className="sheet-tab-count">{count} rows</span>
+              <span className="sheet-tab-title">{sheet.name}</span>
+              <span className="sheet-tab-count">({count})</span>
             </button>
           );
         })}

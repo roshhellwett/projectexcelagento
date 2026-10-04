@@ -156,9 +156,12 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       {/* Agent Header */}
       <div className="agent-header">
         <div className="agent-title-group">
-          <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
+          <div className="agent-status-indicator">
+            <Sparkles size={16} className="agent-sparkle-icon" />
+            <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
+          </div>
           <div>
-            <div className="agent-title">ExcelAgento</div>
+            <div className="agent-title">ExcelAgento Copilot</div>
             <div className="agent-subtitle">
               {hasApiKey ? (
                 <span className="byok-active-tag">{apiKeyProvider.toUpperCase()} ACTIVE</span>
@@ -186,19 +189,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         <div className="byok-gate-container">
           <div className="byok-gate-card">
             <div className="byok-avatar-icon">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
+              <ShieldCheck size={28} className="byok-shield-icon" />
             </div>
 
             <h3 className="byok-gate-title">Activate Excel Agent</h3>
@@ -383,109 +374,77 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   ) : (
                     <div className="assistant-card">
                       <div className="assistant-header">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Bot size={15} style={{ color: 'var(--accent-emerald)' }} />
-                          <span
-                            style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}
-                          >
-                            Excel Agent
-                          </span>
-
-                          {/* Live / Real Token Count Pill */}
+                        <div className="assistant-header-left">
+                          <Bot size={14} className="assistant-bot-icon" />
+                          <span className="assistant-name">ExcelAgento Copilot</span>
+                        </div>
+                        <div className="assistant-header-right">
+                          {msg.proposedAction && (
+                            <code className="op-tag">{msg.proposedAction.name}</code>
+                          )}
+                          {msg.plan && (
+                            <span className="plan-tag">{msg.plan.steps.length} Steps</span>
+                          )}
+                          {msg.status === 'applied' && !msg.proposedAction && !msg.plan && (
+                            <span className="applied-tag">✓ Applied</span>
+                          )}
                           {(msg.tokens?.totalTokens !== undefined || msg.isStreaming) && (
-                            <motion.span
-                              className={`live-token-pill ${msg.isStreaming || msg.tokens?.isLive ? 'is-streaming' : 'is-done'}`}
-                              animate={
-                                msg.isStreaming || msg.tokens?.isLive
-                                  ? { scale: [1, 1.02, 1] }
-                                  : { scale: 1 }
-                              }
-                              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                            <span
+                              className={`token-tag ${msg.isStreaming || msg.tokens?.isLive ? 'is-live' : ''}`}
                               title={
                                 msg.tokens?.promptTokens !== undefined
-                                  ? `Prompt (input): ${msg.tokens.promptTokens.toLocaleString()} tokens | Generated (output): ${msg.tokens.completionTokens?.toLocaleString() ?? 0} tokens`
+                                  ? `Input: ${msg.tokens.promptTokens.toLocaleString()} | Output: ${msg.tokens.completionTokens ?? 0}`
                                   : 'Token processing'
                               }
                             >
-                              <span className="token-icon">⚡</span>
-                              <span className="token-count">
-                                {msg.tokens?.totalTokens !== undefined
-                                  ? `${msg.tokens.totalTokens.toLocaleString()} tokens`
-                                  : 'Counting tokens…'}
-                              </span>
-                              {(msg.isStreaming || msg.tokens?.isLive) && (
-                                <span className="live-pulse-badge">LIVE</span>
-                              )}
-                            </motion.span>
+                              ⚡ {msg.tokens?.totalTokens !== undefined ? `${msg.tokens.totalTokens.toLocaleString()} tok` : 'Streaming…'}
+                            </span>
                           )}
                         </div>
-                        {msg.plan ? (
-                          <span
-                            className="op-badge"
-                            style={{
-                              background: '#faf5ff',
-                              color: '#7e22ce',
-                              borderColor: '#e9d5ff',
-                            }}
-                          >
-                            {msg.plan.steps.length} Steps Plan
-                          </span>
-                        ) : msg.proposedAction ? (
-                          <span className="op-badge">{msg.proposedAction.name}</span>
-                        ) : msg.status === 'applied' ? (
-                          <span
-                            style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}
-                          >
-                            ✓ Applied
-                          </span>
-                        ) : null}
                       </div>
 
-                      {/* Agent Activity Timeline & Live Token Monitor */}
+                      {/* Agent Activity Timeline */}
                       {msg.activities && msg.activities.length > 0 && (
                         <div className="activity-timeline">
-                          <div className="activity-token-monitor">
-                            <div className="monitor-status-section">
+                          <div className="activity-status-row">
+                            <span className="activity-status-label">
                               {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
                                 <>
                                   <span className="monitor-spin-dot" />
-                                  <span className="monitor-label">Reading & Reasoning live…</span>
+                                  <span>Reasoning live…</span>
                                 </>
                               ) : (
                                 <>
-                                  <span className="monitor-done-icon">✓</span>
-                                  <span className="monitor-label">Inspected & Verified</span>
+                                  <span className="monitor-done-check">✓</span>
+                                  <span>Inspected & verified</span>
                                 </>
                               )}
-                            </div>
-                            {msg.tokens?.totalTokens !== undefined && (
-                              <div className="monitor-token-metrics">
-                                <span className="monitor-token-total">
-                                  ⚡ <strong>{msg.tokens.totalTokens.toLocaleString()}</strong> tokens
-                                </span>
-                                {msg.tokens.promptTokens !== undefined && (
-                                  <span className="monitor-token-breakdown">
-                                    {' '}(📥 {msg.tokens.promptTokens.toLocaleString()} in • 📤 {msg.tokens.completionTokens ?? 0} out)
-                                  </span>
-                                )}
-                              </div>
+                            </span>
+                            {msg.tokens?.promptTokens !== undefined && (
+                              <span className="activity-io-metrics">
+                                {msg.tokens.promptTokens.toLocaleString()} in • {msg.tokens.completionTokens ?? 0} out
+                              </span>
                             )}
                           </div>
 
-                          {msg.activities.map((act, actIdx) => (
-                            <div
-                              key={act.id || actIdx}
-                              className={`activity-pill activity-${act.type}`}
-                            >
-                              <span className="act-icon">{getActivityIcon(act.type)}</span>
-                              <span className="act-summary">{act.summary}</span>
-                              {act.tokens?.totalTokens !== undefined && (
-                                <span className="act-token-tag">
-                                  ⚡ {act.tokens.totalTokens.toLocaleString()}
+                          <div className="activity-steps-list">
+                            {msg.activities.map((act, actIdx) => (
+                              <div
+                                key={act.id || actIdx}
+                                className={`activity-step-row activity-${act.type}`}
+                              >
+                                <span className="act-icon">{getActivityIcon(act.type)}</span>
+                                <span className="act-summary">
+                                  {act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '')}
                                 </span>
-                              )}
-                            </div>
-                          ))}
+                                {act.tokens?.totalTokens !== undefined && (
+                                  <span className="act-token-tag">
+                                    {act.tokens.totalTokens.toLocaleString()} tok
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -725,10 +684,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       )}
 
                       {msg.status === 'applied' && canUndo && (
-                        <div className="action-buttons-group">
-                          <button className="btn btn-ghost btn-sm" onClick={onUndoLast}>
-                            Undo This Step
+                        <div className="assistant-card-footer">
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={onUndoLast}
+                            title="Revert the changes made by this step"
+                          >
+                            <RotateCcw size={12} />
+                            <span>Undo this step</span>
                           </button>
+                          <span className="assistant-footer-status">Invariants verified ✓</span>
                         </div>
                       )}
                     </div>

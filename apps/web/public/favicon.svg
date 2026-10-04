@@ -1,7 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ExcelAgento">
-  <rect width="64" height="64" rx="14" fill="#0f172a" />
-  <rect x="12" y="14" width="40" height="36" rx="4" fill="none" stroke="#e2e8f0" stroke-width="3" />
-  <path d="M12 26h40M12 38h40M27 14v36" stroke="#e2e8f0" stroke-width="3" />
-  <circle cx="47" cy="47" r="12" fill="#2563eb" />
-  <path d="M42 47l3.5 3.5L52 44" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#062e24" />
+    </linearGradient>
+    <linearGradient id="emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#84cc16" />
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.5" />
+  <!-- Spreadsheet Grid Outline -->
+  <rect x="11" y="13" width="42" height="38" rx="6" fill="none" stroke="#10b981" stroke-width="1.8" stroke-opacity="0.4" />
+  <line x1="11" y1="26" x2="53" y2="26" stroke="#10b981" stroke-width="1.2" stroke-opacity="0.3" />
+  <line x1="11" y1="38" x2="53" y2="38" stroke="#10b981" stroke-width="1.2" stroke-opacity="0.3" />
+  <line x1="25" y1="13" x2="25" y2="51" stroke="#10b981" stroke-width="1.2" stroke-opacity="0.3" />
+  <line x1="39" y1="13" x2="39" y2="51" stroke="#10b981" stroke-width="1.2" stroke-opacity="0.3" />
+  <!-- Center AI Holographic Diamond Core -->
+  <polygon points="32,18 43,32 32,46 21,32" fill="url(#emerald)" filter="url(#glow)" />
+  <polygon points="32,23 38,32 32,41 26,32" fill="#ffffff" fill-opacity="0.9" />
 </svg>

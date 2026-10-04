@@ -159,6 +159,52 @@ interface GridCellProps {
  * formula) for a one-character change. Keyed on the value, an untouched cell re-renders at worst and
  * never re-evaluates.
  */
+function renderCellContent(text: string, isHeaderRow: boolean): React.ReactNode {
+  if (isHeaderRow || !text) return text;
+  const lower = text.trim().toLowerCase();
+  if (lower === 'completed') {
+    return (
+      <span className="status-pill status-completed">
+        <span className="status-pill-dot" />
+        {text}
+      </span>
+    );
+  }
+  if (lower === 'pending') {
+    return (
+      <span className="status-pill status-pending">
+        <span className="status-pill-dot" />
+        {text}
+      </span>
+    );
+  }
+  if (lower === 'processing') {
+    return (
+      <span className="status-pill status-processing">
+        <span className="status-pill-dot" />
+        {text}
+      </span>
+    );
+  }
+  if (lower === 'cancelled') {
+    return (
+      <span className="status-pill status-cancelled">
+        <span className="status-pill-dot" />
+        {text}
+      </span>
+    );
+  }
+  if (lower === 'draft') {
+    return (
+      <span className="status-pill status-draft">
+        <span className="status-pill-dot" />
+        {text}
+      </span>
+    );
+  }
+  return text;
+}
+
 const GridCellBase: React.FC<GridCellProps> = ({
   cell,
   sheetName,
@@ -240,7 +286,7 @@ const GridCellBase: React.FC<GridCellProps> = ({
       onFocus={() => actions.current.focus(rowNumber, colIdx)}
     >
       {editorText === null ? (
-        display.text
+        renderCellContent(display.text, isHeaderRow)
       ) : (
         <CellEditor
           initialText={editorText}

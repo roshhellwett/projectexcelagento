@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="sheetGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="50%" stop-color="#16a34a" />
+      <stop offset="100%" stop-color="#15803d" />
+    </linearGradient>
+    <linearGradient id="foldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#86efac" />
+      <stop offset="100%" stop-color="#4ade80" />
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-10%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#15803d" flood-opacity="0.32" />
+    </filter>
+  </defs>
+
+  <!-- Folded Excel Sheet Body -->
+  <path d="M24 20C24 13.3726 29.3726 8 36 8H70L96 34V100C96 106.627 90.6274 112 84 112H36C29.3726 112 24 106.627 24 100V20Z" fill="url(#sheetGrad)" filter="url(#cardShadow)" />
+  
+  <!-- Fold Corner -->
+  <path d="M70 8L96 34H78C73.5817 34 70 30.4183 70 26V8Z" fill="url(#foldGrad)" />
+
+  <!-- Crisp White "X" -->
+  <path d="M44 48L54 62L43 78H53L60 67L67 78H77L66 62L76 48H66L60 57L54 48H44Z" fill="#ffffff" />
+
+  <!-- Magic Sparkles Top Right -->
+  <path d="M102 12L104 18L110 20L104 22L102 28L100 22L94 20L100 18L102 12Z" fill="#38bdf8" />
+  <path d="M112 32L113.5 36.5L118 38L113.5 39.5L112 44L110.5 39.5L106 38L110.5 36.5L112 32Z" fill="#facc15" />
+</svg>

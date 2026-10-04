@@ -13,6 +13,8 @@ import {
   BarChart2,
   RotateCcw,
   Settings,
+  Sparkles,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 
@@ -24,7 +26,7 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme());
   return (
     <button
-      className="btn btn-ghost btn-sm"
+      className="btn btn-ghost btn-sm btn-icon"
       onClick={() => setTheme(toggleTheme())}
       title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
       aria-pressed={theme === 'dark'}
@@ -113,22 +115,28 @@ export const TopNav: React.FC<TopNavProps> = ({
     <header className="top-nav">
       <div className="top-nav-left">
         <div className="logo-badge">
-          <div className="logo-icon">X</div>
-          <h1
-            className="logo-title"
-            style={{ fontSize: 'inherit', fontWeight: 'inherit', margin: 0 }}
-          >
-            Excel Agent
-          </h1>
+          <div className="logo-icon" aria-hidden="true">
+            <img
+              src="/excel-agent-logo.svg"
+              alt="ExcelAgento logo"
+              style={{ width: '24px', height: '24px', objectFit: 'contain' }}
+            />
+          </div>
+          <span className="logo-title">
+            Excel<span className="logo-title-accent">Agento</span>
+          </span>
+          <span className="logo-version-tag">PRO</span>
         </div>
 
-        <div className="file-meta-pill">
-          <strong>{fileName}</strong>
-          <span>•</span>
-          <span>{activeSheetName}</span>
-          <span>•</span>
-          <span>
-            {rowCount} rows × {colCount} cols
+        <span className="nav-vertical-divider" aria-hidden="true" />
+
+        <div className="file-meta-pill" title={`${fileName} • ${activeSheetName}`}>
+          <FileSpreadsheet size={13} className="file-meta-icon" />
+          <strong className="file-meta-name">{fileName}</strong>
+          <span className="file-meta-dot">/</span>
+          <span className="file-meta-sheet">{activeSheetName}</span>
+          <span className="file-meta-dims">
+            {rowCount} rows • {colCount} cols
           </span>
         </div>
 
@@ -137,7 +145,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         </label>
         <select
           id="top-nav-fixture"
-          className="select-input"
+          className="select-input select-fixture-pill"
           title="Load Test Fixtures"
           onChange={(e) => {
             onSelectFixture(e.target.value);
@@ -147,7 +155,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           defaultValue=""
         >
           <option value="" disabled>
-            Load fixture...
+            Load fixture…
           </option>
           {FIXTURES.map((f) => (
             <option key={f.value} value={f.value}>
