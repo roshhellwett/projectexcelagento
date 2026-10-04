@@ -403,6 +403,9 @@ export class ExcelAgentOrchestrator {
     if (config && !isDemoKey(config.apiKey) && sheet) {
       const startedAt = Date.now();
       emitActivity('thinking', 'Conductor', `Analyzing request for ${sheetName}...`);
+      input.callbacks?.onThinking?.(
+        `Conductor: Analyzing request for "${sheetName}" (${sheet?.rows.length ?? 0} rows). Grounding context with workbook schema...\n`,
+      );
 
       const messages: ChatMessage[] = [
         { role: 'system', content: buildSystemPrompt(sheet, this.catalog) },

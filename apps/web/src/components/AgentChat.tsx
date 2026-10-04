@@ -15,6 +15,9 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  ChevronDown,
+  ChevronUp,
+  Copy,
 } from 'lucide-react';
 import {
   type ProposedAction,
@@ -132,6 +135,49 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleDemoKey = () => {
     onSaveApiKey('groq', 'demo-local-mode');
+  };
+
+  // Live thinking state per message
+  const [openThinkingMap, setOpenThinkingMap] = useState<Record<string, boolean>>({});
+  const [copiedThinkingId, setCopiedThinkingId] = useState<string | null>(null);
+
+  const toggleThinking = (messageId: string) => {
+    setOpenThinkingMap((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
+
+  const handleCopyThinking = (msgId: string, text: string) => {
+    if (!text) return;
+    navigator.clipboard?.writeText?.(text).catch(() => {});
+    setCopiedThinkingId(msgId);
+    setTimeout(() => {
+      setCopiedThinkingId((curr) => (curr === msgId ? null : curr));
+    }, 2000);
+  };
+
+  const getThinkingText = (msg: ChatMessage): string => {
+    if (msg.thought && msg.thought.trim().length > 0) {
+      return msg.thought.trim();
+    }
+    if (msg.activities && msg.activities.length > 0) {
+      return msg.activities
+        .map((act) => {
+          const agentPrefix = act.agent ? `[${act.agent}] ` : '';
+          const summary = act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '');
+          let line = `${agentPrefix}${summary}`;
+          if (act.tokens?.totalTokens) {
+            line += ` (${act.tokens.totalTokens.toLocaleString()} tok)`;
+          }
+          return line;
+        })
+        .join('\n\n');
+    }
+    if (msg.isStreaming) {
+      return 'Initializing reasoning stream…';
+    }
+    return 'No internal thinking trace recorded.';
   };
 
   const getActivityIcon = (type: AgentActivityEvent['type']) => {
@@ -491,11 +537,19 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         </div>
                       </div>
 
-                      {/* Agent Activity Timeline */}
-                      {msg.activities && msg.activities.length > 0 && (
+                      {/* Agent Activity Timeline & Live Thinking Toggle */}
+                      {((msg.activities && msg.activities.length > 0) ||
+                        (isLatestAssistant && isProcessing) ||
+                        msg.thought) && (
                         <div className="activity-timeline">
                           <div className="activity-status-row">
-                            <span className="activity-status-label">
+                            <button
+                              type="button"
+                              className="activity-status-label-btn"
+                              onClick={() => toggleThinking(msg.id)}
+                              title="Click to toggle live thinking process"
+                              aria-expanded={Boolean(openThinkingMap[msg.id])}
+                            >
                               {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
                                 <>
                                   <span className="monitor-spin-dot" />
@@ -507,7 +561,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                   <span>Inspected & verified</span>
                                 </>
                               )}
-                            </span>
+                            </button>
                             {msg.tokens?.promptTokens !== undefined && (
                               <span className="activity-io-metrics">
                                 {msg.tokens.promptTokens.toLocaleString()} in • {msg.tokens.completionTokens ?? 0} out
@@ -515,37 +569,137 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             )}
                           </div>
 
-                          <div className="activity-steps-list">
-                            {msg.activities.map((act, actIdx) => (
-                              <div
-                                key={act.id || actIdx}
-                                className={`activity-step-row activity-${act.type}`}
-                              >
-                                <span className="act-icon">{getActivityIcon(act.type)}</span>
-                                <span className="act-summary">
-                                  {act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '')}
-                                </span>
-                                {act.tokens?.totalTokens !== undefined && (
-                                  <span className="act-token-tag">
-                                    {act.tokens.totalTokens.toLocaleString()} tok
+                          {msg.activities && msg.activities.length > 0 && (
+                            <div className="activity-steps-list">
+                              {msg.activities.map((act, actIdx) => (
+                                <div
+                                  key={act.id || actIdx}
+                                  className={`activity-step-row activity-${act.type}`}
+                                >
+                                  <span className="act-icon">{getActivityIcon(act.type)}</span>
+                                  <span className="act-summary">
+                                    {act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '')}
                                   </span>
-                                )}
-                              </div>
-                            ))}
+                                  {act.tokens?.totalTokens !== undefined && (
+                                    <span className="act-token-tag">
+                                      {act.tokens.totalTokens.toLocaleString()} tok
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Live Thinking Button placed directly at the bottom right of the reasoning box */}
+                          <div className="activity-footer-row">
+                            <button
+                              type="button"
+                              className={`btn-live-thinking ${openThinkingMap[msg.id] ? 'active' : ''} ${(isLatestAssistant && isProcessing) || msg.isStreaming ? 'is-live' : ''}`}
+                              onClick={() => toggleThinking(msg.id)}
+                              aria-expanded={Boolean(openThinkingMap[msg.id])}
+                              title={
+                                openThinkingMap[msg.id]
+                                  ? 'Collapse thinking process'
+                                  : 'Open live thinking process'
+                              }
+                            >
+                              <Brain
+                                size={12}
+                                className={
+                                  (isLatestAssistant && isProcessing) || msg.isStreaming
+                                    ? 'brain-live-pulse'
+                                    : 'brain-icon'
+                                }
+                              />
+                              <span>
+                                {(isLatestAssistant && isProcessing) || msg.isStreaming
+                                  ? 'Live Thinking'
+                                  : openThinkingMap[msg.id]
+                                    ? 'Hide Thinking'
+                                    : 'Thinking Process'}
+                              </span>
+                              {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
+                                <span className="live-thinking-pulse-dot" />
+                              )}
+                              {openThinkingMap[msg.id] ? (
+                                <ChevronUp size={11} />
+                              ) : (
+                                <ChevronDown size={11} />
+                              )}
+                            </button>
                           </div>
                         </div>
                       )}
 
-                      {/* Thought / CoT Accordion */}
-                      {msg.thought && (
-                        <details className="thought-box">
-                          <summary className="thought-summary">
-                            <span className="thought-icon">💡</span>
-                            <span>Reasoning Process</span>
-                          </summary>
-                          <div className="thought-content">{msg.thought}</div>
-                        </details>
-                      )}
+                      {/* Live Thinking Panel (Expanded View - Written in Text like other AIs) */}
+                      <AnimatePresence>
+                        {openThinkingMap[msg.id] && (
+                          <motion.div
+                            key={`thinking-panel-${msg.id}`}
+                            className="live-thinking-panel"
+                            initial={{ opacity: 0, height: 0, y: -4 }}
+                            animate={{ opacity: 1, height: 'auto', y: 0 }}
+                            exit={{ opacity: 0, height: 0, y: -4 }}
+                            transition={{ duration: 0.22, ease: 'easeOut' }}
+                          >
+                            <div className="live-thinking-header">
+                              <div className="live-thinking-header-left">
+                                <Brain size={12} className="live-thinking-header-icon" />
+                                <span className="live-thinking-header-title">
+                                  {(isLatestAssistant && isProcessing) || msg.isStreaming
+                                    ? 'Live Thinking Stream'
+                                    : 'Thinking Process'}
+                                </span>
+                                {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
+                                  <span className="live-thinking-badge live">
+                                    <span className="live-thinking-pulse-dot" />
+                                    Live
+                                  </span>
+                                ) : (
+                                  <span className="live-thinking-badge completed">Verified</span>
+                                )}
+                              </div>
+                              <div className="live-thinking-header-right">
+                                <span className="live-thinking-word-count">
+                                  {
+                                    getThinkingText(msg)
+                                      .trim()
+                                      .split(/\s+/)
+                                      .filter(Boolean).length
+                                  }{' '}
+                                  words
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn-copy-thinking"
+                                  onClick={() => handleCopyThinking(msg.id, getThinkingText(msg))}
+                                  title="Copy thinking text to clipboard"
+                                >
+                                  {copiedThinkingId === msg.id ? (
+                                    <>
+                                      <Check size={11} className="copy-check-icon" />
+                                      <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy size={11} />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="live-thinking-body">
+                              <div className="live-thinking-text-stream">
+                                {getThinkingText(msg)}
+                                {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
+                                  <span className="thinking-cursor" />
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {/* Message Content */}
                       <div className="assistant-text">
