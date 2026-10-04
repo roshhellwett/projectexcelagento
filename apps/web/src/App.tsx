@@ -269,6 +269,16 @@ export const App: React.FC = () => {
           setWorkbook(result.workbook);
           setHistoryRevision((r) => r + 1);
 
+          // Automatically switch active view to newly created sheet, or fallback if active sheet was deleted
+          const newlyAddedSheet = result.workbook.sheets.find(
+            (s) => !workbook.sheets.some((old) => old.name === s.name),
+          );
+          if (newlyAddedSheet) {
+            setActiveSheetName(newlyAddedSheet.name);
+          } else if (!result.workbook.sheets.some((s) => s.name === activeSheetName)) {
+            setActiveSheetName(result.workbook.sheets[0]?.name ?? '');
+          }
+
           // Extract changed cell coordinates for visual diff highlighting.
           const changedKeys = new Set<string>();
           for (const patchEntry of result.patch) {
@@ -279,9 +289,12 @@ export const App: React.FC = () => {
           }
           setRecentChangedCells(changedKeys);
           if (!options?.quiet) {
+            const isNoChange = result.report.affectedCells === 0;
             pushToast(
-              'success',
-              `${name} applied - ${result.report.affectedCells} cell(s) updated, invariants verified.`,
+              isNoChange ? 'info' : 'success',
+              isNoChange
+                ? `${name} completed (0 cells changed).`
+                : `${name} applied - ${result.report.affectedCells} cell(s) updated, invariants verified.`,
             );
           }
         } else {
@@ -752,6 +765,17 @@ export const App: React.FC = () => {
 
       setWorkbook(rolledBack ? workbook : currentWb);
       setHistoryRevision((r) => r + 1);
+
+      if (!rolledBack) {
+        const newlyAddedSheetInPlan = currentWb.sheets.find(
+          (s) => !workbook.sheets.some((old) => old.name === s.name),
+        );
+        if (newlyAddedSheetInPlan) {
+          setActiveSheetName(newlyAddedSheetInPlan.name);
+        } else if (!currentWb.sheets.some((s) => s.name === activeSheetName)) {
+          setActiveSheetName(currentWb.sheets[0]?.name ?? '');
+        }
+      }
 
       const finalStatus: 'applied' | 'error' = planFailed ? 'error' : 'applied';
       const updatedPlan: ExecutionPlan = {

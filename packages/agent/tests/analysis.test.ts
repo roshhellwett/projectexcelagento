@@ -121,6 +121,83 @@ describe('informational turns never mutate the workbook', () => {
   });
 });
 
+describe('filter to new sheet intent', () => {
+  it('identifies IN data in Type column and proposes filter_to_new_sheet', () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'inventory_transactions_export',
+          rows: [
+            [
+              createCell('Date (IST)'),
+              createCell('Qty'),
+              createCell('Type'),
+              createCell('Handled By'),
+            ],
+            [
+              createCell('2026-09-07'),
+              createCell(10),
+              createCell('OUT (Removed/Dispatched)'),
+              createCell('Ronak'),
+            ],
+            [
+              createCell('2026-09-07'),
+              createCell(5),
+              createCell('IN (Added to Stock)'),
+              createCell('Ronak'),
+            ],
+            [
+              createCell('2026-09-08'),
+              createCell(8),
+              createCell('OUT (Removed/Dispatched)'),
+              createCell('Amit'),
+            ],
+            [
+              createCell('2026-09-08'),
+              createCell(12),
+              createCell('IN (Added to Stock)'),
+              createCell('Amit'),
+            ],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'filter out the IN data into a separate sheet',
+      wb,
+      'inventory_transactions_export',
+    );
+
+    expect(res.proposedAction).toBeDefined();
+    expect(res.proposedAction?.name).toBe('filter_to_new_sheet');
+    expect(res.proposedAction?.args).toMatchObject({
+      sheet: 'inventory_transactions_export',
+      column: 'C',
+      operator: 'contains',
+      value: 'IN',
+      targetSheet: 'IN_Data',
+    });
+    expect(res.message).toContain('Column C (Type)');
+  });
+
+  it('proposes create_sheet for explicit sheet creation request', () => {
+    const res = plan('create a new sheet named Summary');
+    expect(res.proposedAction?.name).toBe('create_sheet');
+    expect(res.proposedAction?.args).toMatchObject({ sheetName: 'Summary' });
+  });
+
+  it('proposes add_summary_row for bottom totals request', () => {
+    const res = plan('add a total row at the bottom');
+    expect(res.proposedAction?.name).toBe('add_summary_row');
+    expect(res.proposedAction?.args).toMatchObject({
+      sheet: SHEET,
+      aggregation: 'sum',
+      label: 'Total',
+    });
+  });
+});
+
 describe('sheet-scale column counting', () => {
   /** 200k data rows: past the ~125k limit where spreading an array into Math.max throws. */
   function tallSheet(rowCount: number): Sheet {

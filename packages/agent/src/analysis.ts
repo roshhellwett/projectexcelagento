@@ -478,6 +478,144 @@ export function auditSheet(sheet: Sheet): SheetAudit {
   };
 }
 
+export interface FilterCandidate {
+  column: ColumnMetadata;
+  value: string | number;
+  operator: 'equals' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' | 'starts_with' | 'ends_with';
+  matchedToken: string;
+}
+
+export function findFilterCandidateInSheet(
+  query: string,
+  columns: ColumnMetadata[],
+  _sheet: Sheet,
+): FilterCandidate | null {
+  const q = query.trim().toLowerCase();
+
+  // 1. Direct explicit column reference: e.g. "column D contains IN", "Type is IN"
+  for (const col of columns) {
+    const colNameRegex = new RegExp(
+      `\\b(?:column\\s+${col.letter}|col\\s+${col.letter}|${col.cleanName})\\b`,
+      'i',
+    );
+    if (colNameRegex.test(q)) {
+      const numMatch = q.match(
+        /(?:>|>=|<|<=|greater than|more than|above|less than|below)\s*(\d+(?:\.\d+)?)/i,
+      );
+      if (numMatch && numMatch[1]) {
+        const op =
+          q.includes('>') || q.includes('greater') || q.includes('more') || q.includes('above')
+            ? 'gt'
+            : 'lt';
+        return { column: col, value: Number(numMatch[1]), operator: op, matchedToken: numMatch[0] };
+      }
+      for (const [distinctVal] of col.distinct) {
+        if (distinctVal && q.includes(distinctVal.toLowerCase())) {
+          return { column: col, value: distinctVal, operator: 'contains', matchedToken: distinctVal };
+        }
+      }
+    }
+  }
+
+  // 2. Transaction status shorthand check: e.g. "IN data", "OUT data", "IN rows", "filter IN", "filter OUT"
+  const hasInStatus =
+    /\b(?:the\s+)?in\s+(?:data|records?|rows?|transactions?|items?|stock)\b/i.test(query) ||
+    /\b(?:filter|extract|separate|isolate|pull)\s+(?:out\s+)?(?:the\s+)?in\b/i.test(query);
+  const hasOutStatus =
+    /\b(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock)\b/i.test(query) ||
+    /\b(?:filter|extract|separate|isolate|pull)\s+(?:out\s+)?(?:the\s+)?out\b/i.test(query);
+
+  if (hasInStatus) {
+    for (const col of columns) {
+      for (const [dVal] of col.distinct) {
+        if (/^IN\b|\(IN\)|\bIN\s*\(|^IN\s+/i.test(dVal) || dVal.toUpperCase().startsWith('IN')) {
+          return { column: col, value: 'IN', operator: 'contains', matchedToken: 'IN' };
+        }
+      }
+    }
+  }
+
+  if (hasOutStatus) {
+    for (const col of columns) {
+      for (const [dVal] of col.distinct) {
+        if (/^OUT\b|\(OUT\)|\bOUT\s*\(|^OUT\s+/i.test(dVal) || dVal.toUpperCase().startsWith('OUT')) {
+          return { column: col, value: 'OUT', operator: 'contains', matchedToken: 'OUT' };
+        }
+      }
+    }
+  }
+
+  // 3. Scan meaningful query words against all column distinct values
+  const stopWords = new Set([
+    'filter',
+    'out',
+    'the',
+    'data',
+    'into',
+    'a',
+    'an',
+    'separate',
+    'new',
+    'sheet',
+    'tab',
+    'another',
+    'all',
+    'rows',
+    'records',
+    'items',
+    'and',
+    'or',
+    'to',
+    'for',
+    'from',
+    'with',
+    'only',
+    'where',
+    'having',
+    'which',
+    'is',
+    'are',
+    'in',
+    'of',
+    'please',
+    'put',
+    'move',
+    'copy',
+    'extract',
+    'isolate',
+    'take',
+    'make',
+    'create',
+    'give',
+    'me',
+    'show',
+    'by',
+  ]);
+
+  const rawTokens = query.split(/[\s,._/?!+;:"'()\[\]{}]+/).filter((t) => t.length >= 2);
+  for (const token of rawTokens) {
+    const lowerToken = token.toLowerCase();
+    if (stopWords.has(lowerToken)) continue;
+
+    for (const col of columns) {
+      for (const [dVal] of col.distinct) {
+        if (!dVal) continue;
+        const lowerD = dVal.toLowerCase();
+        if (lowerD === lowerToken || lowerD.includes(lowerToken)) {
+          return {
+            column: col,
+            value: token,
+            operator: 'contains',
+            matchedToken: token,
+          };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Autonomous In-Memory Spreadsheet Data Scientist Engine
  * Handles 90%+ of Excel workflows: filtering, row lookup, calculations, aggregations,
@@ -596,6 +734,161 @@ export function analyzeSpreadsheetIntentAndData(
         },
         explanation: `Add a new column "${headerName}" as column ${insertLetter}.`,
         category: 'columns',
+      },
+    };
+  }
+
+  // 0c. SHEET OPERATIONS: filter-to-sheet, create, duplicate, delete, and summary rows
+  const isFilterToSheetQuery =
+    /(?:filter|extract|copy|move|separate|split|put|isolate|pull|take)\b[\s\S]{0,60}?\b(?:into|in|to)\s+(?:a\s+)?(?:separate|new|another|diff|different)\s+(?:sheet|tab)/i.test(
+      raw,
+    ) ||
+    /(?:create|make|add)\s+(?:a\s+)?(?:separate|new|another)\s+sheet\s+(?:with|for|having|of|from)\b/i.test(
+      raw,
+    ) ||
+    /\b(?:separate|new|another)\s+sheet\s+(?:with|for|having|of)\b/i.test(raw);
+
+  if (isFilterToSheetQuery) {
+    const candidate = findFilterCandidateInSheet(raw, columns, currentSheet);
+    if (candidate) {
+      const colIdx = candidate.column.index;
+      const filterValStr = String(candidate.value).toLowerCase();
+      const matchingRowIndices: number[] = [];
+      const sampleMatches: string[] = [];
+
+      for (let r = 1; r < currentSheet.rows.length; r++) {
+        const row = currentSheet.rows[r];
+        const cell = row?.[colIdx];
+        const cellVal = cell?.value;
+        const strVal = String(cellVal ?? '').trim().toLowerCase();
+        const numVal =
+          typeof cellVal === 'number'
+            ? cellVal
+            : Number(String(cellVal ?? '').replace(/,/g, '').trim());
+        let isMatch = false;
+
+        if (candidate.operator === 'contains') {
+          isMatch = strVal.includes(filterValStr);
+        } else if (candidate.operator === 'equals') {
+          isMatch = strVal === filterValStr || strVal.includes(filterValStr);
+        } else if (candidate.operator === 'gt' && typeof candidate.value === 'number') {
+          isMatch = !isNaN(numVal) && numVal > candidate.value;
+        } else if (candidate.operator === 'lt' && typeof candidate.value === 'number') {
+          isMatch = !isNaN(numVal) && numVal < candidate.value;
+        }
+
+        if (isMatch) {
+          matchingRowIndices.push(r + 1);
+          if (sampleMatches.length < 5) {
+            const details: string[] = [];
+            for (let c = 0; c < Math.min(6, columns.length); c++) {
+              if (row?.[c]?.value !== null && row?.[c]?.value !== undefined) {
+                const hName = columns[c]?.rawName || `Col ${indexToColumn(c)}`;
+                details.push(`${hName}: \`${row[c]?.value}\``);
+              }
+            }
+            sampleMatches.push(`• **Row ${r + 1}:** ${details.slice(0, 3).join(' | ')}`);
+          }
+        }
+      }
+
+      const count = matchingRowIndices.length;
+      const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]?([^'"]+)['"]?/i);
+      const targetSheetName =
+        namedMatch?.[1]?.trim() ||
+        `${String(candidate.value).replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'Filtered'}_Data`;
+
+      if (count > 0) {
+        return {
+          message: `I analyzed all **${dataRowsCount} rows** in **${currentSheet.name}** and identified **Column ${candidate.column.letter} (${candidate.column.rawName})** matching **"${candidate.value}"**.\n\nFound **${count} matching record(s)**:\n\n${sampleMatches.join('\n')}${count > 5 ? `\n• *...and ${count - 5} more rows*` : ''}\n\nI've prepared to extract these records into a new sheet **"${targetSheetName}"** with headers preserved. Click **Apply Changes** below to create it!`,
+          proposedAction: {
+            name: 'filter_to_new_sheet',
+            args: {
+              sheet: currentSheet.name,
+              targetSheet: targetSheetName,
+              column: candidate.column.letter,
+              operator: candidate.operator,
+              value: candidate.value,
+              headerRow: 1,
+            },
+            explanation: `Filter ${count} rows where ${candidate.column.rawName} (${candidate.column.letter}) contains "${candidate.value}" into new sheet "${targetSheetName}".`,
+            category: 'filter',
+          },
+        };
+      }
+    }
+  }
+
+  const createSheetMatch = raw.match(
+    /(?:create|add|make|insert)\s+(?:a\s+)?(?:new\s+)?sheet\s+(?:named|called)\s*['"]?([^'"]+)['"]?/i,
+  );
+  if (createSheetMatch && createSheetMatch[1]) {
+    const sheetName = createSheetMatch[1].trim();
+    return {
+      message: `I've prepared to create a new worksheet named **"${sheetName}"**.\n\nClick **Apply Changes** to add the sheet.`,
+      proposedAction: {
+        name: 'create_sheet',
+        args: { sheetName },
+        explanation: `Create a new sheet "${sheetName}".`,
+        category: 'structure',
+      },
+    };
+  }
+
+  const dupSheetMatch = raw.match(
+    /(?:duplicate|clone|copy)\s+(?:the\s+)?sheet\s+['"]?([^'"]+?)['"]?\s+(?:as|to|into)\s+['"]?([^'"]+?)['"]?$/i,
+  );
+  if (dupSheetMatch && dupSheetMatch[1] && dupSheetMatch[2]) {
+    const src = dupSheetMatch[1].trim();
+    const target = dupSheetMatch[2].trim();
+    return {
+      message: `I've prepared to duplicate sheet **"${src}"** into **"${target}"**.\n\nClick **Apply Changes** to proceed.`,
+      proposedAction: {
+        name: 'duplicate_sheet',
+        args: { sheet: src, targetSheet: target },
+        explanation: `Duplicate sheet "${src}" to "${target}".`,
+        category: 'structure',
+      },
+    };
+  }
+
+  const delSheetMatch = raw.match(
+    /(?:delete|remove|drop)\s+(?:the\s+)?sheet\s+['"]?([^'"]+?)['"]?$/i,
+  );
+  if (delSheetMatch && delSheetMatch[1]) {
+    const sheetToDelete = delSheetMatch[1].trim();
+    return {
+      message: `I've prepared to delete sheet **"${sheetToDelete}"**.\n\n⚠️ Deleting a sheet is irreversible. Review the preview card and click **Apply Changes** to confirm.`,
+      proposedAction: {
+        name: 'delete_sheet',
+        args: { sheet: sheetToDelete },
+        explanation: `Delete sheet "${sheetToDelete}".`,
+        category: 'structure',
+      },
+    };
+  }
+
+  const summaryRowMatch = raw.match(
+    /(?:add|insert|calculate)\s+(?:a\s+)?(?:summary|total|totals|sum|average|avg)\s+row(?:\s+at\s+the\s+bottom)?/i,
+  );
+  if (summaryRowMatch) {
+    const isAvg = raw.toLowerCase().includes('average') || raw.toLowerCase().includes('avg');
+    const agg = isAvg ? 'average' : 'sum';
+    const label = isAvg ? 'Average' : 'Total';
+    const numericCols = columns.filter((c) => c.isNumeric).map((c) => c.letter);
+    return {
+      message: `I've prepared to append a **${label}** row at the bottom of **${currentSheet.name}** across numeric columns (${numericCols.join(', ')}).\n\nClick **Apply Changes** to add it.`,
+      proposedAction: {
+        name: 'add_summary_row',
+        args: {
+          sheet: currentSheet.name,
+          aggregation: agg,
+          label,
+          columns: numericCols,
+          headerRow: 1,
+        },
+        explanation: `Add ${label} row at bottom of ${currentSheet.name}.`,
+        category: 'transform',
       },
     };
   }
@@ -894,7 +1187,7 @@ export function analyzeSpreadsheetIntentAndData(
   // 7. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
   // Check if query contains a number or specific value
   const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
-  const operatorGuess: 'equals' | 'gt' | 'lt' | 'gte' | 'lte' =
+  let operatorGuess: string =
     q.includes('greater') ||
     q.includes('more than') ||
     q.includes('above') ||
@@ -910,10 +1203,10 @@ export function analyzeSpreadsheetIntentAndData(
         : 'equals';
 
   // Check if query matches a column and either has a number or a categorical value
-  const targetColForFilter = resolveColumn(q, columns);
-  if (targetColForFilter) {
-    let targetValue: string | number | undefined = undefined;
+  let targetColForFilter = resolveColumn(q, columns);
+  let targetValue: string | number | undefined = undefined;
 
+  if (targetColForFilter) {
     if (numInQuery && numInQuery[1]) {
       targetValue = Number(numInQuery[1]);
     } else {
@@ -925,40 +1218,52 @@ export function analyzeSpreadsheetIntentAndData(
         }
       }
     }
+  }
 
-    if (targetValue !== undefined) {
-      // Find matching rows in sheet
-      const matchingRowIndices: number[] = [];
-      const sampleMatches: string[] = [];
+  // Fallback: search across all columns' distinct values
+  if (!targetColForFilter || targetValue === undefined) {
+    const candidate = findFilterCandidateInSheet(raw, columns, currentSheet);
+    if (candidate) {
+      targetColForFilter = candidate.column;
+      targetValue = candidate.value;
+      if (candidate.operator) operatorGuess = candidate.operator as any;
+    }
+  }
 
-      for (let r = 1; r < currentSheet.rows.length; r++) {
-        const row = currentSheet.rows[r];
-        const cell = row?.[targetColForFilter.index];
-        const rawVal = cell?.value;
-        const numVal =
-          typeof rawVal === 'number'
-            ? rawVal
-            : Number(
-                String(rawVal ?? '')
-                  .replace(/,/g, '')
-                  .trim(),
-              );
-        const strVal = String(rawVal ?? '')
-          .trim()
-          .toLowerCase();
+  if (targetColForFilter && targetValue !== undefined) {
+    // Find matching rows in sheet
+    const matchingRowIndices: number[] = [];
+    const sampleMatches: string[] = [];
 
-        let isMatch = false;
-        if (operatorGuess === 'equals') {
-          if (typeof targetValue === 'number') {
-            isMatch = numVal === targetValue || strVal === String(targetValue);
-          } else {
-            isMatch = strVal === String(targetValue).toLowerCase();
-          }
-        } else if (operatorGuess === 'gt' && typeof targetValue === 'number') {
-          isMatch = !isNaN(numVal) && numVal > targetValue;
-        } else if (operatorGuess === 'lt' && typeof targetValue === 'number') {
-          isMatch = !isNaN(numVal) && numVal < targetValue;
+    for (let r = 1; r < currentSheet.rows.length; r++) {
+      const row = currentSheet.rows[r];
+      const cell = row?.[targetColForFilter.index];
+      const rawVal = cell?.value;
+      const numVal =
+        typeof rawVal === 'number'
+          ? rawVal
+          : Number(
+              String(rawVal ?? '')
+                .replace(/,/g, '')
+                .trim(),
+            );
+      const strVal = String(rawVal ?? '')
+        .trim()
+        .toLowerCase();
+
+      let isMatch = false;
+      if (operatorGuess === 'equals') {
+        if (typeof targetValue === 'number') {
+          isMatch = numVal === targetValue || strVal === String(targetValue);
+        } else {
+          const expectedStr = String(targetValue).toLowerCase();
+          isMatch = strVal === expectedStr || strVal.includes(expectedStr);
         }
+      } else if (operatorGuess === 'gt' && typeof targetValue === 'number') {
+        isMatch = !isNaN(numVal) && numVal > targetValue;
+      } else if (operatorGuess === 'lt' && typeof targetValue === 'number') {
+        isMatch = !isNaN(numVal) && numVal < targetValue;
+      }
 
         if (isMatch) {
           matchingRowIndices.push(r + 1); // 1-indexed for display
@@ -989,7 +1294,12 @@ export function analyzeSpreadsheetIntentAndData(
             args: {
               sheet: currentSheet.name,
               column: targetColForFilter.letter,
-              operator: operatorGuess,
+              operator:
+                operatorGuess === 'equals' &&
+                typeof targetValue === 'string' &&
+                !targetColForFilter.distinct.has(String(targetValue))
+                  ? 'contains'
+                  : operatorGuess,
               value: targetValue,
               headerRow: 1,
             },
@@ -1004,7 +1314,6 @@ export function analyzeSpreadsheetIntentAndData(
         };
       }
     }
-  }
 
   // 8. MISSING DATA & AUDITING
   if (

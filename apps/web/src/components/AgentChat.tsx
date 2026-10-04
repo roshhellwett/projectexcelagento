@@ -526,6 +526,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             <strong>{msg.preview.affectedCells}</strong>
                           </div>
 
+                          {typeof msg.proposedAction.args?.targetSheet === 'string' && (
+                            <div className="preview-stat-row">
+                              <span>Target Sheet:</span>
+                              <strong>{String(msg.proposedAction.args.targetSheet)}</strong>
+                            </div>
+                          )}
+
                           {msg.preview.warnings.length > 0 && (
                             <div
                               style={{
@@ -551,6 +558,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 {msg.preview.changes.slice(0, 4).map((ch, idx) => (
                                   <tr key={idx}>
                                     <td>
+                                      {ch.location.sheet && ch.location.sheet !== audit.sheetName
+                                        ? `${ch.location.sheet}!`
+                                        : ''}
                                       {ch.location.column}
                                       {ch.location.row}
                                     </td>

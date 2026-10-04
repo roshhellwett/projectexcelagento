@@ -7,6 +7,7 @@ import {
   cellValueSchema,
   cloneWithValue,
   fullSheetRange,
+  headerRowError,
   issue,
   maxColumn,
   maxRow,
@@ -14,6 +15,7 @@ import {
   rangeForColumns,
   textForCell,
   transitionResult,
+  uniqueSheetName,
   validResult,
   validateColumn,
   validateSheet,
@@ -67,17 +69,6 @@ function invalidPreview(
   errors: ValidationResult['errors'],
 ): Preview {
   return previewForTransition(workbook, workbook, ranges, [], errors);
-}
-
-function headerRowError(
-  workbook: Workbook,
-  sheet: string,
-  headerRow: number,
-): ValidationResult['errors'] {
-  const sheetData = getSheet(workbook, sheet);
-  return !sheetData || headerRow <= sheetData.rows.length
-    ? []
-    : [issue('invalid-header-row', `Header row ${headerRow} is outside sheet "${sheet}".`)];
 }
 
 function columnRange(
@@ -264,6 +255,7 @@ export const filterRowsArgsSchema = z
     ]),
     value: cellValueSchema.optional(),
     headerRow,
+    targetSheet: z.string().trim().min(1).optional(),
   })
   .refine(
     (args) =>
@@ -273,10 +265,31 @@ export const filterRowsArgsSchema = z
 export type FilterRowsArgs = z.infer<typeof filterRowsArgsSchema>;
 
 function filterTarget(workbook: Workbook, args: FilterRowsArgs): CellRange[] {
+  if (args.targetSheet) {
+    const source = getSheet(workbook, args.sheet);
+    const colIndex = columnToIndex(args.column) ?? 0;
+    const start = args.headerRow;
+    const dataRows = source?.rows.slice(start) ?? [];
+    const keptCount = dataRows.filter((row) => matchesFilter(row[colIndex], args)).length;
+    const totalCols = Math.max(1, maxColumnCount(source?.rows ?? []));
+    const targetName = uniqueSheetName(workbook, args.targetSheet);
+    return [
+      {
+        sheet: targetName,
+        startRow: 1,
+        endRow: Math.max(1, start + keptCount),
+        startColumn: 'A',
+        endColumn: indexToColumn(totalCols - 1),
+      },
+    ];
+  }
   return [allDataRange(workbook, args.sheet, args.headerRow)];
 }
 
-function matchesFilter(cell: Cell | undefined, args: FilterRowsArgs): boolean {
+export function matchesFilter(
+  cell: Cell | undefined,
+  args: { operator: string; value?: unknown },
+): boolean {
   const value = cell?.value ?? null;
   const text = textForCell(cell);
   const expected = args.value;
@@ -410,7 +423,25 @@ function applyFilter(workbook: Workbook, args: FilterRowsArgs): OperationResult 
   const sheet = getSheet(after, args.sheet);
   const start = args.headerRow;
   const rows = sheet?.rows.slice(start) ?? [];
-  const kept = rows.filter((row) => matchesFilter(row[columnToIndex(args.column) ?? 0], args));
+  const colIndex = columnToIndex(args.column) ?? 0;
+  const kept = rows.filter((row) => matchesFilter(row[colIndex], args));
+
+  if (args.targetSheet) {
+    const targetName = uniqueSheetName(after, args.targetSheet);
+    const headerRows = sheet?.rows.slice(0, start).map((r) => r.map((c) => cloneCell(c))) ?? [];
+    const keptRows = kept.map((r) => r.map((c) => cloneCell(c)));
+    after.sheets.push({
+      name: targetName,
+      rows: [...headerRows, ...keptRows],
+    });
+    const ranges = filterTarget(workbook, args);
+    return transitionResult(
+      before,
+      after,
+      operationReport(before, after, ranges, [], { removedRows: 0 }),
+    );
+  }
+
   sheet?.rows.splice(start, rows.length, ...kept);
   const removedRows = rows.length - kept.length;
   const ranges = filterTarget(workbook, args);
@@ -431,7 +462,8 @@ export const filterRowsOperation: Operation<FilterRowsArgs> = {
     const ranges = filterTarget(workbook, args);
     if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
     const result = applyFilter(workbook, args);
-    return previewForTransition(workbook, result.workbook, ranges, [], [], true);
+    const requiresConfirmation = !args.targetSheet;
+    return previewForTransition(workbook, result.workbook, ranges, [], [], requiresConfirmation);
   },
   apply: applyFilter,
   invariants(before, after, args) {

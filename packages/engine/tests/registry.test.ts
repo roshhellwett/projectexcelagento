@@ -45,6 +45,11 @@ describe('operation registry', () => {
       'lookup_merge',
       'clean_to_new_sheet',
       'edit_cells',
+      'filter_to_new_sheet',
+      'create_sheet',
+      'duplicate_sheet',
+      'delete_sheet',
+      'add_summary_row',
       'aggregate_column',
       'group_and_summarize',
       'join_sheets',
@@ -55,6 +60,11 @@ describe('operation registry', () => {
     expect(registry.schemas.has('set_cells')).toBe(true);
     expect(registry.schemas.has('fill_blanks')).toBe(true);
     expect(registry.schemas.has('add_computed_column')).toBe(true);
+    expect(registry.schemas.has('filter_to_new_sheet')).toBe(true);
+    expect(registry.schemas.has('create_sheet')).toBe(true);
+    expect(registry.schemas.has('duplicate_sheet')).toBe(true);
+    expect(registry.schemas.has('delete_sheet')).toBe(true);
+    expect(registry.schemas.has('add_summary_row')).toBe(true);
   });
 
   it('runs validation, preview, apply, invariants, and history as one transaction', () => {

@@ -13,8 +13,11 @@ import type {
   Workbook,
 } from './types.js';
 import {
+  allDataRange,
   cellValueSchema,
   cloneWithValue,
+  fullSheetRange,
+  headerRowError,
   issue,
   maxColumn,
   maxRow,
@@ -26,7 +29,9 @@ import {
   validResult,
 } from './operation-utils.js';
 import { runInvariants } from './invariants.js';
+import { matchesFilter } from './operations.js';
 import {
+  cloneCell,
   cloneWorkbook,
   columnToIndex,
   createCell,
@@ -1087,6 +1092,426 @@ export const editCellsOperation: Operation<EditCellsArgs> = {
   },
 };
 
+// ============================================================================
+// 8. FILTER TO NEW SHEET (filter_to_new_sheet)
+// ============================================================================
+
+export const filterToNewSheetArgsSchema = z
+  .object({
+    sheet: z.string().trim().min(1),
+    targetSheet: z.string().trim().min(1),
+    column: rangeColumn,
+    operator: z.enum([
+      'equals',
+      'not_equals',
+      'contains',
+      'starts_with',
+      'ends_with',
+      'is_blank',
+      'is_not_blank',
+      'gt',
+      'gte',
+      'lt',
+      'lte',
+    ]),
+    value: cellValueSchema.optional(),
+    headerRow: headerRowSchema,
+    dropFromSource: z.boolean().default(false),
+  })
+  .refine(
+    (args) =>
+      args.operator === 'is_blank' || args.operator === 'is_not_blank' || args.value !== undefined,
+    { message: 'A filter value is required for this operator.', path: ['value'] },
+  );
+export type FilterToNewSheetArgs = z.infer<typeof filterToNewSheetArgsSchema>;
+
+function filterToNewSheetTarget(workbook: Workbook, args: FilterToNewSheetArgs): CellRange[] {
+  const source = getSheet(workbook, args.sheet);
+  if (!source) return [];
+  const colIndex = columnToIndex(args.column) ?? 0;
+  const start = args.headerRow;
+  const dataRows = source.rows.slice(start);
+  const matchingCount = dataRows.filter((r) => matchesFilter(r[colIndex], args)).length;
+  const totalCols = Math.max(1, maxColumnCount(source.rows));
+  const newSheetName = uniqueSheetName(workbook, args.targetSheet);
+  const ranges: CellRange[] = [
+    {
+      sheet: newSheetName,
+      startColumn: 'A',
+      endColumn: indexToColumn(totalCols - 1),
+      startRow: 1,
+      endRow: Math.max(1, start + matchingCount),
+    },
+  ];
+  if (args.dropFromSource) {
+    ranges.push(allDataRange(workbook, args.sheet, args.headerRow));
+  }
+  return ranges;
+}
+
+function validateFilterToNewSheet(
+  workbook: Workbook,
+  args: FilterToNewSheetArgs,
+): ValidationResult {
+  const errors = [
+    ...validateSheet(workbook, args.sheet),
+    ...validateColumn(workbook, args.sheet, args.column),
+    ...headerRowError(workbook, args.sheet, args.headerRow),
+  ];
+  if (args.targetSheet.trim().toLowerCase() === args.sheet.trim().toLowerCase()) {
+    errors.push({
+      code: 'same_sheet',
+      message: 'Target sheet must be a different sheet than the source.',
+    });
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyFilterToNewSheet(
+  workbook: Workbook,
+  args: FilterToNewSheetArgs,
+): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const source = getSheet(after, args.sheet);
+  if (source) {
+    const colIndex = columnToIndex(args.column) ?? 0;
+    const start = args.headerRow;
+    const headerRows = source.rows.slice(0, start).map((r) => r.map((c) => cloneCell(c)));
+    const dataRows = source.rows.slice(start);
+    const matchingRows = dataRows
+      .filter((r) => matchesFilter(r[colIndex], args))
+      .map((r) => r.map((c) => cloneCell(c)));
+
+    if (args.dropFromSource) {
+      const remainingRows = dataRows.filter((r) => !matchesFilter(r[colIndex], args));
+      source.rows.splice(start, dataRows.length, ...remainingRows);
+    }
+
+    const newSheetName = uniqueSheetName(after, args.targetSheet);
+    after.sheets.push({
+      name: newSheetName,
+      rows: [...headerRows, ...matchingRows],
+    });
+  }
+  const ranges = filterToNewSheetTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const filterToNewSheetOperation: Operation<FilterToNewSheetArgs> = {
+  name: 'filter_to_new_sheet',
+  schema: filterToNewSheetArgsSchema,
+  targetRanges: filterToNewSheetTarget,
+  validate: validateFilterToNewSheet,
+  preview(workbook, args) {
+    const validation = validateFilterToNewSheet(workbook, args);
+    const ranges = filterToNewSheetTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyFilterToNewSheet(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyFilterToNewSheet,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: filterToNewSheetTarget(before, args),
+    });
+  },
+};
+
+// ============================================================================
+// 9. CREATE SHEET (create_sheet)
+// ============================================================================
+
+export const createSheetArgsSchema = z.object({
+  sheetName: z.string().trim().min(1),
+  headers: z.array(z.string()).optional(),
+});
+export type CreateSheetArgs = z.infer<typeof createSheetArgsSchema>;
+
+function createSheetTarget(workbook: Workbook, args: CreateSheetArgs): CellRange[] {
+  const name = uniqueSheetName(workbook, args.sheetName);
+  const colCount = Math.max(1, args.headers?.length ?? 1);
+  return [
+    {
+      sheet: name,
+      startColumn: 'A',
+      endColumn: indexToColumn(colCount - 1),
+      startRow: 1,
+      endRow: 1,
+    },
+  ];
+}
+
+function validateCreateSheet(_workbook: Workbook, _args: CreateSheetArgs): ValidationResult {
+  return validResult();
+}
+
+function applyCreateSheet(workbook: Workbook, args: CreateSheetArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const name = uniqueSheetName(after, args.sheetName);
+  const headerRow: Cell[] = (args.headers ?? []).map((h) => createCell(h));
+  after.sheets.push({
+    name,
+    rows: headerRow.length > 0 ? [headerRow] : [],
+  });
+  const ranges = createSheetTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const createSheetOperation: Operation<CreateSheetArgs> = {
+  name: 'create_sheet',
+  schema: createSheetArgsSchema,
+  targetRanges: createSheetTarget,
+  validate: validateCreateSheet,
+  preview(workbook, args) {
+    const ranges = createSheetTarget(workbook, args);
+    const result = applyCreateSheet(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyCreateSheet,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: createSheetTarget(before, args),
+    });
+  },
+};
+
+// ============================================================================
+// 10. DUPLICATE SHEET (duplicate_sheet)
+// ============================================================================
+
+export const duplicateSheetArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  targetSheet: z.string().trim().min(1),
+});
+export type DuplicateSheetArgs = z.infer<typeof duplicateSheetArgsSchema>;
+
+function duplicateSheetTarget(workbook: Workbook, args: DuplicateSheetArgs): CellRange[] {
+  const source = getSheet(workbook, args.sheet);
+  if (!source) return [];
+  const name = uniqueSheetName(workbook, args.targetSheet);
+  const cols = Math.max(1, maxColumnCount(source.rows));
+  return [
+    {
+      sheet: name,
+      startColumn: 'A',
+      endColumn: indexToColumn(cols - 1),
+      startRow: 1,
+      endRow: Math.max(1, source.rows.length),
+    },
+  ];
+}
+
+function validateDuplicateSheet(workbook: Workbook, args: DuplicateSheetArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyDuplicateSheet(workbook: Workbook, args: DuplicateSheetArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const source = getSheet(after, args.sheet);
+  if (source) {
+    const name = uniqueSheetName(after, args.targetSheet);
+    const clonedRows = source.rows.map((row) => row.map((c) => cloneCell(c)));
+    after.sheets.push({ name, rows: clonedRows });
+  }
+  const ranges = duplicateSheetTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const duplicateSheetOperation: Operation<DuplicateSheetArgs> = {
+  name: 'duplicate_sheet',
+  schema: duplicateSheetArgsSchema,
+  targetRanges: duplicateSheetTarget,
+  validate: validateDuplicateSheet,
+  preview(workbook, args) {
+    const validation = validateDuplicateSheet(workbook, args);
+    const ranges = duplicateSheetTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyDuplicateSheet(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyDuplicateSheet,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: duplicateSheetTarget(before, args),
+    });
+  },
+};
+
+// ============================================================================
+// 11. DELETE SHEET (delete_sheet)
+// ============================================================================
+
+export const deleteSheetArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+});
+export type DeleteSheetArgs = z.infer<typeof deleteSheetArgsSchema>;
+
+function deleteSheetTarget(workbook: Workbook, args: DeleteSheetArgs): CellRange[] {
+  return [fullSheetRange(workbook, args.sheet)];
+}
+
+function validateDeleteSheet(workbook: Workbook, args: DeleteSheetArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  if (workbook.sheets.length <= 1) {
+    errors.push(issue('cannot-delete-last-sheet', 'Cannot delete the only sheet in the workbook.'));
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyDeleteSheet(workbook: Workbook, args: DeleteSheetArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const sheetIdx = after.sheets.findIndex(
+    (s) => s.name.toLowerCase() === args.sheet.toLowerCase().trim(),
+  );
+  if (sheetIdx >= 0) {
+    after.sheets.splice(sheetIdx, 1);
+  }
+  const ranges = deleteSheetTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const deleteSheetOperation: Operation<DeleteSheetArgs> = {
+  name: 'delete_sheet',
+  schema: deleteSheetArgsSchema,
+  targetRanges: deleteSheetTarget,
+  validate: validateDeleteSheet,
+  preview(workbook, args) {
+    const validation = validateDeleteSheet(workbook, args);
+    const ranges = deleteSheetTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyDeleteSheet(workbook, args);
+    return {
+      ...previewForTransition(workbook, result.workbook, ranges),
+      requiresConfirmation: true,
+    };
+  },
+  apply: applyDeleteSheet,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: deleteSheetTarget(before, args),
+    });
+  },
+};
+
+// ============================================================================
+// 12. ADD SUMMARY ROW (add_summary_row)
+// ============================================================================
+
+export const addSummaryRowArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  columns: z.array(rangeColumn).optional(),
+  aggregation: z.enum(['sum', 'average', 'count', 'min', 'max']).default('sum'),
+  label: z.string().default('Total'),
+  labelColumn: rangeColumn.default('A'),
+  headerRow: headerRowSchema,
+});
+export type AddSummaryRowArgs = z.infer<typeof addSummaryRowArgsSchema>;
+
+function addSummaryRowTarget(workbook: Workbook, args: AddSummaryRowArgs): CellRange[] {
+  const sheet = getSheet(workbook, args.sheet);
+  if (!sheet) return [];
+  const rowIdx = sheet.rows.length + 1;
+  const cols = Math.max(1, maxColumnCount(sheet.rows));
+  return [
+    {
+      sheet: args.sheet,
+      startColumn: 'A',
+      endColumn: indexToColumn(cols - 1),
+      startRow: rowIdx,
+      endRow: rowIdx,
+    },
+  ];
+}
+
+function validateAddSummaryRow(workbook: Workbook, args: AddSummaryRowArgs): ValidationResult {
+  const errors = [
+    ...validateSheet(workbook, args.sheet),
+    ...headerRowError(workbook, args.sheet, args.headerRow),
+  ];
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyAddSummaryRow(workbook: Workbook, args: AddSummaryRowArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const sheet = getSheet(after, args.sheet);
+  if (sheet) {
+    const totalCols = Math.max(1, maxColumnCount(sheet.rows));
+    const newRow: Cell[] = Array.from({ length: totalCols }, () => createCell(null));
+    const labelColIdx = columnToIndex(args.labelColumn) ?? 0;
+    if (labelColIdx < totalCols) {
+      newRow[labelColIdx] = createCell(args.label);
+    }
+    const targetCols =
+      args.columns?.map((c) => columnToIndex(c) ?? -1).filter((i) => i >= 0) ??
+      Array.from({ length: totalCols }, (_, i) => i);
+
+    const start = args.headerRow;
+    const dataRows = sheet.rows.slice(start);
+
+    for (const cIdx of targetCols) {
+      if (cIdx === labelColIdx) continue;
+      const values: number[] = [];
+      for (const row of dataRows) {
+        const val = row[cIdx]?.value;
+        const num = typeof val === 'number' ? val : Number(String(val ?? '').replace(/,/g, ''));
+        if (!isNaN(num) && String(val ?? '').trim() !== '') {
+          values.push(num);
+        }
+      }
+      if (values.length > 0) {
+        let resultVal = 0;
+        switch (args.aggregation) {
+          case 'sum':
+            resultVal = values.reduce((a, b) => a + b, 0);
+            break;
+          case 'average':
+            resultVal = values.reduce((a, b) => a + b, 0) / values.length;
+            break;
+          case 'count':
+            resultVal = values.length;
+            break;
+          case 'min':
+            resultVal = Math.min(...values);
+            break;
+          case 'max':
+            resultVal = Math.max(...values);
+            break;
+        }
+        newRow[cIdx] = createCell(Math.round(resultVal * 100) / 100);
+      }
+    }
+    sheet.rows.push(newRow);
+  }
+  const ranges = addSummaryRowTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const addSummaryRowOperation: Operation<AddSummaryRowArgs> = {
+  name: 'add_summary_row',
+  schema: addSummaryRowArgsSchema,
+  targetRanges: addSummaryRowTarget,
+  validate: validateAddSummaryRow,
+  preview(workbook, args) {
+    const validation = validateAddSummaryRow(workbook, args);
+    const ranges = addSummaryRowTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyAddSummaryRow(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyAddSummaryRow,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: addSummaryRowTarget(before, args),
+    });
+  },
+};
+
 export const advancedOperations: Operation<unknown>[] = [
   fillBlanksOperation as Operation<unknown>,
   addComputedColumnOperation as Operation<unknown>,
@@ -1095,4 +1520,9 @@ export const advancedOperations: Operation<unknown>[] = [
   lookupMergeOperation as Operation<unknown>,
   cleanToNewSheetOperation as Operation<unknown>,
   editCellsOperation as Operation<unknown>,
+  filterToNewSheetOperation as Operation<unknown>,
+  createSheetOperation as Operation<unknown>,
+  duplicateSheetOperation as Operation<unknown>,
+  deleteSheetOperation as Operation<unknown>,
+  addSummaryRowOperation as Operation<unknown>,
 ];

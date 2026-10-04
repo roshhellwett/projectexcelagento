@@ -81,6 +81,17 @@ export function validateColumn(
   return [];
 }
 
+export function headerRowError(
+  workbook: Workbook,
+  sheet: string,
+  headerRow: number,
+): ValidationIssue[] {
+  const sheetData = getSheet(workbook, sheet);
+  return !sheetData || headerRow <= sheetData.rows.length
+    ? []
+    : [issue('invalid-header-row', `Header row ${headerRow} is outside sheet "${sheet}".`)];
+}
+
 export function maxRow(workbook: Workbook, sheetName: string): number {
   return getSheet(workbook, sheetName)?.rows.length ?? 0;
 }

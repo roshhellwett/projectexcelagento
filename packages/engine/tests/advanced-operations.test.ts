@@ -331,6 +331,203 @@ describe('advanced operations', () => {
     });
   });
 
+  describe('filter_to_new_sheet', () => {
+    it('filters rows matching condition into a new worksheet preserving headers and source data', () => {
+      const reg = createOperationRegistry();
+      const before: Workbook = {
+        sheets: [
+          {
+            name: 'Transactions',
+            rows: [
+              row('Date', 'Qty', 'Type', 'Handled By'),
+              row('2026-09-07', 10, 'OUT (Removed/Dispatched)', 'Ronak'),
+              row('2026-09-07', 5, 'IN (Added to Stock)', 'Ronak'),
+              row('2026-09-08', 8, 'OUT (Removed/Dispatched)', 'Amit'),
+              row('2026-09-08', 12, 'IN (Added to Stock)', 'Amit'),
+            ],
+          },
+        ],
+      };
+
+      const res = applyOperation(
+        before,
+        'filter_to_new_sheet',
+        {
+          sheet: 'Transactions',
+          targetSheet: 'IN_Data',
+          column: 'C',
+          operator: 'contains',
+          value: 'IN',
+          headerRow: 1,
+        },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.workbook.sheets.length).toBe(2);
+        const inSheet = res.workbook.sheets.find((s) => s.name === 'IN_Data');
+        expect(inSheet).toBeDefined();
+        expect(inSheet?.rows.length).toBe(3); // header + 2 matching rows
+        expect(inSheet?.rows[0]?.map((c) => c.value)).toEqual([
+          'Date',
+          'Qty',
+          'Type',
+          'Handled By',
+        ]);
+        expect(inSheet?.rows[1]?.map((c) => c.value)).toEqual([
+          '2026-09-07',
+          5,
+          'IN (Added to Stock)',
+          'Ronak',
+        ]);
+        expect(inSheet?.rows[2]?.map((c) => c.value)).toEqual([
+          '2026-09-08',
+          12,
+          'IN (Added to Stock)',
+          'Amit',
+        ]);
+        // Source sheet remains intact
+        const srcSheet = res.workbook.sheets.find((s) => s.name === 'Transactions');
+        expect(srcSheet?.rows.length).toBe(5);
+      }
+    });
+
+    it('supports filter_rows with targetSheet option', () => {
+      const reg = createOperationRegistry();
+      const before: Workbook = {
+        sheets: [
+          {
+            name: 'Data',
+            rows: [
+              row('ID', 'Status'),
+              row(1, 'Active'),
+              row(2, 'Inactive'),
+              row(3, 'Active'),
+            ],
+          },
+        ],
+      };
+
+      const res = applyOperation(
+        before,
+        'filter_rows',
+        {
+          sheet: 'Data',
+          column: 'B',
+          operator: 'equals',
+          value: 'Active',
+          targetSheet: 'Active_Users',
+        },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.workbook.sheets.length).toBe(2);
+        const activeSheet = res.workbook.sheets.find((s) => s.name === 'Active_Users');
+        expect(activeSheet?.rows.length).toBe(3); // Header + 2 active rows
+      }
+    });
+  });
+
+  describe('create_sheet and delete_sheet', () => {
+    it('creates a new sheet with optional headers', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('A')]);
+
+      const res = applyOperation(
+        before,
+        'create_sheet',
+        { sheetName: 'Summary', headers: ['ID', 'Total', 'Notes'] },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.workbook.sheets.length).toBe(2);
+        const sheet = res.workbook.sheets.find((s) => s.name === 'Summary');
+        expect(sheet?.rows[0]?.map((c) => c.value)).toEqual(['ID', 'Total', 'Notes']);
+      }
+    });
+
+    it('duplicates an existing sheet', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('Col1', 'Col2'), row('V1', 'V2')]);
+
+      const res = applyOperation(
+        before,
+        'duplicate_sheet',
+        { sheet: 'Data', targetSheet: 'Data_Copy' },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.workbook.sheets.length).toBe(2);
+        const copy = res.workbook.sheets.find((s) => s.name === 'Data_Copy');
+        expect(copy?.rows.length).toBe(2);
+      }
+    });
+
+    it('deletes a sheet with confirmation', () => {
+      const reg = createOperationRegistry();
+      const before: Workbook = {
+        sheets: [
+          { name: 'Sheet1', rows: [row('A')] },
+          { name: 'Sheet2', rows: [row('B')] },
+        ],
+      };
+
+      // Refuses without confirmation
+      const unconfirmed = applyOperation(
+        before,
+        'delete_sheet',
+        { sheet: 'Sheet2' },
+        { registry: reg },
+      );
+      expect(unconfirmed.ok).toBe(false);
+
+      // Applies with confirmation
+      const confirmed = applyOperation(
+        before,
+        'delete_sheet',
+        { sheet: 'Sheet2' },
+        { registry: reg, confirmed: true },
+      );
+      expect(confirmed.ok).toBe(true);
+      if (confirmed.ok) {
+        expect(confirmed.workbook.sheets.length).toBe(1);
+        expect(confirmed.workbook.sheets[0]?.name).toBe('Sheet1');
+      }
+    });
+  });
+
+  describe('add_summary_row', () => {
+    it('appends a Total sum row at the bottom of data', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([
+        row('Item', 'Qty', 'Price'),
+        row('Laptop', 2, 1000),
+        row('Mouse', 5, 25),
+      ]);
+
+      const res = applyOperation(
+        before,
+        'add_summary_row',
+        { sheet: 'Data', aggregation: 'sum', label: 'Total', columns: ['B', 'C'] },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        const sheet = res.workbook.sheets[0];
+        expect(sheet?.rows.length).toBe(4);
+        expect(sheet?.rows[3]?.map((c) => c.value)).toEqual(['Total', 7, 1025]);
+      }
+    });
+  });
+
   describe('registry integration', () => {
     it('applies advanced operations through OperationRegistry with undo/redo capability', () => {
       const reg = createOperationRegistry();
@@ -339,6 +536,7 @@ describe('advanced operations', () => {
       expect(reg.names).toContain('split_column');
       expect(reg.names).toContain('merge_columns');
       expect(reg.names).toContain('lookup_merge');
+      expect(reg.names).toContain('filter_to_new_sheet');
 
       const before = workbook([row('A', 'B'), row(1, null), row(2, 10)]);
 

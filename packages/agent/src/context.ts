@@ -42,9 +42,10 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
     nonBlank: profile.nonBlankCount,
     distinct: profile.distinct.size,
     // Samples are drawn from a first-seen set, so they are real cell contents and are
-    // sanitized like any other untrusted text.
+    // sanitized like any other untrusted text. Low cardinality columns expose more distinct values
+    // so the agent can accurately resolve semantic values (e.g. "IN (Added to Stock)").
     samples: Array.from(profile.distinct.keys())
-      .slice(0, 3)
+      .slice(0, profile.distinct.size <= 8 ? 6 : 3)
       .map((value) => sanitizeUntrusted(value)),
     ...(profile.isNumeric && profile.sum !== undefined
       ? {
@@ -93,8 +94,12 @@ Rules:
    your answer on what they return. Never guess a value you have not read.
 5. When the user wants a change, call the matching operation tool with its arguments. For a
    request needing several steps, call \`create_execution_plan\` with an ordered \`steps\` array.
-6. Column letters must match the worksheet. Use the sheet name "${sanitizeUntrusted(sheet.name, 60)}".
-7. If you are only answering a question and no tool is needed, reply in prose with no tool call.
+6. When the user asks to filter, extract, copy, or isolate data into a new or separate sheet, call
+   \`filter_to_new_sheet\`. NEVER call \`aggregate_column\` for filter or extract requests.
+7. To find which column matches a filter value (such as "IN data"), check column sample values and
+   distinct items to identify the column letter (e.g. Column D with values like "IN (Added to Stock)").
+8. Column letters must match the worksheet. Use the sheet name "${sanitizeUntrusted(sheet.name, 60)}".
+9. If you are only answering a question and no tool is needed, reply in prose with no tool call.
 
 Available operations:
 ${describeTools(catalog)}`;

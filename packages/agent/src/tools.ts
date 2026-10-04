@@ -153,6 +153,46 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
     category: 'transform',
     example: { sheet: 'Sheet1', edits: [{ row: 2, column: 'B', value: 60 }] },
   },
+  filter_to_new_sheet: {
+    description:
+      'Filter rows matching a condition (equals, contains, starts_with, gt, lt, is_blank, etc.) and extract or copy them into a brand new worksheet with headers. Use this whenever the user asks to filter/extract/separate data into a new, separate, or different sheet.',
+    category: 'filter',
+    example: {
+      sheet: 'Sheet1',
+      targetSheet: 'IN_Data',
+      column: 'D',
+      operator: 'contains',
+      value: 'IN',
+      headerRow: 1,
+    },
+  },
+  create_sheet: {
+    description: 'Create a new empty or titled worksheet with optional column headers.',
+    category: 'structure',
+    example: { sheetName: 'Summary', headers: ['ID', 'Date', 'Amount'] },
+  },
+  duplicate_sheet: {
+    description: 'Duplicate an entire existing worksheet into a new sheet.',
+    category: 'structure',
+    example: { sheet: 'Sheet1', targetSheet: 'Sheet1_Backup' },
+  },
+  delete_sheet: {
+    description: 'Delete an entire worksheet from the workbook. Demands confirmation.',
+    category: 'structure',
+    example: { sheet: 'OldSheet' },
+  },
+  add_summary_row: {
+    description:
+      'Append a summary row (Total, Average, Count, Min, Max) at the bottom of the data for numeric columns.',
+    category: 'transform',
+    example: {
+      sheet: 'Sheet1',
+      aggregation: 'sum',
+      label: 'Total',
+      columns: ['E', 'H'],
+      headerRow: 1,
+    },
+  },
   lookup_merge: {
     description:
       'Merge and match values from another sheet based on a common key column (VLOOKUP / XLOOKUP behavior).',

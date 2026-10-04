@@ -624,8 +624,19 @@ export class ExcelAgentOrchestrator {
 
     // Guardrail verification for single action
     const candidates: ProposedAction[] = [];
-    if (llmAction) candidates.push(llmAction);
-    if (heuristic.proposedAction) candidates.push(heuristic.proposedAction);
+    const isSheetOrFilterQuery =
+      /(?:filter|extract|separate|new sheet|separate sheet|create sheet|duplicate sheet|delete sheet)/i.test(
+        input.query,
+      );
+    const isInformationalLlmProposal = llmAction?.name === 'aggregate_column';
+
+    if (isSheetOrFilterQuery && isInformationalLlmProposal && heuristic.proposedAction) {
+      candidates.push(heuristic.proposedAction);
+      if (llmAction) candidates.push(llmAction);
+    } else {
+      if (llmAction) candidates.push(llmAction);
+      if (heuristic.proposedAction) candidates.push(heuristic.proposedAction);
+    }
 
     let blockedByGuardrail: { action: ProposedAction; guardrail: GuardrailReport } | null = null;
 
