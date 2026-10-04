@@ -4763,3 +4763,236 @@ input:focus-visible,
 .text-amber { color: #f59e0b; }
 .text-cyan { color: #06b6d4; }
 
+/* ===========================================================================
+   Autonomous Swarm HUD & Superhuman Autopilot Toolbar
+   =========================================================================== */
+
+.swarm-hud {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass-card);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--glass-card-shadow);
+  transition: all var(--transition-fast);
+}
+
+.swarm-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.swarm-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.swarm-hud-bot-icon {
+  color: var(--brand-emerald);
+}
+
+.swarm-hud-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.swarm-hud-status-badge.synced {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--brand-emerald-dark);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+:root[data-theme='dark'] .swarm-hud-status-badge.synced {
+  color: #34d399;
+}
+
+.swarm-hud-status-badge.active {
+  background: rgba(6, 182, 212, 0.12);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.swarm-hud-pulse-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulseDot 1.8s infinite;
+}
+
+.swarm-hud-nodes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.swarm-node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-glass-subtle);
+  border: 1px solid var(--border-glass-subtle);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+  cursor: default;
+  user-select: none;
+}
+
+.swarm-node:hover {
+  background: var(--bg-surface-glass-elevated);
+  border-color: var(--border-glass-card);
+  color: var(--text-main);
+}
+
+.swarm-node .node-icon {
+  flex-shrink: 0;
+}
+
+.node-conductor { color: var(--accent-purple); }
+.node-scientist { color: var(--accent-blue); }
+.node-sentinel { color: var(--brand-emerald); }
+.node-engine { color: var(--accent-amber); }
+
+.swarm-node.pulse-node {
+  animation: swarmNodeGlow 2s infinite ease-in-out;
+  border-color: var(--accent-cyan);
+  color: var(--text-main);
+}
+
+.swarm-node.pulse-node.delay-1 { animation-delay: 0.3s; }
+.swarm-node.pulse-node.delay-2 { animation-delay: 0.6s; }
+.swarm-node.pulse-node.delay-3 { animation-delay: 0.9s; }
+
+@keyframes swarmNodeGlow {
+  0%, 100% {
+    background: var(--bg-surface-glass-subtle);
+    border-color: var(--border-glass-subtle);
+  }
+  50% {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.45);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+  }
+}
+
+/* Superhuman Autopilot Toolbar */
+.superhuman-toolbar {
+  padding: 8px 14px;
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border-glass-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.superhuman-toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-emerald-dark);
+  font-family: var(--font-mono);
+}
+
+:root[data-theme='dark'] .superhuman-toolbar-title {
+  color: #34d399;
+}
+
+.superhuman-sparkle-icon {
+  color: var(--brand-emerald);
+  animation: pulseDot 2.2s infinite;
+}
+
+.superhuman-chips {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.superhuman-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-glass-subtle);
+  border: 1px solid var(--border-glass-card);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.superhuman-chip:hover:not(:disabled) {
+  background: var(--bg-surface-glass-elevated);
+  border-color: var(--brand-emerald);
+  color: var(--brand-emerald-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.16);
+}
+
+:root[data-theme='dark'] .superhuman-chip:hover:not(:disabled) {
+  color: #34d399;
+}
+
+.superhuman-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.superhuman-chip.chip-autopilot {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 182, 212, 0.12) 100%);
+  border-color: rgba(16, 185, 129, 0.35);
+  font-weight: 700;
+  color: var(--brand-emerald-dark);
+}
+
+:root[data-theme='dark'] .superhuman-chip.chip-autopilot {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.superhuman-chip.chip-autopilot:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(6, 182, 212, 0.22) 100%);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.24);
+}
+
+.chip-icon-glow {
+  color: var(--brand-emerald);
+}
+
+

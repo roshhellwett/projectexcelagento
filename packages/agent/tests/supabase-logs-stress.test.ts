@@ -258,4 +258,57 @@ describe('Supabase Logs - Real-world Agent Stress Testing', () => {
       }
     }
   });
+
+  it('superhuman autopilot: autonomously generates executive briefing, computes cortex health score, and isolates error anomalies from colloquial request', async () => {
+    const wb = loadLogsWorkbook();
+    const orchestrator = createOrchestrator({ registry });
+
+    const decision = await orchestrator.decide({
+      query: 'bhenchod agents mei kuch esa chamatkar kr de ki sam altman aur elon ki gand jal jaye',
+      workbook: wb,
+      sheetName: 'Supabase Logs',
+    });
+
+    expect(decision.message).toContain('Superhuman Executive Intelligence Briefing');
+    expect(decision.message).toContain('Dataset Vitals');
+    expect(decision.message).toContain('Cortex Health Rating');
+    expect(decision.message).toContain('error events');
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('filter_rows');
+    expect(decision.action?.args.column).toBe('G'); // level column
+    expect(decision.action?.args.value).toBe('error');
+    expect(decision.guardrail?.passed).toBe(true);
+  });
+
+  it('superhuman autopilot: autonomously detects single-column raw CSV blob and proposes quote-safe 12-column split', async () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'Raw_Dump',
+          rows: [
+            [{ value: 'id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user', type: 'string' }],
+            [{ value: '3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET timeout=\'58s\';",postgres,null,[],null', type: 'string' }],
+          ],
+        },
+      ],
+      dateSystem: '1900',
+    };
+
+    const orchestrator = createOrchestrator({ registry });
+    const decision = await orchestrator.decide({
+      query: 'autopilot',
+      workbook: wb,
+      sheetName: 'Raw_Dump',
+    });
+
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('split_column');
+    expect(decision.action?.args.newColumnNames).toHaveLength(12);
+    expect(decision.guardrail?.passed).toBe(true);
+
+    const op = registry.get('split_column')!;
+    const result = op.apply(wb, decision.action!.args);
+    expect(result.workbook.sheets[0]!.rows[0]).toHaveLength(12);
+    expect(result.workbook.sheets[0]!.rows[1]![7]?.value).toContain('statement:');
+  });
 });

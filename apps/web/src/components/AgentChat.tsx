@@ -375,6 +375,50 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       ) : (
         /* UNLOCKED ACTIVE CHAT STATE */
         <>
+          {/* Autonomous Agent Swarm HUD */}
+          <div className="swarm-hud">
+            <div className="swarm-hud-header">
+              <div className="swarm-hud-title">
+                <Bot size={12} className="swarm-hud-bot-icon" />
+                <span>Autonomous Agent Swarm</span>
+              </div>
+              <span className={`swarm-hud-status-badge ${isProcessing ? 'active' : 'synced'}`}>
+                <span className="swarm-hud-pulse-dot" />
+                {isProcessing ? 'Swarm Reasoning' : '4 Nodes Synced'}
+              </span>
+            </div>
+            <div className="swarm-hud-nodes">
+              <div
+                className={`swarm-node ${isProcessing ? 'pulse-node' : ''}`}
+                title="Conductor: Intent Orchestration & Multi-turn Planning"
+              >
+                <Brain size={11} className="node-icon node-conductor" />
+                <span className="node-label">Conductor</span>
+              </div>
+              <div
+                className={`swarm-node ${isProcessing ? 'pulse-node delay-1' : ''}`}
+                title="Data Scientist: Statistical Profiling, Anomaly & Health Scan"
+              >
+                <Search size={11} className="node-icon node-scientist" />
+                <span className="node-label">Scientist</span>
+              </div>
+              <div
+                className={`swarm-node ${isProcessing ? 'pulse-node delay-2' : ''}`}
+                title="Sentinel: Formal Invariants & Mathematical Guardrails"
+              >
+                <ShieldCheck size={11} className="node-icon node-sentinel" />
+                <span className="node-label">Sentinel</span>
+              </div>
+              <div
+                className={`swarm-node ${isProcessing ? 'pulse-node delay-3' : ''}`}
+                title="Engine: Deterministic In-Browser Spreadsheet Operations"
+              >
+                <Zap size={11} className="node-icon node-engine" />
+                <span className="node-label">Engine</span>
+              </div>
+            </div>
+          </div>
+
           {/* Chat Messages */}
           <div className="chat-messages">
             {messages.length === 0 ? (
@@ -775,6 +819,60 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               );
             }))}
             <div ref={messagesEndRef} />
+          </div>
+
+          {/* Superhuman Autopilot Toolbar */}
+          <div className="superhuman-toolbar">
+            <div className="superhuman-toolbar-title">
+              <Sparkles size={11} className="superhuman-sparkle-icon" />
+              <span>Superhuman Autopilot</span>
+            </div>
+            <div className="superhuman-chips">
+              <button
+                type="button"
+                className="superhuman-chip chip-autopilot"
+                onClick={() => handleSuggestionClick('autopilot')}
+                disabled={isProcessing}
+                title="Autonomously scan dataset health, detect raw blobs, and propose highest-leverage optimization"
+              >
+                <Sparkles size={12} className="chip-icon-glow" />
+                <span>✨ Autopilot Deep Scan</span>
+              </button>
+              <button
+                type="button"
+                className="superhuman-chip"
+                onClick={() =>
+                  handleSuggestionClick(
+                    'can you give me an executive summary of these database logs and any errors?',
+                  )
+                }
+                disabled={isProcessing}
+                title="Generate high-level executive briefing with dataset vitals and key metrics"
+              >
+                <Layers size={12} />
+                <span>📊 Executive Briefing</span>
+              </button>
+              <button
+                type="button"
+                className="superhuman-chip"
+                onClick={() => handleSuggestionClick('filter rows where level is error')}
+                disabled={isProcessing}
+                title="Isolate incident errors and anomalies into a dedicated view"
+              >
+                <AlertTriangle size={12} />
+                <span>🚨 Isolate Errors</span>
+              </button>
+              <button
+                type="button"
+                className="superhuman-chip"
+                onClick={() => handleSuggestionClick('remove duplicate rows from these logs')}
+                disabled={isProcessing}
+                title="Deduplicate records across the entire dataset"
+              >
+                <ShieldCheck size={12} />
+                <span>🧹 Smart Clean</span>
+              </button>
+            </div>
           </div>
 
           {/* Suggestions Drawer */}

@@ -826,6 +826,194 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
+  // 0B. SUPERHUMAN AUTOPILOT & EXECUTIVE BRIEFING ENGINE
+  const isSuperhumanAutopilot =
+    /\b(?:autopilot|chamatkar|magic|toofani|surprise\s+me|blow\s+my\s+mind|executive\s+summary|kpi\s+dashboard|deep\s+analysis|full\s+analysis|executive\s+briefing|intelligent\s+overview|analyze\s+everything|auto\s+clean|clean\s+everything|make\s+it\s+professional)\b/i.test(
+      raw,
+    ) ||
+    /^(?:autopilot|magic|chamatkar|kpi|executive|briefing)\b/i.test(q);
+
+  if (isSuperhumanAutopilot) {
+    // 1. Raw Delimited Text in Single Column Detection (e.g. unpacked CSV in Column A)
+    const headerCellVal = String(currentSheet.rows[0]?.[0]?.value ?? '');
+    if (columns.length === 1 && headerCellVal.includes(',') && headerCellVal.split(',').length >= 3) {
+      const detectedHeaders = headerCellVal
+        .split(',')
+        .map((h) => h.trim().replace(/^["']+|["']+$/g, ''))
+        .filter(Boolean);
+      return {
+        message: `### ⚡ Superhuman Autopilot: Raw CSV Unpacking\n\nI conducted a structural scan on **${currentSheet.name}** and identified **${dataRowsCount} records** currently collapsed as a raw comma-delimited string in Column A.\n\n- **Detected Structure**: **${detectedHeaders.length} fields** (\`${detectedHeaders.slice(0, 4).join('`, `')}\`…)\n- **Quote Integrity**: Multi-line SQL statements and JSON payloads will be protected during expansion.\n\n**Action**: Click **Apply Changes** to autonomously split Column A into structured columns!`,
+        proposedAction: {
+          name: 'split_column',
+          args: {
+            sheet: currentSheet.name,
+            column: 'A',
+            delimiter: ',',
+            newColumnNames: detectedHeaders,
+            headerRow: 1,
+          },
+          explanation: `Split raw CSV in Column A into ${detectedHeaders.length} structured columns.`,
+          category: 'structure',
+        },
+      };
+    }
+
+    // 2. Data Health & Completeness
+    const totalCells = dataRowsCount * Math.max(1, columns.length);
+    let populatedCells = 0;
+    for (const c of columns) {
+      populatedCells += c.nonBlankCount;
+    }
+    const completeness = totalCells > 0 ? Math.min(100, Math.round((populatedCells / totalCells) * 100)) : 100;
+
+    // 3. Duplicate Analysis
+    const seen = new Set<string>();
+    let dupCount = 0;
+    for (let r = 1; r < currentSheet.rows.length; r++) {
+      const key = (currentSheet.rows[r] || []).map((c) => String(c?.value ?? '')).join('|~|');
+      if (seen.has(key)) dupCount++;
+      else seen.add(key);
+    }
+
+    // 4. Error / Anomaly Scan
+    const prioritizedCols = [...columns].sort((a, b) => {
+      const aLevel = /^(?:level|severity|log_level)$/i.test(a.rawName) ? 0 : 1;
+      const bLevel = /^(?:level|severity|log_level)$/i.test(b.rawName) ? 0 : 1;
+      return aLevel - bLevel;
+    });
+
+    let errorCol: ColumnMetadata | undefined;
+    let errorCount = 0;
+    for (const c of prioritizedCols) {
+      if (/level|status|error|state|result|code/i.test(c.rawName)) {
+        let errs = 0;
+        for (let r = 1; r < currentSheet.rows.length; r++) {
+          const v = String(currentSheet.rows[r]?.[c.index]?.value ?? '').toLowerCase();
+          if (v === 'error' || v === 'fail' || v === 'failed' || v === '500' || v === '428c9' || v === '57p01') {
+            errs++;
+          }
+        }
+        if (errs > 0) {
+          errorCol = c;
+          errorCount = errs;
+          break;
+        }
+      }
+    }
+
+    // 5. Numerical Highlights
+    const numericCols = columns.filter((c) => c.isNumeric && c.numericValues.length > 0);
+    let topNumericHighlight = '';
+    if (numericCols.length > 0) {
+      const bestNum = numericCols[0]!;
+      const sum = bestNum.sum ?? 0;
+      const avg = bestNum.avg ?? 0;
+      const max = bestNum.max ?? 0;
+      topNumericHighlight = `• **${bestNum.rawName} Metrics**: Total **${sum.toLocaleString()}** | Avg **${avg.toLocaleString()}** | Peak **${max.toLocaleString()}**`;
+    }
+
+    // 6. Temporal Span
+    const dateCols = columns.filter((c) => c.isDate || /date|time|created/i.test(c.rawName));
+    let timeSpanHighlight = '';
+    if (dateCols.length > 0) {
+      timeSpanHighlight = `• **Temporal Activity**: Timestamped across column **${dateCols[0]!.rawName}** (${dateCols[0]!.letter})`;
+    }
+
+    // 7. Data Health Score Calculation
+    let healthScore = 100;
+    if (dupCount > 0) healthScore -= Math.min(25, Math.round((dupCount / Math.max(1, dataRowsCount)) * 50));
+    if (completeness < 95) healthScore -= Math.round((95 - completeness) * 0.5);
+    if (errorCount > 0) healthScore -= Math.min(15, Math.round((errorCount / Math.max(1, dataRowsCount)) * 30));
+    healthScore = Math.max(40, Math.min(100, healthScore));
+
+    const healthRating =
+      healthScore >= 90
+        ? '⭐⭐⭐⭐⭐ Enterprise Pristine'
+        : healthScore >= 75
+          ? '⭐⭐⭐⭐ Strong Operational'
+          : '⚠️ Action Recommended';
+
+    // 8. Determine highest-leverage proposed action
+    const isPurelyInformational = /^(?:can you|could you|please\s+(?:give|show|tell)|give me|what is|tell me|show me|explain|describe)\b/i.test(
+      raw,
+    );
+
+    let proposedAction: ProposedAction | undefined;
+    if (!isPurelyInformational) {
+      if (dupCount > 0) {
+        proposedAction = {
+          name: 'delete_duplicates',
+          args: {
+            sheet: currentSheet.name,
+            columns: allColumns,
+            headerRow: 1,
+            keep: 'first',
+          },
+          explanation: `Autonomously remove ${dupCount} duplicate rows across all ${allColumns.length} columns.`,
+          category: 'structure',
+        };
+      } else if (errorCol && errorCount > 0) {
+        proposedAction = {
+          name: 'filter_rows',
+          args: {
+            sheet: currentSheet.name,
+            column: errorCol.letter,
+            operator: 'equals',
+            value: 'error',
+            headerRow: 1,
+          },
+          explanation: `Isolate all ${errorCount} error records in ${errorCol.rawName} (${errorCol.letter}) for root-cause diagnosis.`,
+          category: 'filter',
+        };
+      } else if (numericCols.length > 0) {
+        proposedAction = {
+          name: 'add_summary_row',
+          args: {
+            sheet: currentSheet.name,
+            headerRow: 1,
+          },
+          explanation: `Append automated summary totals and statistical aggregates to the bottom of ${currentSheet.name}.`,
+          category: 'transform',
+        };
+      }
+    }
+
+    const message = [
+      `## 🚀 Superhuman Executive Intelligence Briefing`,
+      `*Generated autonomously by ExcelAgento Collective Swarm for **${currentSheet.name}***`,
+      ``,
+      `### 📊 Dataset Vitals`,
+      `- **Total Scale**: **${dataRowsCount.toLocaleString()} data rows** × **${columns.length} dimensions**`,
+      `- **Data Completeness**: **${completeness}%** populated density`,
+      `- **Cortex Health Rating**: \`${healthScore}%\` (${healthRating})`,
+      dupCount > 0
+        ? `- **Redundancy Alert**: Found **${dupCount} duplicate row(s)**`
+        : `- **Uniqueness**: 100% distinct records verified`,
+      errorCount > 0
+        ? `- **Outlier / Incident Flag**: **${errorCount} error events** detected in **${errorCol?.rawName}**`
+        : `- **Operational Status**: Zero system error spikes detected`,
+      ``,
+      `### 🔬 Deep Insights`,
+      topNumericHighlight,
+      timeSpanHighlight,
+      `• **Schema Structure**: Formatted with clean column definitions across [${columns
+        .slice(0, 6)
+        .map((c) => c.rawName)
+        .join(', ')}${columns.length > 6 ? '…' : ''}]`,
+      ``,
+      proposedAction
+        ? `### ⚡ Autonomous Recommended Operation\nClick **Apply Changes** below to execute the highest-leverage optimization!`
+        : `*Your sheet is in optimal condition. Ask any question to slice, pivot, or graph your data!*`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      message,
+      proposedAction,
+    };
+  }
+
   const replaceMatch = raw.match(
     /(?:find\s+and\s+replace|find|replace|change)\s*['"]?([^'"]+?)['"]?\s*(?:and\s+)?(?:replace|replace\s+with|with|to)\s*(?:with\s+)?['"]?([^'"]+?)['"]?(?:\s+in\b.*)?$/i,
   );
