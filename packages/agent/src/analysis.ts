@@ -1272,6 +1272,131 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
+  // 4.5. ROW-LEVEL HORIZONTAL AGGREGATION & METRIC ANALYSIS
+  // Handles queries like "analyz to row 21 and give me total of all FY in row 21", "total of row 21", "sum of row 21", "average of row 5"
+  const rowMatch = q.match(/\b(?:row|line)\s*(\d+)\b/i);
+  const isRowQuery =
+    Boolean(rowMatch) &&
+    (q.includes('total') ||
+      q.includes('sum') ||
+      q.includes('analyz') ||
+      q.includes('analyse') ||
+      q.includes('all fy') ||
+      q.includes('average') ||
+      q.includes('avg') ||
+      q.includes('give me') ||
+      q.includes('what is') ||
+      q.includes('breakdown') ||
+      q.includes('aggregate'));
+
+  if (rowMatch && isRowQuery) {
+    const rowNum = parseInt(rowMatch[1]!, 10);
+    // In spreadsheets, users refer to 1-indexed row numbers (e.g. Row 21 is index 20)
+    const targetRowIndex =
+      rowNum - 1 >= 0 && rowNum - 1 < currentSheet.rows.length
+        ? rowNum - 1
+        : rowNum < currentSheet.rows.length
+          ? rowNum
+          : -1;
+
+    if (targetRowIndex >= 0) {
+      const targetRow = currentSheet.rows[targetRowIndex] ?? [];
+
+      // Find row label from the first non-empty text cell
+      let rowLabel = '';
+      for (const cell of targetRow) {
+        const str = String(cell?.value ?? '').trim();
+        if (str && isNaN(Number(str.replace(/,/g, '')))) {
+          rowLabel = str;
+          break;
+        }
+      }
+      if (!rowLabel) rowLabel = `Row ${rowNum}`;
+
+      // Detect header row across top 10 rows to match column labels (e.g., FY '09, FY '10, etc.)
+      let headerRowIndex = 0;
+      let maxHeaderMatch = 0;
+      for (let r = 0; r < Math.min(10, currentSheet.rows.length); r++) {
+        if (r === targetRowIndex) continue;
+        const row = currentSheet.rows[r] ?? [];
+        let stringCount = 0;
+        for (const cell of row) {
+          const val = String(cell?.value ?? '').trim();
+          if (val && (/^fy\s*'?\d{2,4}$/i.test(val) || /^20\d{2}$/.test(val) || val.length > 1)) {
+            stringCount++;
+          }
+        }
+        if (stringCount > maxHeaderMatch) {
+          maxHeaderMatch = stringCount;
+          headerRowIndex = r;
+        }
+      }
+
+      const headers = (currentSheet.rows[headerRowIndex] ?? []).map(
+        (c, idx) => String(c?.value ?? '').trim() || indexToColumn(idx),
+      );
+
+      // Collect numeric values across the row
+      const numericCells: Array<{ colLetter: string; header: string; value: number }> = [];
+      targetRow.forEach((cell, cIdx) => {
+        const rawVal = cell?.value;
+        if (rawVal === null || rawVal === undefined || rawVal === '') return;
+        const colLetter = indexToColumn(cIdx);
+        const header = headers[cIdx] || colLetter;
+
+        let num: number = NaN;
+        if (typeof rawVal === 'number') {
+          num = rawVal;
+        } else {
+          let cleaned = String(rawVal).trim().replace(/,/g, '').replace(/^\$/, '');
+          // Handle accounting negative parentheses: (1,234) -> -1234
+          if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+            cleaned = `-${cleaned.slice(1, -1)}`;
+          }
+          num = parseFloat(cleaned);
+        }
+
+        if (!isNaN(num)) {
+          numericCells.push({ colLetter, header, value: num });
+        }
+      });
+
+      if (numericCells.length > 0) {
+        const totalSum = numericCells.reduce((sum, item) => sum + item.value, 0);
+        const avg = totalSum / numericCells.length;
+        const minVal = smallest(numericCells.map((c) => c.value));
+        const maxVal = largest(numericCells.map((c) => c.value));
+        const minCell = numericCells.find((c) => c.value === minVal);
+        const maxCell = numericCells.find((c) => c.value === maxVal);
+
+        const periodRows = numericCells.map((c) => {
+          const pct = totalSum !== 0 ? ((c.value / totalSum) * 100).toFixed(1) : '0.0';
+          const isMax = c.value === maxVal;
+          const isMin = c.value === minVal;
+          const tag = isMax ? ' **(Peak)**' : isMin ? ' *(Trough)*' : '';
+          return `| **${c.header}** (${c.colLetter}) | **${c.value >= 0 ? '+' : ''}${c.value.toLocaleString()}** | ${pct}% | ${c.value >= 0 ? 'Positive' : 'Negative'}${tag} |`;
+        });
+
+        return {
+          message:
+            `### Row ${rowNum} Comprehensive Analysis: ${rowLabel}\n\n` +
+            `Here is the complete calculation and breakdown for **Row ${rowNum}** (**${rowLabel}**) across all **${numericCells.length} recorded fiscal periods**:\n\n` +
+            `- **Total Sum (All FY)**: **${totalSum.toLocaleString()}** (${totalSum >= 0 ? '$' : '-$'}${Math.abs(totalSum).toLocaleString()}M)\n` +
+            `- **Annual Average / Mean**: **${avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**\n` +
+            `- **Highest Period**: **${maxVal.toLocaleString()}** (${maxCell?.header || ''})\n` +
+            `- **Lowest Period**: **${minVal.toLocaleString()}** (${minCell?.header || ''})\n` +
+            `- **Periods Counted**: ${numericCells.length} Fiscal Periods (${numericCells[0]?.header} to ${numericCells[numericCells.length - 1]?.header})\n\n` +
+            `#### Fiscal Year Breakdown Table:\n` +
+            `| Fiscal Period | Value ($M) | % of Total | Status |\n` +
+            `| :--- | :--- | :--- | :--- |\n` +
+            `${periodRows.join('\n')}\n` +
+            `| **Total (All ${numericCells.length} FY)** | **${totalSum.toLocaleString()}** | **100.0%** | **${totalSum >= 0 ? 'Cumulative Profit' : 'Cumulative Loss'}** |\n\n` +
+            `**Key Takeaway**: Across the ${numericCells.length}-year reporting horizon, Row ${rowNum} generated a cumulative total of **${totalSum.toLocaleString()}** with an average annual run-rate of **${avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**.`,
+        };
+      }
+    }
+  }
+
   // 5. MATH CALCULATIONS & AGGREGATIONS (SUM, AVG, MIN, MAX, COUNT)
   if (
     q.includes('sum') ||

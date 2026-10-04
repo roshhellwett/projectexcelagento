@@ -272,3 +272,74 @@ describe('financial profit and loss probability', () => {
   });
 });
 
+describe('row horizontal aggregation analysis', () => {
+  it('analyzes row 21 and computes exact total of all FY periods', () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'COCA COLA CO',
+          rows: [
+            // Row 1: Title
+            [createCell('Data provided by SimFin')],
+            // Row 2: Subtitle
+            [createCell('P&L statement')],
+            // Row 3: Blank
+            [],
+            // Row 4: Column headers (FY '09 to FY '18)
+            [
+              createCell(''),
+              createCell('in million USD'),
+              createCell(''),
+              createCell("FY '09"),
+              createCell("FY '10"),
+              createCell("FY '11"),
+              createCell("FY '12"),
+              createCell("FY '13"),
+              createCell("FY '14"),
+              createCell("FY '15"),
+              createCell("FY '16"),
+              createCell("FY '17"),
+              createCell("FY '18"),
+            ],
+            // Rows 5-20 dummy rows
+            ...Array.from({ length: 16 }, (_, i) => [
+              createCell(''),
+              createCell(`Line item ${i + 5}`),
+              createCell(''),
+              createCell(1000),
+            ]),
+            // Row 21 (index 20): Net Income Attributable to Shareowners
+            [
+              createCell(''),
+              createCell('NET INCOME ATTRIBUTABLE TO SHAREOWNERS OF THE COCA-COLA COMPANY'),
+              createCell(''),
+              createCell(6824),
+              createCell(11787),
+              createCell(8584),
+              createCell(9019),
+              createCell(8584),
+              createCell(7098),
+              createCell(7351),
+              createCell(6527),
+              createCell(1248),
+              createCell(6434),
+            ],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'analyz to row 21 and give me total of all FY in row 21',
+      wb,
+      'COCA COLA CO',
+    );
+    expect(res.proposedAction).toBeUndefined();
+    expect(res.message).toContain('Row 21');
+    expect(res.message).toContain('NET INCOME ATTRIBUTABLE TO SHAREOWNERS OF THE COCA-COLA COMPANY');
+    expect(res.message).toContain('73,456');
+    expect(res.message).toContain('7,345.60');
+    expect(res.message).toContain("FY '09");
+    expect(res.message).toContain("FY '18");
+  });
+});

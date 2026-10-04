@@ -164,7 +164,27 @@ export function readCellRange(
     boundedStartRow + 250,
   );
 
-  const headers = (sheet.rows[0] ?? []).map((c, i) => String(c?.value ?? indexToColumn(i)));
+  // Intelligently identify the best header row across the top 10 rows (handles sheets with title rows)
+  let headerRowIndex = 0;
+  let maxHeaderCount = 0;
+  for (let r = 0; r < Math.min(10, sheet.rows.length); r += 1) {
+    const rCells = sheet.rows[r] ?? [];
+    let count = 0;
+    for (const cell of rCells) {
+      const val = String(cell?.value ?? '').trim();
+      if (val && (/^fy\s*'?\d{2,4}$/i.test(val) || /^20\d{2}$/.test(val) || val.length > 1)) {
+        count += 1;
+      }
+    }
+    if (count > maxHeaderCount) {
+      maxHeaderCount = count;
+      headerRowIndex = r;
+    }
+  }
+
+  const headers = (sheet.rows[headerRowIndex] ?? []).map(
+    (c, i) => String(c?.value ?? '').trim() || indexToColumn(i),
+  );
 
   const rows: CellRangeResult['rows'] = [];
   for (let r = boundedStartRow; r <= boundedEndRow; r += 1) {
@@ -205,7 +225,27 @@ export function searchSheet(
   if (!needle) return { sheet: sheet.name, query, matches: [], totalMatches: 0 };
 
   const matches: SearchSheetResult['matches'] = [];
-  const headers = (sheet.rows[0] ?? []).map((c, i) => String(c?.value ?? indexToColumn(i)));
+
+  let headerRowIndex = 0;
+  let maxHeaderCount = 0;
+  for (let r = 0; r < Math.min(10, sheet.rows.length); r += 1) {
+    const rCells = sheet.rows[r] ?? [];
+    let count = 0;
+    for (const cell of rCells) {
+      const val = String(cell?.value ?? '').trim();
+      if (val && (/^fy\s*'?\d{2,4}$/i.test(val) || /^20\d{2}$/.test(val) || val.length > 1)) {
+        count += 1;
+      }
+    }
+    if (count > maxHeaderCount) {
+      maxHeaderCount = count;
+      headerRowIndex = r;
+    }
+  }
+
+  const headers = (sheet.rows[headerRowIndex] ?? []).map(
+    (c, i) => String(c?.value ?? '').trim() || indexToColumn(i),
+  );
   let totalMatches = 0;
 
   for (let r = 0; r < sheet.rows.length; r += 1) {

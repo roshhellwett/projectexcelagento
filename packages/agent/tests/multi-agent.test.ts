@@ -136,4 +136,53 @@ describe('runMultiAgentTurn', () => {
     expect(['llm', 'fallback']).toContain(result.source);
     expect(result.trace.length).toBeGreaterThan(0);
   });
+
+  it('delivers grounded analytical findings directly without requiring a mutation plan', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        const roleSystemPrompt = body.messages[0]?.content ?? '';
+        const isPlanner = roleSystemPrompt.includes('You are the Planner');
+        if (isPlanner) {
+          // Planner produces no mutation steps because request was informational
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: '{"title": "Analysis Only", "steps": []}' } }],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        // Analyst delivers grounded analysis
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    'Row 21 total across all recorded periods is 73,456 with an average of 7,345.60.',
+                },
+              },
+            ],
+            model: 'test',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const orchestrator = new ExcelAgentOrchestrator({ registry: createOperationRegistry() });
+    const result = await orchestrator.decide({
+      query: 'compare and analyze row 21 total',
+      workbook: sampleWorkbook(),
+      sheetName: 'Sales',
+      config: { provider: 'groq', apiKey: 'gsk_test' },
+    });
+
+    expect(result.source).toBe('llm');
+    expect(result.message).toContain('73,456');
+    expect(result.message).not.toContain('I could not produce a safe execution plan');
+  });
 });
+
