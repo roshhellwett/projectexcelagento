@@ -403,6 +403,18 @@ function openAiCompatibleAdapter(
         { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
       const toolCallMap = new Map<number, { id: string; name: string; args: string }>();
 
+      // Real-time live token tracking for prompt and streaming tokens
+      const estimatedPromptTokens = Math.max(
+        15,
+        Math.round(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) / 3.8),
+      );
+      let streamedCompletionTokens = 0;
+      callbacks.onTokenCount?.({
+        promptTokens: estimatedPromptTokens,
+        completionTokens: 0,
+        totalTokens: estimatedPromptTokens,
+      });
+
       try {
         while (true) {
           const { done, value } = await readWithTimeout(reader, config);
@@ -447,17 +459,29 @@ function openAiCompatibleAdapter(
                   completionTokens: parsed.usage.completion_tokens,
                   totalTokens: parsed.usage.total_tokens,
                 };
+                callbacks.onTokenCount?.(reportedUsage);
               }
               const delta = parsed.choices?.[0]?.delta;
               if (delta) {
+                let chunkChars = 0;
                 if (delta.content) {
                   fullContent += delta.content;
                   callbacks.onToken?.(delta.content);
+                  chunkChars += delta.content.length;
                 }
                 const thoughtToken = delta.reasoning_content ?? delta.thought;
                 if (thoughtToken) {
                   fullThought += thoughtToken;
                   callbacks.onThinking?.(thoughtToken);
+                  chunkChars += thoughtToken.length;
+                }
+                if (chunkChars > 0 && !reportedUsage) {
+                  streamedCompletionTokens += Math.max(1, Math.round(chunkChars / 3.8));
+                  callbacks.onTokenCount?.({
+                    promptTokens: estimatedPromptTokens,
+                    completionTokens: streamedCompletionTokens,
+                    totalTokens: estimatedPromptTokens + streamedCompletionTokens,
+                  });
                 }
                 if (delta.tool_calls) {
                   for (const tc of delta.tool_calls) {

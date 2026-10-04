@@ -51,6 +51,11 @@ export interface StreamCallbacks {
   onToken?: (token: string) => void;
   onThinking?: (thought: string) => void;
   onToolCall?: (toolCall: ToolCall) => void;
+  onTokenCount?: (usage: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  }) => void;
 }
 
 export interface ProviderResponse {
@@ -159,6 +164,11 @@ export interface AgentActivityEvent {
   summary: string;
   detail?: unknown;
   timestamp: number;
+  tokens?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
 }
 
 /** The orchestrator's answer for one conversational turn. */

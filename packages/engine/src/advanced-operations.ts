@@ -218,13 +218,26 @@ export const fillBlanksOperation: Operation<FillBlanksArgs> = {
 // 2. ADD COMPUTED COLUMN (add_computed_column)
 // ============================================================================
 
-export const addComputedColumnArgsSchema = z.object({
-  sheet: z.string().trim().min(1),
-  headerName: z.string().trim().min(1),
-  expression: z.string().trim().min(1),
-  afterColumn: rangeColumn.optional(),
-  headerRow: headerRowSchema,
-});
+export const addComputedColumnArgsSchema = z.preprocess(
+  (raw: unknown) => {
+    if (typeof raw !== 'object' || raw === null) return raw;
+    const obj = { ...(raw as Record<string, unknown>) };
+    if (!obj.headerName) {
+      obj.headerName = obj.columnName ?? obj.name ?? obj.header ?? obj.title;
+    }
+    if (!obj.expression) {
+      obj.expression = obj.formula ?? obj.calc ?? obj.calculation ?? obj.expr;
+    }
+    return obj;
+  },
+  z.object({
+    sheet: z.string().trim().min(1),
+    headerName: z.string().trim().min(1),
+    expression: z.string().trim().min(1),
+    afterColumn: rangeColumn.optional(),
+    headerRow: headerRowSchema,
+  }),
+);
 export type AddComputedColumnArgs = z.infer<typeof addComputedColumnArgsSchema>;
 
 function addComputedColumnTarget(workbook: Workbook, args: AddComputedColumnArgs): CellRange[] {
@@ -248,7 +261,8 @@ function validateAddComputedColumn(
 /**
  * Evaluates an expression against a single row's cell values.
  * Supports:
- * - Column identifiers: A, B, Col C, col('Header'), [Header]
+ * - Column identifiers: A, B, Col C, col('Header'), col(Header), [Header], col(0)
+ * - SUM ranges: SUM(B:K), SUM(B2:K2), SUM(B..K)
  * - Operators: +, -, *, /, %
  * - Math/string functions: round, floor, ceil, abs, upper, lower, trim, concat
  */
@@ -276,23 +290,66 @@ function evaluateRowExpression(
   };
 
   let expr = expression.trim();
+  if (expr.startsWith('=')) {
+    expr = expr.slice(1).trim();
+  }
 
-  // 1. Resolve named column brackets [Col Name] or col('Col Name') (before protecting literals)
+  // 0. Support SUM(col1:col2) or SUM(col1..col2) or SUM(B2:K2) across row columns
+  expr = expr.replace(
+    /\bSUM\(\s*([A-Za-z]+)\d*\s*(?::|\.\.)\s*([A-Za-z]+)\d*\s*\)/gi,
+    (_m, c1: string, c2: string) => {
+      const startIdx = columnToIndex(c1);
+      const endIdx = columnToIndex(c2);
+      if (startIdx !== undefined && endIdx !== undefined) {
+        const from = Math.min(startIdx, endIdx);
+        const to = Math.max(startIdx, endIdx);
+        let sum = 0;
+        for (let col = from; col <= to && col < row.length; col++) {
+          const val = row[col]?.value;
+          if (typeof val === 'number') {
+            sum += val;
+          } else if (typeof val === 'string') {
+            const cleaned = val.replace(/,/g, '').replace(/^\$/, '').trim();
+            const num = parseFloat(cleaned);
+            if (!isNaN(num) && /^-?\d+(\.\d+)?$/.test(cleaned)) sum += num;
+          }
+        }
+        return String(sum);
+      }
+      return '0';
+    },
+  );
+
+  // 1. Resolve named column brackets [Col Name] or col('Col Name') or col(ColName) (before protecting literals)
   const resolveColToken = (colName: string): string => {
-    let idx = headerMap.get(colName.toLowerCase().trim());
+    const trimmed = colName.trim().replace(/^['"]|['"]$/g, '');
+    let idx = headerMap.get(trimmed.toLowerCase());
     if (idx === undefined) {
-      const directIdx = columnToIndex(colName);
+      const directIdx = columnToIndex(trimmed);
       if (directIdx !== undefined) idx = directIdx;
+    }
+    if (idx === undefined && /^\d+$/.test(trimmed)) {
+      const parsedIdx = parseInt(trimmed, 10);
+      if (parsedIdx >= 0 && parsedIdx < row.length) {
+        idx = parsedIdx;
+      }
     }
     if (idx !== undefined && idx < row.length) {
       const cellVal = row[idx]?.value;
       if (typeof cellVal === 'number') return String(cellVal);
-      if (typeof cellVal === 'string') return protect(cellVal);
+      if (typeof cellVal === 'string') {
+        const cleaned = cellVal.replace(/,/g, '').replace(/^\$/, '').trim();
+        const parsedNum = parseFloat(cleaned);
+        if (!isNaN(parsedNum) && /^-?\d+(\.\d+)?$/.test(cleaned)) {
+          return String(parsedNum);
+        }
+        return protect(cellVal);
+      }
       return '0';
     }
     return '0';
   };
-  expr = expr.replace(/col\(\s*['"]([^'"]+)['"]\s*\)/gi, (_m, n: string) => resolveColToken(n));
+  expr = expr.replace(/col\(\s*['"]?([^'")]+)['"]?\s*\)/gi, (_m, n: string) => resolveColToken(n));
   expr = expr.replace(/\[([^\]]+)\]/g, (_m, n: string) => resolveColToken(n));
 
   // 2. Protect string literals so column resolution never rewrites letters inside them
@@ -306,7 +363,14 @@ function evaluateRowExpression(
     if (colIdx !== undefined && colIdx < row.length) {
       const val = row[colIdx]?.value;
       if (typeof val === 'number') return String(val);
-      if (typeof val === 'string') return protect(val);
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/,/g, '').replace(/^\$/, '').trim();
+        const parsedNum = parseFloat(cleaned);
+        if (!isNaN(parsedNum) && /^-?\d+(\.\d+)?$/.test(cleaned)) {
+          return String(parsedNum);
+        }
+        return protect(val);
+      }
       return '0';
     }
     return match;

@@ -572,13 +572,47 @@ export const App: React.FC = () => {
             ),
           );
         },
+        onTokenCount: (counts: {
+          promptTokens?: number;
+          completionTokens?: number;
+          totalTokens?: number;
+        }) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistMsgId
+                ? {
+                    ...m,
+                    tokens: {
+                      promptTokens: counts.promptTokens ?? m.tokens?.promptTokens,
+                      completionTokens: counts.completionTokens ?? m.tokens?.completionTokens,
+                      totalTokens: counts.totalTokens ?? m.tokens?.totalTokens,
+                      isLive: true,
+                    },
+                  }
+                : m,
+            ),
+          );
+        },
       };
 
       const onActivity = (activity: AgentActivityEvent) => {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistMsgId ? { ...m, activities: [...(m.activities || []), activity] } : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== assistMsgId) return m;
+            const updatedTokens = activity.tokens
+              ? {
+                  promptTokens: activity.tokens.promptTokens ?? m.tokens?.promptTokens,
+                  completionTokens: activity.tokens.completionTokens ?? m.tokens?.completionTokens,
+                  totalTokens: activity.tokens.totalTokens ?? m.tokens?.totalTokens,
+                  isLive: true,
+                }
+              : m.tokens;
+            return {
+              ...m,
+              tokens: updatedTokens,
+              activities: [...(m.activities || []), activity],
+            };
+          }),
         );
       };
 
@@ -649,6 +683,16 @@ export const App: React.FC = () => {
               proposedAction: proposed,
               plan: agentRes.plan,
               preview: previewResult,
+              tokens: agentRes.telemetry?.totalTokens
+                ? {
+                    promptTokens: agentRes.telemetry.promptTokens,
+                    completionTokens: agentRes.telemetry.completionTokens,
+                    totalTokens: agentRes.telemetry.totalTokens,
+                    isLive: false,
+                  }
+                : m.tokens
+                  ? { ...m.tokens, isLive: false }
+                  : undefined,
               isStreaming: false,
               status: 'pending',
             };

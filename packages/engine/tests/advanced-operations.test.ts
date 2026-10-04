@@ -167,6 +167,39 @@ describe('advanced operations', () => {
       expect(values(result.workbook, 2)).toEqual([50, 25]);
       expect(values(result.workbook, 3)).toEqual([200, 100]);
     });
+
+    it('evaluates SUM(col1:col2) with comma-formatted numbers and argument aliases', () => {
+      const before = workbook([
+        row('Metric', 'FY09', 'FY10', 'FY11'),
+        row('Revenue', '30,990', '35,119', '46,542'),
+        row('Cost', '11,088', '12,693', '18,215'),
+      ]);
+
+      // Test aliases: columnName instead of headerName, formula instead of expression
+      const args = addComputedColumnOperation.schema.parse({
+        sheet: 'Data',
+        columnName: 'Total',
+        formula: '=SUM(B:D)',
+      });
+
+      const result = addComputedColumnOperation.apply(before, args);
+      expect(values(result.workbook, 1)).toEqual(['Metric', 'FY09', 'FY10', 'FY11', 'Total']);
+      expect(values(result.workbook, 2)).toEqual(['Revenue', '30,990', '35,119', '46,542', 112651]);
+      expect(values(result.workbook, 3)).toEqual(['Cost', '11,088', '12,693', '18,215', 41996]);
+    });
+
+    it('evaluates unquoted col names and column letters', () => {
+      const before = workbook([row('Price', 'Qty'), row(10, 5)]);
+
+      const args = addComputedColumnOperation.schema.parse({
+        sheet: 'Data',
+        headerName: 'Total',
+        expression: 'col(Price) * col(B)',
+      });
+
+      const result = addComputedColumnOperation.apply(before, args);
+      expect(values(result.workbook, 2)).toEqual([10, 5, 50]);
+    });
   });
 
   describe('split_column', () => {

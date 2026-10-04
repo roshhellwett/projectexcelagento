@@ -29,6 +29,12 @@ export interface ChatMessage {
   confirmationPrompt?: { affectedCells: number; reasons: string[] };
   errorMessage?: string;
   isStreaming?: boolean;
+  tokens?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    isLive?: boolean;
+  };
 }
 
 interface AgentChatProps {
@@ -367,6 +373,28 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           >
                             Excel Agent
                           </span>
+
+                          {/* Live / Real Token Count Pill */}
+                          {(msg.tokens?.totalTokens !== undefined || msg.isStreaming) && (
+                            <span
+                              className={`live-token-pill ${msg.isStreaming || msg.tokens?.isLive ? 'is-streaming' : 'is-done'}`}
+                              title={
+                                msg.tokens?.promptTokens !== undefined
+                                  ? `Prompt (input): ${msg.tokens.promptTokens.toLocaleString()} tokens | Generated (output): ${msg.tokens.completionTokens?.toLocaleString() ?? 0} tokens`
+                                  : 'Token processing'
+                              }
+                            >
+                              <span className="token-icon">⚡</span>
+                              <span className="token-count">
+                                {msg.tokens?.totalTokens !== undefined
+                                  ? `${msg.tokens.totalTokens.toLocaleString()} tokens`
+                                  : 'Counting tokens…'}
+                              </span>
+                              {(msg.isStreaming || msg.tokens?.isLive) && (
+                                <span className="live-pulse-badge">LIVE</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                         {msg.plan ? (
                           <span
@@ -390,16 +418,49 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         ) : null}
                       </div>
 
-                      {/* Agent Activity Timeline */}
+                      {/* Agent Activity Timeline & Live Token Monitor */}
                       {msg.activities && msg.activities.length > 0 && (
                         <div className="activity-timeline">
+                          <div className="activity-token-monitor">
+                            <div className="monitor-status-section">
+                              {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
+                                <>
+                                  <span className="monitor-spin-dot" />
+                                  <span className="monitor-label">Reading & Reasoning live…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="monitor-done-icon">✓</span>
+                                  <span className="monitor-label">Inspected & Verified</span>
+                                </>
+                              )}
+                            </div>
+                            {msg.tokens?.totalTokens !== undefined && (
+                              <div className="monitor-token-metrics">
+                                <span className="monitor-token-total">
+                                  ⚡ <strong>{msg.tokens.totalTokens.toLocaleString()}</strong> tokens
+                                </span>
+                                {msg.tokens.promptTokens !== undefined && (
+                                  <span className="monitor-token-breakdown">
+                                    {' '}(📥 {msg.tokens.promptTokens.toLocaleString()} in • 📤 {msg.tokens.completionTokens ?? 0} out)
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
                           {msg.activities.map((act, actIdx) => (
                             <div
                               key={act.id || actIdx}
                               className={`activity-pill activity-${act.type}`}
                             >
-                              <span>{getActivityIcon(act.type)}</span>
-                              <span>{act.summary}</span>
+                              <span className="act-icon">{getActivityIcon(act.type)}</span>
+                              <span className="act-summary">{act.summary}</span>
+                              {act.tokens?.totalTokens !== undefined && (
+                                <span className="act-token-tag">
+                                  ⚡ {act.tokens.totalTokens.toLocaleString()}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
