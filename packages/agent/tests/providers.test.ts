@@ -107,7 +107,7 @@ describe('groq (OpenAI-compatible) adapter', () => {
     expect(body.model).toBe('llama-3.3-70b-versatile');
     expect(body.messages).toEqual(MESSAGES);
     expect(body.temperature).toBe(0.2);
-    expect(body.max_tokens).toBe(1200);
+    expect(body.max_tokens).toBe(8192);
 
     expect(result).toEqual({
       content: 'I normalised the dates in column C.',
@@ -197,7 +197,7 @@ describe('gemini adapter', () => {
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body.systemInstruction).toEqual({ parts: [{ text: 'SYS' }] });
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'clean the dates' }] }]);
-    expect(body.generationConfig).toEqual({ temperature: 0.2, maxOutputTokens: 1200 });
+    expect(body.generationConfig).toEqual({ temperature: 0.2, maxOutputTokens: 8192 });
 
     expect(result.content).toBe('Here is the summary of the worksheet.');
     expect(result.usage).toEqual({ promptTokens: 300, completionTokens: 40, totalTokens: 340 });

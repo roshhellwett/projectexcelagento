@@ -29,6 +29,7 @@ export class ProviderError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_RETRIES = 2;
+export const DEFAULT_MAX_TOKENS = 8192;
 
 export const FALLBACK_MODELS: Record<ProviderName, string[]> = {
   groq: [
@@ -184,11 +185,52 @@ type OpenAICompatibleShape = {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
 
+export function extractThoughtAndCleanContent(
+  rawContent: string,
+  existingThought?: string,
+): { content: string; thought?: string } {
+  let content = rawContent || '';
+  let thought = existingThought || '';
+
+  // Extract <think>...</think>
+  const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/i);
+  if (thinkMatch && thinkMatch[1]) {
+    thought = (thought ? `${thought}\n` : '') + thinkMatch[1].trim();
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+
+  // Extract |<|minimax|>| or |<|...|>| tags
+  if (/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/.test(content)) {
+    const parts = content.split(/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/);
+    const reasoningText = parts
+      .filter((p) => p.trim().length > 0)
+      .join('\n')
+      .trim();
+    thought = (thought ? `${thought}\n` : '') + reasoningText;
+    content = '';
+  }
+
+  content = content.replace(/<\/?think>/gi, '').trim();
+
+  return {
+    content,
+    thought: thought || undefined,
+  };
+}
+
 function formatMessagesForOpenAI(messages: ChatMessage[]) {
   return messages.map((m) => {
+    let cleanContent = m.content;
+    if (typeof cleanContent === 'string') {
+      cleanContent = cleanContent
+        .replace(/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/g, '')
+        .replace(/<think>[\s\S]*?<\/think>/g, '')
+        .replace(/<\/?think>/g, '')
+        .trim();
+    }
     const msg: Record<string, unknown> = {
       role: m.role,
-      content: m.content,
+      content: cleanContent,
     };
     if (m.name) msg.name = m.name;
     if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
@@ -221,7 +263,7 @@ function openAiCompatibleAdapter(
         model,
         messages: formatMessagesForOpenAI(messages),
         temperature: config.temperature ?? 0.2,
-        max_tokens: config.maxTokens ?? 1200,
+        max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
       };
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
@@ -246,8 +288,9 @@ function openAiCompatibleAdapter(
       const data = await readJson<OpenAICompatibleShape>(name, response);
 
       const messageObj = data.choices?.[0]?.message;
-      const content = messageObj?.content ?? '';
-      const thought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+      const rawContent = messageObj?.content ?? '';
+      const rawThought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+      const cleaned = extractThoughtAndCleanContent(rawContent, rawThought);
 
       const toolCalls: ToolCall[] | undefined = messageObj?.tool_calls?.map((tc, idx) => ({
         id: tc.id || `call-${Date.now()}-${idx}`,
@@ -259,8 +302,8 @@ function openAiCompatibleAdapter(
       }));
 
       return {
-        content,
-        thought,
+        content: cleaned.content,
+        thought: cleaned.thought,
         toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
         provider: name,
         model: data.model ?? model,
@@ -285,7 +328,7 @@ function openAiCompatibleAdapter(
         model,
         messages: formatMessagesForOpenAI(messages),
         temperature: config.temperature ?? 0.2,
-        max_tokens: config.maxTokens ?? 1200,
+        max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
         stream: true,
         stream_options: { include_usage: true },
       };
@@ -455,9 +498,11 @@ function openAiCompatibleAdapter(
         callbacks.onToolCall?.(tc);
       }
 
+      const cleaned = extractThoughtAndCleanContent(fullContent, fullThought);
+
       return {
-        content: fullContent,
-        thought: fullThought || undefined,
+        content: cleaned.content,
+        thought: cleaned.thought,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         provider: name,
         model: reportedModel,
@@ -556,7 +601,7 @@ export const geminiAdapter: ProviderAdapter = {
           tools: geminiTools,
           generationConfig: {
             temperature: config.temperature ?? 0.2,
-            maxOutputTokens: config.maxTokens ?? 1200,
+            maxOutputTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
           },
         }),
       },

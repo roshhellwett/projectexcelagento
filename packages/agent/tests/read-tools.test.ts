@@ -4,8 +4,10 @@ import {
   calculateAggregate,
   getWorkbookOverview,
   profileColumn,
+  querySheetRecords,
   readCellRange,
   searchSheet,
+  searchWebKnowledge,
 } from '../src/read-tools.js';
 
 function sampleWorkbook(): Workbook {
@@ -94,4 +96,31 @@ describe('read tools for workbook inspection', () => {
       expect(avgRes.value).toBe(250);
     }
   });
+
+  it('queries multi-condition sheet records and returns exact match count', () => {
+    const wb = sampleWorkbook();
+    const res = querySheetRecords(wb, 'Sales', [
+      { column: 'B', value: 'Alice', operator: 'equals' },
+      { column: 'C', value: '500', operator: 'equals' },
+    ]);
+    expect('error' in res).toBe(false);
+    if (!('error' in res)) {
+      expect(res.totalMatchingRows).toBe(1);
+      expect(res.matchingRowNumbers).toEqual([5]);
+      expect(res.sampleMatchingRows).toHaveLength(1);
+      expect(res.sampleMatchingRows[0]?.cells['Customer']).toBe('Alice');
+      expect(res.sampleMatchingRows[0]?.cells['Revenue']).toBe(500);
+    }
+  });
+
+  it('searches external knowledge base for formulas without network error', async () => {
+    const xlookupRes = await searchWebKnowledge('XLOOKUP syntax');
+    expect(xlookupRes.results.length).toBeGreaterThan(0);
+    expect(xlookupRes.results[0]?.title).toContain('XLOOKUP');
+
+    const cagrRes = await searchWebKnowledge('CAGR formula');
+    expect(cagrRes.results.length).toBeGreaterThan(0);
+    expect(cagrRes.results[0]?.snippet).toContain('Ending_Value');
+  });
 });
+

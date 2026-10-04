@@ -653,6 +653,55 @@ export function analyzeSpreadsheetIntentAndData(
   // Y" must never be hijacked by a keyword heuristic below. Without this, a
   // column named "Order Date" turns "rename column C to Order Date" into a
   // date-format mutation, and "delete column Sort Priority" into a sort.
+
+  // 0A. Numerical value replacement: e.g. "change all negative amount to 0" or "replace negative values with 0"
+  const negativeToValMatch = raw.match(
+    /(?:change|set|replace|turn|convert|clamp)\s+(?:all\s+)?negative(?:\s+(?:amount|numbers?|values?|figures?))?\s+(?:to|with)\s+([0-9.-]+)/i,
+  );
+
+  if (negativeToValMatch) {
+    const targetVal = parseFloat(negativeToValMatch[1] || '0') || 0;
+    const edits: Array<{ row: number; column: string; value: number }> = [];
+    currentSheet.rows.forEach((row, rIdx) => {
+      row.forEach((cell, cIdx) => {
+        if (!cell || cell.formula !== undefined) return;
+        const val = cell.value;
+        let num: number | null = null;
+        if (typeof val === 'number') {
+          num = val;
+        } else if (typeof val === 'string' && /^-[\d,]+(?:\.\d+)?$/.test(val.trim())) {
+          num = parseFloat(val.replace(/,/g, ''));
+        }
+        if (num !== null && num < 0) {
+          edits.push({
+            row: rIdx + 1,
+            column: indexToColumn(cIdx),
+            value: targetVal,
+          });
+        }
+      });
+    });
+
+    if (edits.length > 0) {
+      return {
+        message: `I analyzed **${currentSheet.name}** and identified **${edits.length} negative value(s)**.\n\nI've prepared an update to set all ${edits.length} negative values to **${targetVal}**. Click **Apply Changes** below to execute.`,
+        proposedAction: {
+          name: 'edit_cells',
+          args: {
+            sheet: currentSheet.name,
+            edits: edits.slice(0, 500),
+          },
+          explanation: `Change ${edits.length} negative value(s) to ${targetVal} in ${currentSheet.name}.`,
+          category: 'transform',
+        },
+      };
+    } else {
+      return {
+        message: `I scanned all ${currentSheet.rows.length} rows in **${currentSheet.name}**; there are currently zero negative values in the sheet.`,
+      };
+    }
+  }
+
   const replaceMatch = raw.match(
     /(?:find\s+and\s+replace|find|replace|change)\s*['"]?([^'"]+?)['"]?\s*(?:and\s+)?(?:replace|replace\s+with|with|to)\s*(?:with\s+)?['"]?([^'"]+?)['"]?(?:\s+in\b.*)?$/i,
   );
@@ -1329,6 +1378,91 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
+  // 6.5. FINANCIAL ANALYSIS: PROFIT & LOSS / PROBABILITY OF PROFIT
+  if (
+    q.includes('profit') ||
+    q.includes('loss') ||
+    (q.includes('probability') && (q.includes('profit') || q.includes('loss') || q.includes('p&l')))
+  ) {
+    const metricRows: Array<{ label: string; rowIndex: number }> = [];
+    currentSheet.rows.forEach((row, idx) => {
+      const textA = String(row[0]?.value ?? '').toLowerCase();
+      const textB = String(row[1]?.value ?? '').toLowerCase();
+      const combined = `${textA} ${textB}`;
+      if (
+        combined.includes('gross profit') ||
+        combined.includes('operating income') ||
+        combined.includes('consolidated net income') ||
+        combined.includes('net income attributable') ||
+        combined.includes('net operating revenues')
+      ) {
+        metricRows.push({ label: String(row[1]?.value || row[0]?.value), rowIndex: idx });
+      }
+    });
+
+    if (metricRows.length > 0) {
+      const yearColumns: Array<{ colIndex: number; label: string }> = [];
+      for (let r = 0; r < Math.min(6, currentSheet.rows.length); r++) {
+        const row = currentSheet.rows[r] ?? [];
+        row.forEach((cell, cIdx) => {
+          const val = String(cell?.value ?? '').trim();
+          if (/^fy\s*'?\d{2,4}$/i.test(val) || /^20\d{2}$/.test(val) || /^19\d{2}$/.test(val)) {
+            if (!yearColumns.some((y) => y.colIndex === cIdx)) {
+              yearColumns.push({ colIndex: cIdx, label: val });
+            }
+          }
+        });
+      }
+
+      const colsToAnalyze =
+        yearColumns.length > 0
+          ? yearColumns
+          : columns
+              .filter((c) => c.isNumeric)
+              .map((c) => ({ colIndex: c.index, label: c.rawName }));
+
+      const netIncomeRow =
+        metricRows.find(
+          (m) =>
+            m.label.toLowerCase().includes('net income attributable') ||
+            m.label.toLowerCase().includes('consolidated net income'),
+        ) ||
+        metricRows.find((m) => m.label.toLowerCase().includes('operating income')) ||
+        metricRows.find((m) => m.label.toLowerCase().includes('gross profit'));
+
+      if (netIncomeRow && colsToAnalyze.length > 0) {
+        const rowCells = currentSheet.rows[netIncomeRow.rowIndex] ?? [];
+        let profitCount = 0;
+        let lossCount = 0;
+        const periodsBreakdown: string[] = [];
+
+        colsToAnalyze.forEach((col) => {
+          const rawVal = rowCells[col.colIndex]?.value;
+          const num = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal ?? '').replace(/,/g, ''));
+          if (!isNaN(num)) {
+            if (num >= 0) {
+              profitCount++;
+              periodsBreakdown.push(`• **${col.label}**: **+$${num.toLocaleString()}M** (Profitable)`);
+            } else {
+              lossCount++;
+              periodsBreakdown.push(`• **${col.label}**: **-$${Math.abs(num).toLocaleString()}M** (Net Loss)`);
+            }
+          }
+        });
+
+        const totalPeriods = profitCount + lossCount;
+        if (totalPeriods > 0) {
+          const probProfit = ((profitCount / totalPeriods) * 100).toFixed(1);
+          const probLoss = ((lossCount / totalPeriods) * 100).toFixed(1);
+
+          return {
+            message: `### Financial Probability Analysis: Profit & Loss (${currentSheet.name})\n\nBased on the **${netIncomeRow.label}** across **${totalPeriods} recorded fiscal periods**:\n\n- **Probability of Profit**: **${probProfit}%** (${profitCount} / ${totalPeriods} periods)\n- **Probability of Loss**: **${probLoss}%** (${lossCount} / ${totalPeriods} periods)\n\n#### Fiscal Period Breakdown:\n${periodsBreakdown.join('\n')}\n\n**Summary**: The data shows **${probProfit}% historical profitability** across all analyzed fiscal periods with **${lossCount} recorded loss period(s)**.`,
+          };
+        }
+      }
+    }
+  }
+
   // 7. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
   // Check if query contains a number or specific value
   const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
@@ -1509,6 +1643,8 @@ export function analyzeSpreadsheetIntentAndData(
       message: `**Worksheet Overview: "${currentSheet.name}"**\n\n• **Total Records:** ${dataRowsCount} data rows\n• **Total Columns:** ${columns.length} columns\n• **Worksheets in Workbook:** ${workbook.sheets.map((s) => s.name).join(', ')}\n\n**Column Profiles:**\n${colSummary.join('\n')}${columns.length > 8 ? `\n• *...and ${columns.length - 8} more columns*` : ''}\n\nWhat would you like me to do? You can ask to filter rows, calculate sums/averages, remove duplicates, sort, or standardize dates.`,
     };
   }
+
+
 
   // 10. FALLBACK SMART REASONING: Search sheet cells
   const searchMatches = searchCellsInSheet(currentSheet, userQuery);

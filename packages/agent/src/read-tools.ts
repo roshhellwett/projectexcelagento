@@ -161,7 +161,7 @@ export function readCellRange(
   const boundedEndRow = Math.min(
     Math.max(boundedStartRow, endRow),
     sheet.rows.length,
-    boundedStartRow + 50,
+    boundedStartRow + 250,
   );
 
   const headers = (sheet.rows[0] ?? []).map((c, i) => String(c?.value ?? indexToColumn(i)));
@@ -196,7 +196,7 @@ export function searchSheet(
   workbook: Workbook,
   sheetName: string | undefined,
   query: string,
-  limit = 20,
+  limit = 50,
 ): SearchSheetResult | { error: string } {
   const sheet = resolveSheet(workbook, sheetName);
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
@@ -206,6 +206,7 @@ export function searchSheet(
 
   const matches: SearchSheetResult['matches'] = [];
   const headers = (sheet.rows[0] ?? []).map((c, i) => String(c?.value ?? indexToColumn(i)));
+  let totalMatches = 0;
 
   for (let r = 0; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r] ?? [];
@@ -214,29 +215,30 @@ export function searchSheet(
       if (!cell || cell.value === null || cell.value === undefined) continue;
       const strVal = String(cell.value).toLowerCase();
       if (strVal.includes(needle)) {
-        const colLetter = indexToColumn(c);
-        const rowContext: Record<string, unknown> = {};
-        row.forEach((cellItem, idx) => {
-          rowContext[headers[idx] || indexToColumn(idx)] = cellItem?.value ?? null;
-        });
-        matches.push({
-          cell: `${colLetter}${r + 1}`,
-          rowNumber: r + 1,
-          columnLetter: colLetter,
-          value: cell.value,
-          rowContext,
-        });
-        if (matches.length >= limit) break;
+        totalMatches += 1;
+        if (matches.length < limit) {
+          const colLetter = indexToColumn(c);
+          const rowContext: Record<string, unknown> = {};
+          row.forEach((cellItem, idx) => {
+            rowContext[headers[idx] || indexToColumn(idx)] = cellItem?.value ?? null;
+          });
+          matches.push({
+            cell: `${colLetter}${r + 1}`,
+            rowNumber: r + 1,
+            columnLetter: colLetter,
+            value: cell.value,
+            rowContext,
+          });
+        }
       }
     }
-    if (matches.length >= limit) break;
   }
 
   return {
     sheet: sheet.name,
     query,
     matches,
-    totalMatches: matches.length,
+    totalMatches,
   };
 }
 
@@ -295,8 +297,315 @@ export function calculateAggregate(
   };
 }
 
+export interface QuerySheetCondition {
+  column?: string;
+  header?: string;
+  operator?: 'equals' | 'contains' | 'startsWith' | 'endsWith' | 'gt' | 'lt';
+  value: string | number;
+}
+
+export interface QuerySheetRecordsResult {
+  sheet: string;
+  totalMatchingRows: number;
+  totalSheetRows: number;
+  matchingRowNumbers: number[];
+  sampleMatchingRows: { rowNumber: number; cells: Record<string, unknown> }[];
+  summary: string;
+}
+
+/**
+ * Multi-criteria query and count tool.
+ * Enables the LLM to filter, count, and inspect spreadsheet rows matching one or more conditions
+ * (e.g. Column J contains "pradeep" AND Column D contains "OUT") in a single deterministic pass.
+ */
+export function querySheetRecords(
+  workbook: Workbook,
+  sheetName: string | undefined,
+  conditions: QuerySheetCondition[],
+  limit = 25,
+): QuerySheetRecordsResult | { error: string } {
+  const sheet = resolveSheet(workbook, sheetName);
+  if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
+
+  const totalRows = sheet.rows.length;
+  const headerRow = sheet.rows[0] ?? [];
+  const headers = headerRow.map((c, i) => String(c?.value ?? indexToColumn(i)));
+
+  // Resolve condition column indexes
+  const resolvedConditions = conditions.map((cond) => {
+    let colIdx = cond.column ? columnToIndex(cond.column) : undefined;
+    if (colIdx === undefined && cond.header) {
+      const hLower = cond.header.trim().toLowerCase();
+      colIdx = headers.findIndex((h) => h.toLowerCase().includes(hLower));
+      if (colIdx === -1) colIdx = undefined;
+    }
+    return {
+      ...cond,
+      colIdx,
+      operator: cond.operator ?? 'contains',
+      strVal: String(cond.value).trim().toLowerCase(),
+      numVal: typeof cond.value === 'number' ? cond.value : parseFloat(String(cond.value)),
+    };
+  });
+
+  const matchingRowNumbers: number[] = [];
+  const sampleMatchingRows: { rowNumber: number; cells: Record<string, unknown> }[] = [];
+
+  for (let r = 1; r < sheet.rows.length; r += 1) {
+    const row = sheet.rows[r] ?? [];
+    let matchesAll = true;
+
+    for (const cond of resolvedConditions) {
+      let cellValStr = '';
+      let cellNumVal = NaN;
+
+      if (cond.colIdx !== undefined && cond.colIdx >= 0) {
+        const cell = row[cond.colIdx];
+        const val = cell?.value;
+        cellValStr = val !== null && val !== undefined ? String(val).toLowerCase() : '';
+        cellNumVal = typeof val === 'number' ? val : parseFloat(cellValStr);
+      } else {
+        // Search across all cells in the row if column not specified
+        cellValStr = row
+          .map((c) => (c?.value !== null && c?.value !== undefined ? String(c.value).toLowerCase() : ''))
+          .join(' ');
+      }
+
+      let matchesCond = false;
+      switch (cond.operator) {
+        case 'equals':
+          matchesCond = cellValStr === cond.strVal;
+          break;
+        case 'startsWith':
+          matchesCond = cellValStr.startsWith(cond.strVal);
+          break;
+        case 'endsWith':
+          matchesCond = cellValStr.endsWith(cond.strVal);
+          break;
+        case 'gt':
+          matchesCond = !isNaN(cellNumVal) && !isNaN(cond.numVal) && cellNumVal > cond.numVal;
+          break;
+        case 'lt':
+          matchesCond = !isNaN(cellNumVal) && !isNaN(cond.numVal) && cellNumVal < cond.numVal;
+          break;
+        case 'contains':
+        default:
+          matchesCond = cellValStr.includes(cond.strVal);
+          break;
+      }
+
+      if (!matchesCond) {
+        matchesAll = false;
+        break;
+      }
+    }
+
+    if (matchesAll) {
+      matchingRowNumbers.push(r + 1);
+      if (sampleMatchingRows.length < limit) {
+        const cells: Record<string, unknown> = {};
+        row.forEach((c, idx) => {
+          cells[headers[idx] || indexToColumn(idx)] = c?.value ?? null;
+        });
+        sampleMatchingRows.push({ rowNumber: r + 1, cells });
+      }
+    }
+  }
+
+  const condDesc = conditions
+    .map((c) => `${c.column ? `Column ${c.column}` : c.header || 'Row'} ${c.operator ?? 'contains'} "${c.value}"`)
+    .join(' AND ');
+
+  return {
+    sheet: sheet.name,
+    totalMatchingRows: matchingRowNumbers.length,
+    totalSheetRows: Math.max(0, totalRows - 1),
+    matchingRowNumbers: matchingRowNumbers.slice(0, 100),
+    sampleMatchingRows,
+    summary: `Found ${matchingRowNumbers.length} matching row(s) out of ${Math.max(0, totalRows - 1)} data rows in ${sheet.name} (${condDesc || 'all criteria'}).`,
+  };
+}
+
+export interface WebSearchResult {
+  query: string;
+  results: { title: string; snippet: string }[];
+  summary: string;
+}
+
+const FORMULA_KNOWLEDGE_BASE: Array<{ keywords: string[]; title: string; snippet: string }> = [
+  {
+    keywords: ['xlookup', 'lookup'],
+    title: 'Excel XLOOKUP Formula',
+    snippet:
+      '=XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode]). Modern replacement for VLOOKUP/INDEX-MATCH that works in any direction.',
+  },
+  {
+    keywords: ['vlookup'],
+    title: 'Excel VLOOKUP Formula',
+    snippet:
+      '=VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup]). Looks up a value in the leftmost column and returns a value in the same row from a specified column.',
+  },
+  {
+    keywords: ['cagr', 'compound annual growth'],
+    title: 'CAGR (Compound Annual Growth Rate) Formula',
+    snippet:
+      '=(Ending_Value/Beginning_Value)^(1/Number_of_Years) - 1. Computes constant annual rate of growth over a multi-year period.',
+  },
+  {
+    keywords: ['yoy', 'year over year', 'growth rate'],
+    title: 'Year-over-Year (YoY) Growth Formula',
+    snippet:
+      '=(Current_Period - Prior_Period) / Prior_Period. Express as percentage to show growth rate compared to the same period in the previous year.',
+  },
+  {
+    keywords: ['sumifs', 'conditional sum'],
+    title: 'Excel SUMIFS Formula',
+    snippet:
+      '=SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...]). Sums cells that meet multiple criteria across columns.',
+  },
+  {
+    keywords: ['countifs', 'conditional count'],
+    title: 'Excel COUNTIFS Formula',
+    snippet:
+      '=COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2, ...]). Counts cells across multiple ranges that satisfy all given conditions.',
+  },
+  {
+    keywords: ['npv', 'net present value'],
+    title: 'Excel NPV Formula',
+    snippet:
+      '=NPV(rate, value1, [value2], ...) + Initial_Investment. Calculates the net present value of an investment using a discount rate and a series of future cash flows.',
+  },
+  {
+    keywords: ['irr', 'internal rate of return'],
+    title: 'Excel IRR Formula',
+    snippet:
+      '=IRR(values, [guess]). Returns the internal rate of return for a series of periodic cash flows (initial outlay as negative number).',
+  },
+  {
+    keywords: ['margin', 'gross margin'],
+    title: 'Gross Margin Percentage',
+    snippet:
+      '=(Revenue - COGS) / Revenue. Represents the percent of total sales revenue that the company retains after incurring the direct costs.',
+  },
+  {
+    keywords: ['markup'],
+    title: 'Markup Percentage',
+    snippet:
+      '=(Selling_Price - Unit_Cost) / Unit_Cost. The percentage added to the cost price of goods to cover overhead and profit.',
+  },
+  {
+    keywords: ['stdev', 'standard deviation'],
+    title: 'Excel Standard Deviation Formula',
+    snippet:
+      '=STDEV.S(number1, [number2], ...) for sample standard deviation; =STDEV.P(...) for entire population. Measures the dispersion of values relative to their mean.',
+  },
+];
+
+/** Search the public web for Excel formula references, domain terminology, conversion rates, or facts. */
+export async function searchWebKnowledge(query: string, limit = 4): Promise<WebSearchResult> {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return { query, results: [], summary: 'No search term provided.' };
+
+  const matchedKnowledge: { title: string; snippet: string }[] = [];
+  for (const entry of FORMULA_KNOWLEDGE_BASE) {
+    if (entry.keywords.some((k) => needle.includes(k) || k.includes(needle))) {
+      matchedKnowledge.push({ title: entry.title, snippet: entry.snippet });
+    }
+  }
+
+  let wikiHits: { title: string; snippet: string }[] = [];
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      query.trim(),
+    )}&format=json&origin=*`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+    if (res.ok) {
+      const data = (await res.json()) as {
+        query?: { search?: Array<{ title?: string; snippet?: string }> };
+      };
+      wikiHits = (data.query?.search ?? []).slice(0, limit).map((item) => ({
+        title: item.title ?? '',
+        snippet: (item.snippet ?? '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&'),
+      }));
+    }
+  } catch {
+    // Network timeout or offline - rely on curated knowledge base
+  }
+
+  const combined = [...matchedKnowledge, ...wikiHits].slice(0, limit);
+  return {
+    query,
+    results: combined,
+    summary:
+      combined.length > 0
+        ? `Found ${combined.length} external knowledge result(s) for "${query}".`
+        : `No external knowledge results found for "${query}".`,
+  };
+}
+
 /** Tool definitions for LLM function calling */
 export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_web',
+      description:
+        'Search the public web and external knowledgebase for domain terminology, Excel formulas (e.g. XLOOKUP, CAGR, standard deviation), accounting standards, units, or external facts to assist with data analysis.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search keywords, formula name, or concept' },
+          limit: { type: 'number', description: 'Maximum results to return (default 4)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_sheet_records',
+      description:
+        'Query and count rows in the spreadsheet matching one or more column conditions (e.g. column J contains "pradeep" AND column D contains "OUT"). Returns the exact total match count, matching row numbers, and sample row records without mutating the sheet.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sheet: { type: 'string', description: 'Sheet name (defaults to active sheet)' },
+          conditions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                column: { type: 'string', description: 'Column letter, e.g. "D" or "J"' },
+                header: { type: 'string', description: 'Optional column header name' },
+                operator: {
+                  type: 'string',
+                  enum: ['contains', 'equals', 'startsWith', 'endsWith', 'gt', 'lt'],
+                  description: 'Comparison operator (default "contains")',
+                },
+                value: {
+                  type: 'string',
+                  description: 'Value to search or match against',
+                },
+              },
+              required: ['value'],
+            },
+            description: 'List of column criteria that must all match in each row',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum sample records to return (default 25)',
+          },
+        },
+        required: ['conditions'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -335,7 +644,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           sheet: { type: 'string', description: 'Sheet name' },
           startRow: { type: 'number', description: 'Starting row number (1-based, default 1)' },
-          endRow: { type: 'number', description: 'Ending row number (default 15)' },
+          endRow: { type: 'number', description: 'Ending row number (default 50)' },
           startColumn: { type: 'string', description: 'Start column letter (default "A")' },
           endColumn: { type: 'string', description: 'End column letter' },
         },
@@ -352,7 +661,7 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           sheet: { type: 'string', description: 'Sheet name' },
           query: { type: 'string', description: 'Text or number to search for' },
-          limit: { type: 'number', description: 'Maximum matches to return (default 15)' },
+          limit: { type: 'number', description: 'Maximum matches to return (default 50)' },
         },
         required: ['query'],
       },

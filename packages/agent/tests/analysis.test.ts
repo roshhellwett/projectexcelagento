@@ -224,3 +224,51 @@ describe('sheet-scale column counting', () => {
     expect(() => buildSystemPrompt(sheet, [])).not.toThrow();
   });
 });
+
+describe('negative values replacement', () => {
+  it('converts all negative amounts to 0 using edit_cells', () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'COCA COLA CO',
+          rows: [
+            [createCell('Category'), createCell('FY 10'), createCell('FY 11')],
+            [createCell('Purchases of property'), createCell(-2780), createCell(-2550)],
+            [createCell('Operating Income'), createCell(8413), createCell(10173)],
+          ],
+        },
+      ],
+    };
+    const res = analyzeSpreadsheetIntentAndData('change all negative amount to 0', wb, 'COCA COLA CO');
+    expect(res.proposedAction?.name).toBe('edit_cells');
+    expect(res.proposedAction?.args.edits).toEqual([
+      { row: 2, column: 'B', value: 0 },
+      { row: 2, column: 'C', value: 0 },
+    ]);
+  });
+});
+
+describe('financial profit and loss probability', () => {
+  it('computes historical probability of profit on P&L sheet', () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'COCA COLA CO',
+          rows: [
+            [createCell(''), createCell(''), createCell('FY 09'), createCell('FY 10'), createCell('FY 11')],
+            [createCell(''), createCell('Gross Profit'), createCell(19902), createCell(22426), createCell(28327)],
+            [createCell(''), createCell('Operating Income'), createCell(8231), createCell(8413), createCell(10173)],
+            [createCell(''), createCell('Net Income Attributable to Shareowners'), createCell(6824), createCell(11787), createCell(8584)],
+          ],
+        },
+      ],
+    };
+    const res = analyzeSpreadsheetIntentAndData('find the probability of profit and loss', wb, 'COCA COLA CO');
+    expect(res.proposedAction).toBeUndefined();
+    expect(res.message).toContain('Probability of Profit');
+    expect(res.message).toContain('100.0%');
+    expect(res.message).toContain('Probability of Loss');
+    expect(res.message).toContain('0.0%');
+  });
+});
+
