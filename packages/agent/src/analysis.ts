@@ -893,14 +893,21 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  const cleanSheetMatch = raw.match(
-    /(?:clean|cleaning|tidy|tidying|structure|structuring|organize|organizing|format|prepare|extract)[\s\S]{0,80}?(?:new\s+(?:sheet|tab)|separate\s+(?:sheet|tab)|clean\s+sheet|new\s+dataset)/i,
-  );
+  const cleanSheetMatch =
+    raw.match(
+      /(?:clean|cleaning|tidy|tidying|structure|structuring|organize|organizing|format|prepare|extract)[\s\S]{0,80}?(?:new\s+(?:sheet|tab)|separate\s+(?:sheet|tab)|clean\s+sheet|new\s+dataset)/i,
+    ) ||
+    raw.match(
+      /\b(?:clean|structure|tidy|organize|prepare|standardize)\s+(?:up\s+)?(?:the\s+)?(?:data|dataset|sheet|records|worksheet|table|everything)\b/i,
+    ) ||
+    raw.match(
+      /^(?:clean\s+data|structured\s+data|clean\s+the\s+data|give\s+me\s+(?:the\s+)?structured\s+data|tidy\s+up|make\s+it\s+clean|clean\s+up)$/i,
+    );
   if (cleanSheetMatch) {
     const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]([^'"]+)['"]/i);
-    const targetName = namedMatch?.[1]?.trim() || `${currentSheet.name}_Clean`;
+    const targetName = namedMatch?.[1]?.trim() || `${currentSheet.name}_Cleaned`;
     return {
-      message: `I'll clean up **${currentSheet.name}** into a new sheet **${targetName}**: trim whitespace, collapse spaces, drop blank rows/columns, remove lone section banners, auto-detect the header row, and coerce numeric text into numbers.\n\nClick **Apply Changes** to generate the cleaned sheet.`,
+      message: `I've prepared a comprehensive data cleaning & structuring pipeline for **${currentSheet.name}** into **${targetName}**:\n\n• Trim and collapse whitespace\n• Coerce numeric text into numbers\n• Drop blank padding rows and columns\n• Standardize header row alignment\n\nClick **Apply Changes** to generate the clean, structured sheet.`,
       proposedAction: {
         name: 'clean_to_new_sheet',
         args: { sheet: currentSheet.name, targetSheet: targetName },
