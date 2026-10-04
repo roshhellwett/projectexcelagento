@@ -586,6 +586,23 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
+  const cleanSheetMatch = raw.match(
+    /(?:clean|cleaning|tidy|tidying|structure|structuring|organize|organizing|format|prepare|extract)[\s\S]{0,80}?(?:new\s+(?:sheet|tab)|separate\s+(?:sheet|tab)|clean\s+sheet|new\s+dataset)/i,
+  );
+  if (cleanSheetMatch) {
+    const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]([^'"]+)['"]/i);
+    const targetName = namedMatch?.[1]?.trim() || `${currentSheet.name}_Clean`;
+    return {
+      message: `I'll clean up **${currentSheet.name}** into a new sheet **${targetName}**: trim whitespace, collapse spaces, drop blank rows/columns, remove lone section banners, auto-detect the header row, and coerce numeric text into numbers.\n\nClick **Apply Changes** to generate the cleaned sheet.`,
+      proposedAction: {
+        name: 'clean_to_new_sheet',
+        args: { sheet: currentSheet.name, targetSheet: targetName },
+        explanation: `Clean and structure "${currentSheet.name}" into a new sheet "${targetName}".`,
+        category: 'transform',
+      },
+    };
+  }
+
   const fillMatch = raw.match(
     /(?:fill|complete)\s+(?:the\s+)?(?:blank|empty|missing)(?:\s+(?:cells?|values?))?(?:\s+in\s+column\s+([a-z0-9_\s/()]+))?/i,
   );

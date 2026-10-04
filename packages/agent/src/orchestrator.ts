@@ -348,104 +348,115 @@ export class ExcelAgentOrchestrator {
         llmThought = response.thought;
         let finalResponseContent = response.content;
 
-        // Tool-calling loop: execute read-tools if called by model (max 3 turns)
+        // Tool-calling loop: execute all tool calls per turn until an action/plan is produced or the turn budget is spent
         let turns = 0;
         let currentToolCalls = response.toolCalls;
+        let resolved = false;
 
-        while (currentToolCalls && currentToolCalls.length > 0 && turns < 3) {
+        while (!resolved && currentToolCalls && currentToolCalls.length > 0 && turns < 5) {
           turns += 1;
-          const toolCall = currentToolCalls[0]!;
-          const fnName = toolCall.function.name;
-          let fnArgs: Record<string, unknown> = {};
-          try {
-            fnArgs = JSON.parse(toolCall.function.arguments || '{}');
-          } catch {
-            fnArgs = {};
-          }
+          messages.push({
+            role: 'assistant',
+            content: finalResponseContent || response.content || '',
+            tool_calls: currentToolCalls,
+          });
 
-          // Check if this is a read tool
-          const isReadTool = [
-            'get_workbook_overview',
-            'profile_column',
-            'read_cell_range',
-            'search_sheet',
-            'calculate_aggregate',
-          ].includes(fnName);
+          let executedReadTools = false;
 
-          if (isReadTool) {
-            emitActivity(
-              'inspecting',
-              'Data Analyst',
-              `Reading sheet data via ${fnName}...`,
-              fnArgs,
-            );
-            const toolOutput = this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
-
-            messages.push({
-              role: 'assistant',
-              content: response.content || '',
-              tool_calls: [toolCall],
-            });
-
-            messages.push({
-              role: 'tool',
-              name: fnName,
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(toolOutput),
-            });
-
+          for (const toolCall of currentToolCalls) {
+            const fnName = toolCall.function.name;
+            let fnArgs: Record<string, unknown> = {};
             try {
-              const followUp = await complete(
-                messages,
-                { ...config, model: usedModel },
-                this.toolDefinitions,
-              );
-              finalResponseContent = followUp.content;
-              currentToolCalls = followUp.toolCalls;
-              if (followUp.thought)
-                llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
-              continue;
+              fnArgs = JSON.parse(toolCall.function.arguments || '{}');
             } catch {
+              fnArgs = {};
+            }
+
+            // Check if this is a read tool
+            const isReadTool = [
+              'get_workbook_overview',
+              'profile_column',
+              'read_cell_range',
+              'search_sheet',
+              'calculate_aggregate',
+            ].includes(fnName);
+
+            if (isReadTool) {
+              executedReadTools = true;
+              emitActivity(
+                'inspecting',
+                'Data Analyst',
+                `Reading sheet data via ${fnName}...`,
+                fnArgs,
+              );
+              const toolOutput = this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
+              messages.push({
+                role: 'tool',
+                name: fnName,
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(toolOutput),
+              });
+              continue;
+            }
+
+            // Check if create_execution_plan was called
+            if (fnName === 'create_execution_plan') {
+              emitActivity(
+                'planning',
+                'Planner',
+                `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`,
+              );
+              const plan = this.buildExecutionPlan(input.workbook, sheetName, fnArgs);
+              if (plan) {
+                llmPlan = plan;
+                llmMessage =
+                  typeof fnArgs.description === 'string'
+                    ? fnArgs.description
+                    : `Created a ${plan.steps.length}-step plan to update **${sheetName}**.`;
+              }
+              resolved = true;
               break;
             }
-          }
 
-          // Check if create_execution_plan was called
-          if (fnName === 'create_execution_plan') {
-            emitActivity(
-              'planning',
-              'Planner',
-              `Formulating execution plan: "${fnArgs.title ?? 'Multi-step update'}"...`,
-            );
-            const plan = this.buildExecutionPlan(input.workbook, sheetName, fnArgs);
-            if (plan) {
-              llmPlan = plan;
-              llmMessage =
-                typeof fnArgs.description === 'string'
-                  ? fnArgs.description
-                  : `Created a ${plan.steps.length}-step plan to update **${sheetName}**.`;
+            // Check if a single engine write operation was called directly
+            if (this.registry.get(fnName)) {
+              emitActivity(
+                'guardrail_check',
+                'Guardrail',
+                `Validating proposed operation "${fnName}"...`,
+              );
+              llmAction = {
+                name: fnName,
+                args: { ...fnArgs, sheet: fnArgs.sheet ?? sheetName },
+                explanation:
+                  typeof fnArgs.explanation === 'string' ? fnArgs.explanation : `Execute ${fnName}`,
+                category: 'transform',
+              };
+              resolved = true;
+              break;
             }
+
+            // Unknown tool: stop the loop
+            resolved = true;
             break;
           }
 
-          // Check if a single engine write operation was called directly
-          if (this.registry.get(fnName)) {
-            emitActivity(
-              'guardrail_check',
-              'Guardrail',
-              `Validating proposed operation "${fnName}"...`,
+          if (resolved) break;
+          if (!executedReadTools) break;
+
+          try {
+            const followUp = await complete(
+              messages,
+              { ...config, model: usedModel },
+              this.toolDefinitions,
             );
-            llmAction = {
-              name: fnName,
-              args: { ...fnArgs, sheet: fnArgs.sheet ?? sheetName },
-              explanation:
-                typeof fnArgs.explanation === 'string' ? fnArgs.explanation : `Execute ${fnName}`,
-              category: 'transform',
-            };
+            finalResponseContent = followUp.content;
+            currentToolCalls = followUp.toolCalls;
+            if (followUp.thought)
+              llmThought = (llmThought ? `${llmThought}\n` : '') + followUp.thought;
+          } catch {
             break;
           }
-
-          break;
         }
 
         // If no tool call produced an action/plan, fallback to parsing content JSON

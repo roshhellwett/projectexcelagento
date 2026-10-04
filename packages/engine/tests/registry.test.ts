@@ -43,6 +43,7 @@ describe('operation registry', () => {
       'split_column',
       'merge_columns',
       'lookup_merge',
+      'clean_to_new_sheet',
     ]);
     expect(registry.schemas.has('format_dates')).toBe(true);
     expect(registry.schemas.has('set_cells')).toBe(true);

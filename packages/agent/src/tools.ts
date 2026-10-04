@@ -141,6 +141,12 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
       headerRow: 1,
     },
   },
+  clean_to_new_sheet: {
+    description:
+      'Produce a cleaned, structured copy of the data into a new sheet: trim whitespace, drop blank/banner rows and empty columns, auto-detect the header row, and coerce numbers.',
+    category: 'transform',
+    example: { sheet: 'Sheet1', targetSheet: 'Sheet1_Clean' },
+  },
   lookup_merge: {
     description:
       'Merge and match values from another sheet based on a common key column (VLOOKUP / XLOOKUP behavior).',

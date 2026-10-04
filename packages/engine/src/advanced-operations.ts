@@ -773,10 +773,170 @@ export const lookupMergeOperation: Operation<LookupMergeArgs> = {
   },
 };
 
+// ============================================================================
+// 6. CLEAN TO NEW SHEET (clean_to_new_sheet)
+// ============================================================================
+
+export const cleanToNewSheetArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  targetSheet: z.string().trim().min(1),
+  /** 1-based row index of the header in the source. Detected automatically when omitted. */
+  headerRow: z.number().int().min(1).optional(),
+  trim: z.boolean().default(true),
+  collapseWhitespace: z.boolean().default(true),
+  dropEmptyRows: z.boolean().default(true),
+  dropEmptyColumns: z.boolean().default(true),
+  coerceNumbers: z.boolean().default(true),
+});
+export type CleanToNewSheetArgs = z.infer<typeof cleanToNewSheetArgsSchema>;
+
+function cellIsBlank(cell: Cell | undefined): boolean {
+  const v = cell?.value;
+  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+}
+
+function coerceCell(cell: Cell, args: CleanToNewSheetArgs): Cell {
+  if (cell.formula !== undefined) return cell;
+  let value = cell.value;
+  if (typeof value === 'string') {
+    let v = value;
+    if (args.trim) v = v.trim();
+    if (args.collapseWhitespace) v = v.replace(/\s+/g, ' ');
+    if (args.coerceNumbers) {
+      const normalized = v.replace(/,/g, '').replace(/\$/g, '').replace(/%$/, '');
+      const parens = /^\((.*)\)$/.exec(normalized);
+      const numeric = parens ? `-${parens[1]}` : normalized;
+      if (numeric.trim() !== '' && !isNaN(Number(numeric))) {
+        value = Number(numeric);
+      } else {
+        value = v;
+      }
+    } else {
+      value = v;
+    }
+  }
+  return createCell(value, { numberFormat: cell.numberFormat });
+}
+
+function detectHeaderRowIndex(rows: Cell[][]): number {
+  let bestIdx = 0;
+  let bestCount = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i += 1) {
+    const nonBlank = (rows[i] ?? []).filter((c) => !cellIsBlank(c)).length;
+    if (nonBlank > bestCount) {
+      bestCount = nonBlank;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+/** Shared cleaning pipeline used by both apply() and targetRanges(). */
+function buildCleanedRows(sourceRows: Cell[][], args: CleanToNewSheetArgs): Cell[][] {
+  const cleaned = sourceRows.map((row) => row.map((cell) => coerceCell(cell, args)));
+  const headerIdx =
+    args.headerRow !== undefined
+      ? Math.min(args.headerRow - 1, Math.max(0, cleaned.length - 1))
+      : detectHeaderRowIndex(cleaned);
+  let rows = cleaned.slice(headerIdx);
+
+  if (args.dropEmptyRows) {
+    rows = rows.filter((row, idx) => {
+      if (idx === 0) return true;
+      const nonBlank = row.filter((cell) => !cellIsBlank(cell));
+      if (nonBlank.length === 0) return false;
+      // Section banners like "Cash Flow statement" float alone in one cell — drop them.
+      if (nonBlank.length === 1 && typeof nonBlank[0]!.value === 'string') return false;
+      return true;
+    });
+  }
+  if (args.dropEmptyColumns) {
+    const width = Math.max(0, ...rows.map((row) => row.length));
+    const keepColumns: number[] = [];
+    for (let c = 0; c < width; c += 1) {
+      if (rows.some((row) => !cellIsBlank(row[c]))) keepColumns.push(c);
+    }
+    rows = rows.map((row) => keepColumns.map((c) => row[c] ?? createCell(null)));
+  }
+  return rows;
+}
+
+function uniqueSheetName(workbook: Workbook, desired: string): string {
+  const names = new Set(workbook.sheets.map((s) => s.name.toLowerCase()));
+  if (!names.has(desired.toLowerCase())) return desired;
+  let suffix = 2;
+  while (names.has(`${desired} (${suffix})`.toLowerCase())) suffix += 1;
+  return `${desired} (${suffix})`;
+}
+
+function cleanToNewSheetTarget(workbook: Workbook, args: CleanToNewSheetArgs): CellRange[] {
+  const source = getSheet(workbook, args.sheet);
+  if (!source) return [];
+  const cleaned = buildCleanedRows(source.rows, args);
+  const name = uniqueSheetName(workbook, args.targetSheet);
+  const cols = Math.max(1, ...cleaned.map((row) => row.length));
+  return [
+    {
+      sheet: name,
+      startColumn: 'A',
+      endColumn: indexToColumn(Math.max(0, cols - 1)),
+      startRow: 1,
+      endRow: Math.max(1, cleaned.length),
+    },
+  ];
+}
+
+function validateCleanToNewSheet(workbook: Workbook, args: CleanToNewSheetArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  if (args.targetSheet.trim().toLowerCase() === args.sheet.trim().toLowerCase()) {
+    errors.push({
+      code: 'same_sheet',
+      message: 'Target sheet must be a different sheet than the source.',
+    });
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyCleanToNewSheet(workbook: Workbook, args: CleanToNewSheetArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const source = getSheet(after, args.sheet);
+
+  if (source) {
+    const cleaned = buildCleanedRows(source.rows, args);
+    const name = uniqueSheetName(after, args.targetSheet);
+    after.sheets.push({ name, rows: cleaned });
+  }
+
+  const ranges = cleanToNewSheetTarget(workbook, args);
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const cleanToNewSheetOperation: Operation<CleanToNewSheetArgs> = {
+  name: 'clean_to_new_sheet',
+  schema: cleanToNewSheetArgsSchema,
+  targetRanges: cleanToNewSheetTarget,
+  validate: validateCleanToNewSheet,
+  preview(workbook, args) {
+    const validation = validateCleanToNewSheet(workbook, args);
+    const ranges = cleanToNewSheetTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyCleanToNewSheet(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyCleanToNewSheet,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: cleanToNewSheetTarget(before, args),
+    });
+  },
+};
+
 export const advancedOperations: Operation<unknown>[] = [
   fillBlanksOperation as Operation<unknown>,
   addComputedColumnOperation as Operation<unknown>,
   splitColumnOperation as Operation<unknown>,
   mergeColumnsOperation as Operation<unknown>,
   lookupMergeOperation as Operation<unknown>,
+  cleanToNewSheetOperation as Operation<unknown>,
 ];
