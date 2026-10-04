@@ -10,6 +10,10 @@
   "dependencies": {
     "@excel-agent/agent": "workspace:*",
     "@excel-agent/engine": "workspace:*",
+    "@tanstack/react-table": "^9.2.4",
+    "@tanstack/react-virtual": "^3.14.13",
+    "framer-motion": "^14.0.0",
+    "lucide-react": "^1.51.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "xlsx": "^0.18.5"

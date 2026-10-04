@@ -1,4 +1,19 @@
 import React, { useRef, useState } from 'react';
+import {
+  Sun,
+  Moon,
+  Search,
+  Command,
+  Upload,
+  Download,
+  PlayCircle,
+  Undo2,
+  Redo2,
+  History,
+  BarChart2,
+  RotateCcw,
+  Settings,
+} from 'lucide-react';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 
 /**
@@ -16,7 +31,7 @@ export function ThemeToggle() {
       aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
       data-testid="theme-toggle"
     >
-      {theme === 'dark' ? '☀' : '☾'}
+      {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
     </button>
   );
 }
@@ -163,23 +178,15 @@ export const TopNav: React.FC<TopNavProps> = ({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
           />
-          <svg
+          <Search
+            size={13}
             style={{
               position: 'absolute',
               left: '8px',
               color: 'var(--text-dim)',
               pointerEvents: 'none',
             }}
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          />
           {searchQuery && (
             <span
               style={{
@@ -208,16 +215,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               gap: '6px',
             }}
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />
-            </svg>
+            <Command size={12} />
             <span>HUD</span>
             <span
               style={{
@@ -254,18 +252,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={() => fileInputRef.current?.click()}
           title="Upload Excel or CSV file"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
+          <Upload size={14} />
           Upload File
         </button>
 
@@ -274,18 +261,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onExport}
           title="Export current workbook to .xlsx"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
+          <Download size={14} />
           Export .xlsx
         </button>
 
@@ -294,18 +270,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onOpenOperationModal}
           title="Manually configure an engine operation"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
-          </svg>
+          <PlayCircle size={14} />
           Run Operation
         </button>
       </div>
@@ -317,17 +282,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           disabled={!canUndo}
           title="Undo (Ctrl+Z)"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M3 7v6h6" />
-            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-          </svg>
+          <Undo2 size={14} />
           Undo
         </button>
 
@@ -337,17 +292,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           disabled={!canRedo}
           title="Redo (Ctrl+Y)"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 7v6h-6" />
-            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
-          </svg>
+          <Redo2 size={14} />
           Redo
         </button>
 
@@ -356,17 +301,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onToggleHistory}
           title="View Operation Audit History"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 14 14" />
-          </svg>
+          <History size={14} />
           History ({historyPosition}/{historyLength})
         </button>
 
@@ -376,18 +311,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           title="Model & token usage"
           data-testid="open-usage"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <line x1="18" y1="20" x2="18" y2="10" />
-            <line x1="12" y1="20" x2="12" y2="4" />
-            <line x1="6" y1="20" x2="6" y2="14" />
-          </svg>
+          <BarChart2 size={14} />
           Usage
         </button>
 
@@ -396,6 +320,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onReset}
           title="Reset to initial workbook"
         >
+          <RotateCcw size={14} />
           Reset
         </button>
 
@@ -406,17 +331,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onOpenSettings}
           title="API Keys & Settings"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <Settings size={14} />
         </button>
       </div>
     </header>

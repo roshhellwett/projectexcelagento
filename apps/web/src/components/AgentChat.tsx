@@ -1,4 +1,21 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Search,
+  Layers,
+  ShieldCheck,
+  Zap,
+  Brain,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+  Bot,
+  RotateCcw,
+  Check,
+  KeyRound,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import {
   type ProposedAction,
   type ProviderName,
@@ -116,19 +133,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const getActivityIcon = (type: AgentActivityEvent['type']) => {
     switch (type) {
       case 'inspecting':
-        return '🔍';
+        return <Search size={12} style={{ color: '#2563eb' }} />;
       case 'planning':
-        return '📋';
+        return <Layers size={12} style={{ color: '#7c3aed' }} />;
       case 'guardrail_check':
-        return '🛡️';
+        return <ShieldCheck size={12} style={{ color: '#16a34a' }} />;
       case 'tool_call':
-        return '⚡';
+        return <Zap size={12} style={{ color: '#d97706' }} />;
       case 'thinking':
-        return '💭';
+        return <Brain size={12} style={{ color: '#0284c7' }} />;
       case 'warning':
-        return '⚠️';
+        return <AlertTriangle size={12} style={{ color: '#e11d48' }} />;
+      case 'status':
+        return <CheckCircle2 size={12} style={{ color: '#16a34a' }} />;
       default:
-        return '✨';
+        return <Sparkles size={12} style={{ color: '#0284c7' }} />;
     }
   };
 
@@ -352,22 +371,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               const isLatestAssistant = msg.sender === 'assistant' && index === messages.length - 1;
 
               return (
-                <div key={msg.id} className={`chat-bubble ${msg.sender}`}>
+                <motion.div
+                  key={msg.id}
+                  className={`chat-bubble ${msg.sender}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, ease: 'easeOut' }}
+                >
                   {msg.sender === 'user' ? (
                     <div className="user-text-pill">{msg.text}</div>
                   ) : (
                     <div className="assistant-card">
                       <div className="assistant-header">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span
-                            style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: 'var(--accent-emerald)',
-                              display: 'inline-block',
-                            }}
-                          />
+                          <Bot size={15} style={{ color: 'var(--accent-emerald)' }} />
                           <span
                             style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}
                           >
@@ -376,8 +393,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
                           {/* Live / Real Token Count Pill */}
                           {(msg.tokens?.totalTokens !== undefined || msg.isStreaming) && (
-                            <span
+                            <motion.span
                               className={`live-token-pill ${msg.isStreaming || msg.tokens?.isLive ? 'is-streaming' : 'is-done'}`}
+                              animate={
+                                msg.isStreaming || msg.tokens?.isLive
+                                  ? { scale: [1, 1.02, 1] }
+                                  : { scale: 1 }
+                              }
+                              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
                               title={
                                 msg.tokens?.promptTokens !== undefined
                                   ? `Prompt (input): ${msg.tokens.promptTokens.toLocaleString()} tokens | Generated (output): ${msg.tokens.completionTokens?.toLocaleString() ?? 0} tokens`
@@ -393,7 +416,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                               {(msg.isStreaming || msg.tokens?.isLive) && (
                                 <span className="live-pulse-badge">LIVE</span>
                               )}
-                            </span>
+                            </motion.span>
                           )}
                         </div>
                         {msg.plan ? (
@@ -710,7 +733,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       )}
                     </div>
                   )}
-                </div>
+                </motion.div>
               );
             })}
             <div ref={messagesEndRef} />
