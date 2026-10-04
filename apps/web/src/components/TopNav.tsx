@@ -108,6 +108,9 @@ export const TopNav: React.FC<TopNavProps> = ({
   onOpenCommandPalette,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform || navigator.userAgent);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -229,31 +232,14 @@ export const TopNav: React.FC<TopNavProps> = ({
 
         {onOpenCommandPalette && (
           <button
-            className="btn btn-secondary btn-sm"
+            type="button"
+            className="btn btn-secondary btn-sm nav-hud-btn"
             onClick={onOpenCommandPalette}
-            title="Open Command Palette (Cmd+K / Ctrl+K)"
-            style={{
-              padding: '3px 8px',
-              height: '30px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              gap: '6px',
-            }}
+            title={`Open Command Palette (${isMac ? '⌘K' : 'Ctrl+K'})`}
           >
             <Command size={12} />
-            <span>HUD</span>
-            <span
-              style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-main)',
-                padding: '1px 4px',
-                borderRadius: '3px',
-                fontSize: '9.5px',
-                color: 'var(--text-dim)',
-              }}
-            >
-              ⌘K
-            </span>
+            <span>Commands</span>
+            <kbd className="nav-kbd">{isMac ? '⌘K' : 'Ctrl+K'}</kbd>
           </button>
         )}
 

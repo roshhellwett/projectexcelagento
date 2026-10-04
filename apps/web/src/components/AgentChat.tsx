@@ -159,41 +159,48 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     <aside className="agent-panel">
       {/* Agent Header */}
       <div className="agent-header">
-        <div className="agent-title-group">
-          <div className="agent-status-indicator">
-            <Sparkles size={16} className="agent-sparkle-icon" />
-            <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
-          </div>
-          <div>
-            <div className="agent-title">ExcelAgento Copilot</div>
-            <div className="agent-subtitle">
-              {hasApiKey ? (
-                <span className="byok-active-tag">{apiKeyProvider.toUpperCase()} ACTIVE</span>
-              ) : (
-                'BYOK Key Required'
-              )}
-              {learnedActions !== undefined && learnedActions > 0 && (
-                <span
-                  className="cortex-badge"
-                  title="Synced with Supabase Cloud Collective Intelligence Cortex"
-                >
-                  ⚡ {learnedActions} Cortex Active
-                </span>
-              )}
+        <div className="agent-header-main">
+          <div className="agent-title-row">
+            <div className="agent-brand">
+              <div className="agent-status-indicator">
+                <Sparkles size={14} className="agent-sparkle-icon" />
+                <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
+              </div>
+              <span className="agent-title">ExcelAgento Copilot</span>
             </div>
+            {hasApiKey && (
+              <button
+                type="button"
+                className="btn-key-manage"
+                onClick={onClearApiKey}
+                title="Change or disconnect API Key"
+              >
+                <KeyRound size={11} />
+                <span>Change Key</span>
+              </button>
+            )}
+          </div>
+
+          <div className="agent-badge-strip">
+            {hasApiKey ? (
+              <span className="byok-active-tag">
+                <span className="byok-dot-pulse" />
+                {apiKeyProvider.toUpperCase()} ACTIVE
+              </span>
+            ) : (
+              <span className="byok-inactive-tag">BYOK Key Required</span>
+            )}
+            {learnedActions !== undefined && learnedActions > 0 && (
+              <span
+                className="cortex-badge"
+                title="Synced with Supabase Cloud Collective Intelligence Cortex"
+              >
+                <Zap size={10} className="cortex-zap-icon" />
+                <span>{learnedActions} Cortex Active</span>
+              </span>
+            )}
           </div>
         </div>
-
-        {hasApiKey && (
-          <button
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: '11px', padding: '2px 8px' }}
-            onClick={onClearApiKey}
-            title="Change or disconnect API Key"
-          >
-            Change Key
-          </button>
-        )}
       </div>
 
       {/* GATED BYOK SETUP STATE */}
@@ -370,30 +377,55 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         <>
           {/* Chat Messages */}
           <div className="chat-messages">
-            {messages.map((msg, index) => {
-              const isLatestAssistant = msg.sender === 'assistant' && index === messages.length - 1;
+            {messages.length === 0 ? (
+              <div className="copilot-welcome-card">
+                <div className="welcome-icon-box">
+                  <Sparkles size={20} className="welcome-sparkle-icon" />
+                </div>
+                <h4 className="welcome-title">Ready to assist your spreadsheet</h4>
+                <p className="welcome-desc">
+                  Ask me to clean messy data, format dates, calculate metrics, sort, or analyze patterns.
+                </p>
+                <div className="welcome-guarantees">
+                  <div className="welcome-guarantee-pill">
+                    <ShieldCheck size={12} className="welcome-pill-icon text-emerald" />
+                    <span>Invariant Safe</span>
+                  </div>
+                  <div className="welcome-guarantee-pill">
+                    <Zap size={12} className="welcome-pill-icon text-amber" />
+                    <span>0% Math Hallucination</span>
+                  </div>
+                  <div className="welcome-guarantee-pill">
+                    <Brain size={12} className="welcome-pill-icon text-purple" />
+                    <span>In-Browser Local Execution</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              messages.map((msg, index) => {
+                const isLatestAssistant = msg.sender === 'assistant' && index === messages.length - 1;
 
-              return (
-                <motion.div
-                  key={msg.id}
-                  className={`chat-bubble ${msg.sender}`}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.22, ease: 'easeOut' }}
-                >
-                  {msg.sender === 'user' ? (
-                    <div className="user-text-pill">{msg.text}</div>
-                  ) : (
-                    <div className="assistant-card">
-                      <div className="assistant-header">
-                        <div className="assistant-header-left">
-                          <Bot size={14} className="assistant-bot-icon" />
-                          <span className="assistant-name">ExcelAgento Copilot</span>
-                        </div>
-                        <div className="assistant-header-right">
-                          {msg.proposedAction && (
-                            <code className="op-tag">{msg.proposedAction.name}</code>
-                          )}
+                return (
+                  <motion.div
+                    key={msg.id}
+                    className={`chat-bubble ${msg.sender}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                  >
+                    {msg.sender === 'user' ? (
+                      <div className="user-text-pill">{msg.text}</div>
+                    ) : (
+                      <div className="assistant-card">
+                        <div className="assistant-header">
+                          <div className="assistant-header-left">
+                            <Bot size={14} className="assistant-bot-icon" />
+                            <span className="assistant-name">ExcelAgento Copilot</span>
+                          </div>
+                          <div className="assistant-header-right">
+                            {msg.proposedAction && (
+                              <code className="op-tag">{msg.proposedAction.name}</code>
+                            )}
                           {msg.plan && (
                             <span className="plan-tag">{msg.plan.steps.length} Steps</span>
                           )}
@@ -741,7 +773,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   )}
                 </motion.div>
               );
-            })}
+            }))}
             <div ref={messagesEndRef} />
           </div>
 
@@ -796,7 +828,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               type="text"
               className="chat-input"
               aria-label="Ask ExcelAgento"
-              placeholder="Ask ExcelAgento (e.g. 'Format dates in col C to YYYY-MM-DD')…"
+              placeholder="Ask ExcelAgento (e.g. 'Sort revenue', 'Dedupe')…"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               disabled={isProcessing}
