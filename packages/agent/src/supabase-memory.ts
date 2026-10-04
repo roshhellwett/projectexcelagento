@@ -235,6 +235,59 @@ export class SupabaseMemoryStore implements MemoryStore {
     return local;
   }
 
+  /**
+   * Enterprise Collective Intelligence Cortex Hydration:
+   * Pulls verified high-confidence patterns from Supabase into the local memory cache on startup.
+   * Ensures that past learnings across enterprise users are immediately available with 0ms local retrieval.
+   */
+  async hydrateFromCloud(): Promise<number> {
+    if (!this.enabled) return 0;
+    try {
+      const res = await this.fetchWithTimeout(
+        `/rest/v1/agent_learned_cortex?confidence=gte.${this.minConfidence}&order=confidence.desc,success_count.desc&limit=200`,
+        { headers: this.headers() },
+      );
+
+      if (!res.ok) return 0;
+
+      const candidates = (await res.json()) as CortexRow[];
+      if (!Array.isArray(candidates) || candidates.length === 0) return 0;
+
+      let hydrated = 0;
+      for (const row of candidates) {
+        if (!row.operation || !row.raw_query) continue;
+        const rec = this.localStore.remember({
+          key: row.normalized_query || row.raw_query,
+          rawQuery: row.raw_query,
+          sheetName: 'Sheet1',
+          operation: row.operation,
+          args: row.args || {},
+          schemaFingerprint: row.schema_fingerprint,
+        });
+        rec.successes = row.success_count || 1;
+        rec.failures = row.failure_count || 0;
+        hydrated++;
+      }
+      return hydrated;
+    } catch {
+      return 0;
+    }
+  }
+
+  getCloudStatus(): {
+    enabled: boolean;
+    url: string;
+    syncedCount: number;
+    minConfidence: number;
+  } {
+    return {
+      enabled: this.enabled,
+      url: this.url,
+      syncedCount: this.localStore.entries().length,
+      minConfidence: this.minConfidence,
+    };
+  }
+
   entries(): MemoryRecord[] {
     return this.localStore.entries();
   }

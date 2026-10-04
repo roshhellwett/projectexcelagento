@@ -342,4 +342,46 @@ describe('row horizontal aggregation analysis', () => {
     expect(res.message).toContain("FY '09");
     expect(res.message).toContain("FY '18");
   });
+
+  it('handles garbage English and typos for duplicate removal and sorting', () => {
+    // "remov dupli"
+    const dupRes = analyzeSpreadsheetIntentAndData('remov dupli', workbook(), SHEET);
+    expect(dupRes.proposedAction).toBeDefined();
+    expect(dupRes.proposedAction?.name).toBe('delete_duplicates');
+
+    // "sorrt amunt decs"
+    const sortRes = analyzeSpreadsheetIntentAndData('sorrt amunt decs', workbook(), SHEET);
+    expect(sortRes.proposedAction).toBeDefined();
+    expect(sortRes.proposedAction?.name).toBe('sort_range');
+    expect(sortRes.proposedAction?.args.direction).toBe('desc');
+  });
+
+  it('proactively requests clarification for ambiguous commands instead of hallucinating', () => {
+    // Bare "sort rows" on multi-column sheet without specifying which column
+    const sortClarify = analyzeSpreadsheetIntentAndData('sort rows', workbook(), SHEET);
+    expect(sortClarify.proposedAction).toBeUndefined();
+    expect(sortClarify.clarification).toBeDefined();
+    expect(sortClarify.clarification?.options.length).toBeGreaterThan(0);
+    expect(sortClarify.clarification?.options[0]?.query).toContain('sort rows by');
+
+    // Bare "delete column"
+    const delClarify = analyzeSpreadsheetIntentAndData('delete column', workbook(), SHEET);
+    expect(delClarify.proposedAction).toBeUndefined();
+    expect(delClarify.clarification).toBeDefined();
+    expect(delClarify.clarification?.options[0]?.query).toContain('delete column');
+  });
+
+  it('synthesizes formulas and analytical guidance for user requests', () => {
+    const cagrRes = analyzeSpreadsheetIntentAndData('how to calculate cagr', workbook(), SHEET);
+    expect(cagrRes.message).toContain('CAGR');
+    expect(cagrRes.message).toContain('(End_Value / Start_Value)');
+
+    const vlookupRes = analyzeSpreadsheetIntentAndData('how to do vlookup', workbook(), SHEET);
+    expect(vlookupRes.message).toContain('XLOOKUP');
+    expect(vlookupRes.message).toContain('VLOOKUP');
+
+    const stdevRes = analyzeSpreadsheetIntentAndData('formula for standard deviation', workbook(), SHEET);
+    expect(stdevRes.message).toContain('STDEV.S');
+  });
 });
+

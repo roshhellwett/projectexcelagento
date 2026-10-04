@@ -239,4 +239,59 @@ describe('SupabaseMemoryStore', () => {
       p_success: true,
     });
   });
+
+  it('hydrates verified cloud cortex entries into local store on startup', async () => {
+    const store = new SupabaseMemoryStore({
+      url: 'https://test.supabase.co',
+      apiKey: 'test-key',
+      minConfidence: 0.5,
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const urlStr = String(input);
+        if (urlStr.includes('agent_learned_cortex')) {
+          return new Response(
+            JSON.stringify([
+              {
+                id: 'cloud-entry-1',
+                raw_query: 'Remove duplicate rows',
+                normalized_query: 'remove duplicate',
+                schema_fingerprint: 'id\u0001name\u0001metric',
+                operation: 'delete_duplicates',
+                args: { sheet: 'Sheet1', columns: ['A', 'B', 'C'], keep: 'first' },
+                success_count: 11,
+                failure_count: 0,
+                confidence: 1.0,
+                first_learned_at: new Date().toISOString(),
+                last_used_at: new Date().toISOString(),
+              },
+              {
+                id: 'cloud-entry-2',
+                raw_query: 'Sort rows by Metric (A-Z)',
+                normalized_query: 'sort metric',
+                schema_fingerprint: 'id\u0001name\u0001metric',
+                operation: 'sort_range',
+                args: { sheet: 'Sheet1', column: 'C', direction: 'asc' },
+                success_count: 10,
+                failure_count: 0,
+                confidence: 1.0,
+                first_learned_at: new Date().toISOString(),
+                last_used_at: new Date().toISOString(),
+              },
+            ]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('[]', { status: 200 });
+      }),
+    );
+
+    expect(store.entries()).toHaveLength(0);
+    const count = await store.hydrateFromCloud();
+    expect(count).toBe(2);
+    expect(store.entries()).toHaveLength(2);
+    expect(store.getCloudStatus().syncedCount).toBe(2);
+  });
 });

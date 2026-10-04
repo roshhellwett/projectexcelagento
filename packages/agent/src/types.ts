@@ -171,12 +171,25 @@ export interface AgentActivityEvent {
   };
 }
 
+export interface ClarificationOption {
+  label: string;
+  query: string;
+  badge?: string;
+  description?: string;
+}
+
+export interface ClarificationQuestion {
+  question: string;
+  options: ClarificationOption[];
+}
+
 /** The orchestrator's answer for one conversational turn. */
 export interface AgentDecision {
   message: string;
   thought?: string;
   action?: ProposedAction;
   plan?: ExecutionPlan;
+  clarification?: ClarificationQuestion;
   guardrail?: GuardrailReport;
   insights?: string[];
   source: DecisionSource;

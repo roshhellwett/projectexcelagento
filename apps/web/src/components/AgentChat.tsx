@@ -22,6 +22,7 @@ import {
   type SheetAudit,
   type AgentActivityEvent,
   type ExecutionPlan,
+  type ClarificationQuestion,
 } from '../lib/agent-helper.js';
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
@@ -34,6 +35,7 @@ export interface ChatMessage {
   thought?: string;
   activities?: AgentActivityEvent[];
   plan?: ExecutionPlan;
+  clarification?: ClarificationQuestion;
   /** The user request that produced this message, used for self-learning feedback. */
   sourceQuery?: string;
   proposedAction?: ProposedAction;
@@ -71,6 +73,7 @@ interface AgentChatProps {
   onStop?: () => void;
   selectionContext?: import('../lib/selection-context.js').CellSelection | null;
   onClearSelectionContext?: () => void;
+  learnedActions?: number;
 }
 
 export const AgentChat: React.FC<AgentChatProps> = ({
@@ -90,6 +93,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onStop,
   selectionContext,
   onClearSelectionContext,
+  learnedActions,
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -167,6 +171,14 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <span className="byok-active-tag">{apiKeyProvider.toUpperCase()} ACTIVE</span>
               ) : (
                 'BYOK Key Required'
+              )}
+              {learnedActions !== undefined && learnedActions > 0 && (
+                <span
+                  className="cortex-badge"
+                  title="Synced with Supabase Cloud Collective Intelligence Cortex"
+                >
+                  ⚡ {learnedActions} Cortex Active
+                </span>
               )}
             </div>
           </div>
@@ -477,6 +489,34 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           <TypewriterText text={msg.text} animate={isLatestAssistant} speed={10} />
                         )}
                       </div>
+
+                      {/* Proactive Clarification Question & Interactive Answer Chips */}
+                      {msg.clarification && (
+                        <div className="clarification-card">
+                          <div className="clarification-prompt-row">
+                            <span className="clarification-badge-pill">Clarification</span>
+                            <span className="clarification-prompt-text">
+                              {msg.clarification.question}
+                            </span>
+                          </div>
+                          <div className="clarification-chips-grid">
+                            {msg.clarification.options.map((opt, optIdx) => (
+                              <button
+                                key={optIdx}
+                                type="button"
+                                className="clarification-chip-btn"
+                                disabled={isProcessing}
+                                onClick={() => handleSuggestionClick(opt.query)}
+                              >
+                                <span className="clarification-chip-label">{opt.label}</span>
+                                {opt.badge && (
+                                  <span className="clarification-chip-badge">{opt.badge}</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Multi-Step Execution Plan Card */}
                       {msg.plan && (

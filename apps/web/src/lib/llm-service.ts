@@ -25,6 +25,7 @@ export interface AgentResponse {
   thought?: string;
   proposedAction?: ProposedAction;
   plan?: ExecutionPlan;
+  clarification?: AgentDecision['clarification'];
   source?: AgentDecision['source'];
   guardrail?: AgentDecision['guardrail'];
   trace?: AgentDecision['trace'];
@@ -77,6 +78,7 @@ export async function askExcelAgent(
     thought: decision.thought,
     ...(decision.action ? { proposedAction: decision.action } : {}),
     ...(decision.plan ? { plan: decision.plan } : {}),
+    ...(decision.clarification ? { clarification: decision.clarification } : {}),
     source: decision.source,
     ...(decision.guardrail ? { guardrail: decision.guardrail } : {}),
     trace: decision.trace,

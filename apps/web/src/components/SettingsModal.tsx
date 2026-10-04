@@ -336,19 +336,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </div>
 
-          <div className="settings-memory-row" style={{ marginTop: '16px' }}>
-            <span>
-              Self-learning memory: <strong>{learnedCount}</strong> verified action
-              {learnedCount === 1 ? '' : 's'}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={handleForgetMemory}
-              disabled={learnedCount === 0}
+          <div
+            className="settings-memory-box"
+            style={{
+              marginTop: '16px',
+              padding: '12px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '6px',
+              }}
             >
-              Forget learned actions
-            </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: 'var(--brand-emerald)',
+                    boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
+                  }}
+                />
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                  Supabase Neural Cortex
+                </span>
+              </div>
+              <span
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--brand-emerald)',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                Connected (ap-south-1)
+              </span>
+            </div>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                marginBottom: '8px',
+                lineHeight: 1.4,
+              }}
+            >
+              Dual-store architecture with 100MB ephemeral scratchpad and 400MB collective
+              intelligence cortex. Verified actions automatically sync to cloud.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ fontSize: '12px' }}>
+                Learned actions: <strong>{learnedCount}</strong> active pattern
+                {learnedCount === 1 ? '' : 's'}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleForgetMemory}
+                disabled={learnedCount === 0}
+              >
+                Forget local actions
+              </button>
+            </div>
           </div>
 
           {savedSuccess && (

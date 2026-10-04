@@ -6,6 +6,8 @@ import {
   indexToColumn,
   maxColumnCount,
 } from '@excel-agent/engine';
+import { canonicalizeSpreadsheetQuery } from './memory.js';
+import type { ClarificationQuestion } from './types.js';
 
 /**
  * Spreading an array into `Math.min`/`Math.max` throws a RangeError once the
@@ -233,8 +235,10 @@ const CONCEPT_SYNONYMS: Record<string, string[]> = {
 };
 
 export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnMetadata | null {
-  const q = query.trim().toLowerCase();
-  if (!q) return null;
+  const canonical = canonicalizeSpreadsheetQuery(query);
+  const q = canonical.trim().toLowerCase();
+  const rawQ = query.trim().toLowerCase();
+  if (!q && !rawQ) return null;
 
   // 0. Bare column reference (e.g. "A", "AB")
   if (/^[a-z]{1,2}$/.test(q)) {
@@ -250,17 +254,41 @@ export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnM
     if (found) return found;
   }
 
+  const ACTION_WORDS = new Set([
+    'sort',
+    'order',
+    'arrange',
+    'delete',
+    'remove',
+    'filter',
+    'format',
+    'clean',
+    'rows',
+    'row',
+    'columns',
+    'column',
+    'col',
+    'sheet',
+    'data',
+  ]);
+
   // 2. Exact or substring match in header name (only for meaningful query lengths)
   if (q.length >= 3) {
     for (const col of columns) {
-      if (q === col.cleanName || q.includes(col.cleanName) || col.cleanName.includes(q)) {
+      if (
+        q === col.cleanName ||
+        q.includes(col.cleanName) ||
+        (!ACTION_WORDS.has(q) && col.cleanName.includes(q))
+      ) {
         return col;
       }
     }
   }
 
-  // 3. Token containment
-  const queryTokens = q.split(/[\s,._/?!+-]+/).filter((t) => t.length > 2);
+  // 3. Token containment (excluding action words)
+  const queryTokens = q
+    .split(/[\s,._/?!+-]+/)
+    .filter((t) => t.length > 2 && !ACTION_WORDS.has(t));
   for (const token of queryTokens) {
     for (const col of columns) {
       if (col.cleanName.includes(token)) {
@@ -698,7 +726,7 @@ export function analyzeSpreadsheetIntentAndData(
   userQuery: string,
   workbook: Workbook,
   activeSheetName: string,
-): { message: string; proposedAction?: ProposedAction } {
+): { message: string; proposedAction?: ProposedAction; clarification?: ClarificationQuestion } {
   const currentSheet =
     workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
   if (!currentSheet || currentSheet.rows.length === 0) {
@@ -707,11 +735,10 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  const q = userQuery.trim().toLowerCase();
-  // Structural patterns (delete/rename/find-replace) are matched against the
-  // original text so user-supplied names and replacement values keep their
-  // casing; trigger checks below use the normalized copy.
   const raw = userQuery.trim();
+  const canonicalRaw = canonicalizeSpreadsheetQuery(raw);
+  const q = canonicalRaw.toLowerCase();
+  const origQ = raw.toLowerCase();
   const columns = getColumnProfiles(currentSheet);
   const totalRows = currentSheet.rows.length;
   const dataRowsCount = Math.max(0, totalRows - 1);
@@ -809,6 +836,23 @@ export function analyzeSpreadsheetIntentAndData(
           args: { sheet: currentSheet.name, column: targetCol.letter },
           explanation: `Delete column ${targetCol.letter} ("${targetCol.rawName}") from the sheet.`,
           category: 'columns',
+        },
+      };
+    }
+  }
+
+  // Cross-questioning for bare "delete column" / "remove column"
+  if (/^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(q) || /^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(origQ)) {
+    if (columns.length > 0) {
+      return {
+        message: `Which column would you like to delete from **${currentSheet.name}**?\n\n*Deleting a column is permanent, so please confirm the exact column below:*`,
+        clarification: {
+          question: 'Select column to delete:',
+          options: columns.slice(0, 8).map((col) => ({
+            label: `${col.rawName} (${col.letter})`,
+            query: `delete column ${col.letter}`,
+            badge: `${col.letter} • ${col.nonBlankCount} rows`,
+          })),
         },
       };
     }
@@ -1278,10 +1322,27 @@ export function analyzeSpreadsheetIntentAndData(
   // 3. DATE NORMALIZATION
   if (q.includes('date') || q.includes('iso') || q.includes('yyyy-mm-dd') || q.includes('tarikh')) {
     const explicitCol = q.match(/(?:column|col)\s+([a-z])\b/i);
+    const dateColumns = columns.filter((c) => c.isDate || c.cleanName.includes('date'));
+    const resolvedFromQuery = resolveColumn(q, columns);
+
+    if (dateColumns.length > 1 && !explicitCol && (!resolvedFromQuery || !dateColumns.includes(resolvedFromQuery))) {
+      return {
+        message: `I found **${dateColumns.length} date columns** in **${currentSheet.name}**. Which column would you like to standardize?`,
+        clarification: {
+          question: 'Select date column to format:',
+          options: dateColumns.map((dc) => ({
+            label: `${dc.rawName} (${dc.letter})`,
+            query: `format dates in column ${dc.letter} to YYYY-MM-DD`,
+            badge: `${dc.letter} • Date`,
+          })),
+        },
+      };
+    }
+
     const targetCol =
       (explicitCol?.[1] ? resolveColumn(explicitCol[1], columns) : null) ||
+      resolvedFromQuery ||
       columns.find((c) => c.isDate) ||
-      resolveColumn(q, columns) ||
       columns.find((c) => c.cleanName.includes('date') || c.cleanName.includes('time')) ||
       columns[0]!;
 
@@ -1307,6 +1368,51 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
+  // 3.5. EXCEL FORMULA & ANALYTICAL KNOWLEDGE SYNTHESIS
+  const isFormulaQuery =
+    /\b(?:formula|function|equation|how\s+to\s+calculate|how\s+do\s+i\s+calculate|formula\s+for|calculate\s+formula)\b/i.test(q) ||
+    /\b(?:cagr|vlookup|xlookup|hlookup|stdev|standard\s+deviation|compound\s+interest|profit\s+margin|gross\s+margin)\b/i.test(q);
+
+  if (isFormulaQuery) {
+    if (q.includes('cagr') || q.includes('compound annual growth')) {
+      const numCols = columns.filter((c) => c.isNumeric);
+      const colA = numCols[0]?.letter || 'B';
+      const colB = numCols[1]?.letter || 'C';
+      return {
+        message: `### 📈 Compound Annual Growth Rate (CAGR) Formula\n\nTo calculate CAGR in Excel between a beginning and ending value across $n$ years:\n\n\`\`\`excel\n=(End_Value / Start_Value) ^ (1 / Years) - 1\n\`\`\`\n\n**For your active sheet (${currentSheet.name}):**\nIf beginning value is in cell \`${colA}2\` and ending value is in cell \`${colB}2\` over 5 years:\n\`\`\`excel\n=(${colB}2 / ${colA}2) ^ (1 / 5) - 1\n\`\`\`\n*Format the resulting cell as a Percentage (Ctrl+Shift+%).*`,
+      };
+    }
+
+    if (q.includes('vlookup') || q.includes('xlookup')) {
+      return {
+        message: `### 🔍 Lookup Formulas in Modern Excel\n\n**Recommended: XLOOKUP (Modern, safer than VLOOKUP):**\n\`\`\`excel\n=XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found])\n\`\`\`\n*Example:* To look up an ID in column \`A\` and return the corresponding value from column \`B\`:\n\`\`\`excel\n=XLOOKUP("ID_101", A2:A100, B2:B100, "Not Found")\n\`\`\`\n\n**Legacy VLOOKUP:**\n\`\`\`excel\n=VLOOKUP(lookup_value, table_range, col_index_num, FALSE)\n\`\`\`\n*Example:* \`=VLOOKUP("ID_101", A2:D100, 2, FALSE)\``,
+      };
+    }
+
+    if (q.includes('stdev') || q.includes('standard deviation')) {
+      const numCol = columns.find((c) => c.isNumeric) || columns[0]!;
+      const endRow = Math.max(2, currentSheet.rows.length);
+      return {
+        message: `### 📊 Standard Deviation Formula\n\nIn Excel, standard deviation is calculated with:\n\n• **Sample Standard Deviation (Standard):**\n\`\`\`excel\n=STDEV.S(${numCol.letter}2:${numCol.letter}${endRow})\n\`\`\`\n• **Population Standard Deviation (All records):**\n\`\`\`excel\n=STDEV.P(${numCol.letter}2:${numCol.letter}${endRow})\n\`\`\`\n\nApplied to **${numCol.rawName}** (Column ${numCol.letter}) across rows 2 to ${endRow} in **${currentSheet.name}**.`,
+      };
+    }
+
+    if (q.includes('compound interest')) {
+      return {
+        message: `### 💰 Compound Interest Formula in Excel\n\nTo compute the final future amount with compound interest:\n\`\`\`excel\n=P * (1 + (r / n)) ^ (n * t)\n\`\`\`\nWhere:\n• \`P\` = Principal initial investment (e.g. \`A2\`)\n• \`r\` = Annual interest rate (e.g. 5% or \`B2\`)\n• \`n\` = Compounding periods per year (12 for monthly, 1 for annual)\n• \`t\` = Number of years (e.g. \`C2\`)\n\n**Alternative built-in Excel function:**\n\`\`\`excel\n=FV(rate/12, years*12, 0, -principal)\n\`\`\``,
+      };
+    }
+
+    if (q.includes('margin') || q.includes('profit')) {
+      const numCols = columns.filter((c) => c.isNumeric);
+      const revCol = columns.find((c) => /rev|sale|price/i.test(c.cleanName))?.letter || numCols[0]?.letter || 'B';
+      const costCol = columns.find((c) => /cost|cogs|expense/i.test(c.cleanName))?.letter || numCols[1]?.letter || 'C';
+      return {
+        message: `### 💼 Profit Margin Formula in Excel\n\n• **Gross Profit ($):**\n\`\`\`excel\n=${revCol}2 - ${costCol}2\n\`\`\`\n• **Gross Profit Margin (%):**\n\`\`\`excel\n=(${revCol}2 - ${costCol}2) / ${revCol}2\n\`\`\`\n\n*Mapped to Revenue in column \`${revCol}\` and Cost in column \`${costCol}\` on ${currentSheet.name}. Format the margin cell as a Percentage.*`,
+      };
+    }
+  }
+
   // 4. SORTING
   if (
     q.includes('sort') ||
@@ -1322,7 +1428,24 @@ export function analyzeSpreadsheetIntentAndData(
       q.includes('highest') ||
       q.includes('largest') ||
       q.includes('latest');
-    const targetCol = resolveColumn(q, columns) || columns[0]!;
+    const resolved = resolveColumn(q, columns);
+
+    if (!resolved && columns.length > 1) {
+      const directionStr = isDesc ? 'descending' : 'ascending';
+      return {
+        message: `I'm ready to sort **${currentSheet.name}** in ${isDesc ? 'descending (Z-A / High to Low)' : 'ascending (A-Z / Low to High)'} order.\n\nWhich column would you like to sort by?`,
+        clarification: {
+          question: `Select a column to sort by (${isDesc ? 'Descending' : 'Ascending'}):`,
+          options: columns.slice(0, 8).map((col) => ({
+            label: `${col.rawName} (${col.letter})`,
+            query: `sort rows by ${col.rawName} ${directionStr}`,
+            badge: col.isNumeric ? 'Numeric' : col.isDate ? 'Date' : 'Text',
+          })),
+        },
+      };
+    }
+
+    const targetCol = resolved || columns[0]!;
 
     return {
       message: `I've set up a sort operation on **${currentSheet.name}**:\n\n• Target Column: **${targetCol.rawName}** (${targetCol.letter})\n• Direction: **${isDesc ? 'Descending (Z-A / High to Low)' : 'Ascending (A-Z / Low to High)'}**\n\nClick **Apply Changes** below to reorder the spreadsheet.`,

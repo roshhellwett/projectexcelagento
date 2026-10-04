@@ -43,6 +43,7 @@ import {
 import { askExcelAgent } from './lib/llm-service.js';
 import {
   forgetLearnedActions,
+  initCloudMemory,
   learnedActionCount,
   orchestrator,
   persistMemory,
@@ -114,6 +115,12 @@ export const App: React.FC = () => {
     const syncView = () => setView(readViewFromHash());
     window.addEventListener('hashchange', syncView);
     return () => window.removeEventListener('hashchange', syncView);
+  }, []);
+
+  useEffect(() => {
+    initCloudMemory((count) => {
+      setLearnedActions(count);
+    }).catch(() => {});
   }, []);
 
   const navigate = useCallback((next: WorkspaceView) => {
@@ -682,6 +689,7 @@ export const App: React.FC = () => {
               activities: agentRes.activities ?? m.activities,
               proposedAction: proposed,
               plan: agentRes.plan,
+              clarification: agentRes.clarification,
               preview: previewResult,
               tokens: agentRes.telemetry?.totalTokens
                 ? {
@@ -1032,6 +1040,7 @@ export const App: React.FC = () => {
             onStop={() => turnAbortRef.current?.abort()}
             selectionContext={selectionContext}
             onClearSelectionContext={() => setSelectionContext(null)}
+            learnedActions={learnedActions}
           />
         </ErrorBoundary>
       </main>

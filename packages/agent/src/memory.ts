@@ -47,23 +47,184 @@ export function normalizeQuery(query: string): string {
     .trim();
 }
 
+/** Levenshtein distance between two strings */
+export function levenshteinDistance(s1: string, s2: string): number {
+  if (s1 === s2) return 0;
+  if (!s1.length) return s2.length;
+  if (!s2.length) return s1.length;
+
+  const m = s1.length;
+  const n = s2.length;
+  const d: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) d[i]![0] = i;
+  for (let j = 0; j <= n; j++) d[0]![j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      d[i]![j] = Math.min(
+        d[i - 1]![j]! + 1,
+        d[i]![j - 1]! + 1,
+        d[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+
+  return d[m]![n]!;
+}
+
+const CANONICAL_MAP: Record<string, string> = {
+  // Duplicates
+  dupli: 'duplicate',
+  dups: 'duplicate',
+  dupe: 'duplicate',
+  dupes: 'duplicate',
+  duplicatez: 'duplicate',
+  dublicate: 'duplicate',
+  dublicats: 'duplicate',
+  repeted: 'duplicate',
+  repeated: 'duplicate',
+  // Remove / delete
+  remov: 'remove',
+  rm: 'remove',
+  del: 'delete',
+  delet: 'delete',
+  dlt: 'delete',
+  hatao: 'delete',
+  nikalo: 'delete',
+  // Sort
+  sorrt: 'sort',
+  srot: 'sort',
+  shrt: 'sort',
+  arrang: 'sort',
+  ordr: 'sort',
+  // Amount / value
+  amunt: 'amount',
+  amnt: 'amount',
+  amont: 'amount',
+  amt: 'amount',
+  val: 'value',
+  vals: 'values',
+  paise: 'amount',
+  // Direction
+  decs: 'descending',
+  desc: 'descending',
+  desending: 'descending',
+  asce: 'ascending',
+  asc: 'ascending',
+  acending: 'ascending',
+  // Format / date
+  formt: 'format',
+  farmat: 'format',
+  mak: 'make',
+  convrt: 'convert',
+  tarikh: 'date',
+  dat: 'date',
+  dats: 'date',
+  dte: 'date',
+  dt: 'date',
+  // Columns / rows
+  colum: 'column',
+  colm: 'column',
+  clm: 'column',
+  cols: 'columns',
+  clmn: 'column',
+  // Calculation / aggregate
+  calclate: 'calculate',
+  clculate: 'calculate',
+  clc: 'calculate',
+  hisab: 'total',
+  hisaab: 'total',
+  totl: 'total',
+  ttl: 'total',
+  // Text
+  cap: 'capitalize',
+  caps: 'capitalize',
+  capital: 'capitalize',
+  capitaliz: 'capitalize',
+  capitalise: 'capitalize',
+  spac: 'space',
+  spce: 'space',
+  safai: 'clean',
+  khatam: 'clean',
+};
+
+/** Canonicalize a single token to handle typos, slang, and phonetic spelling. */
+export function canonicalizeToken(token: string): string {
+  const lower = token.toLowerCase().trim();
+  if (CANONICAL_MAP[lower]) return CANONICAL_MAP[lower];
+  return lower;
+}
+
+/** Canonicalize a whole query string by replacing typos, slang, and phonetic tokens with canonical domain terms. */
+export function canonicalizeSpreadsheetQuery(query: string): string {
+  if (!query || typeof query !== 'string') return '';
+  return query
+    .split(/\b/)
+    .map((part) => {
+      if (/^[a-zA-Z0-9]+$/.test(part)) {
+        return canonicalizeToken(part);
+      }
+      return part;
+    })
+    .join('');
+}
+
+/** Check if two tokens are equivalent either directly, canonicalized, prefix-matched, or fuzzy Levenshtein. */
+export function isTokenMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const canA = canonicalizeToken(a);
+  const canB = canonicalizeToken(b);
+  if (canA === canB) return true;
+
+  // Prefix matching for prefixes of length >= 4 (e.g. dupli -> duplicate, decs -> descending)
+  if (canA.length >= 4 && canB.startsWith(canA)) return true;
+  if (canB.length >= 4 && canA.startsWith(canB)) return true;
+
+  // Levenshtein distance: 1 edit for len >= 4, 2 edits for len >= 6
+  const maxDist = Math.min(canA.length, canB.length) >= 6 ? 2 : Math.min(canA.length, canB.length) >= 4 ? 1 : 0;
+  if (maxDist > 0 && Math.abs(canA.length - canB.length) <= maxDist) {
+    return levenshteinDistance(canA, canB) <= maxDist;
+  }
+
+  return false;
+}
+
 function tokenSet(value: string): Set<string> {
   return new Set(value.split(' ').filter(Boolean));
 }
 
-/** Jaccard index over query tokens, with a small bonus for exact normalized equality. */
+/**
+ * Typo-tolerant and fuzzy query similarity.
+ * Evaluates semantic and token equivalence so queries with typos, slang, and
+ * non-native grammar (e.g. "remov dupli" vs "remove duplicate") score accurately.
+ */
 export function querySimilarity(left: string, right: string): number {
   const a = normalizeQuery(left);
   const b = normalizeQuery(right);
   if (!a || !b) return 0;
   if (a === b) return 1;
-  const setA = tokenSet(a);
-  const setB = tokenSet(b);
+
+  const tokensA = Array.from(tokenSet(a));
+  const tokensB = Array.from(tokenSet(b));
+
+  const matchedB = new Set<number>();
   let intersection = 0;
-  for (const token of setA) {
-    if (setB.has(token)) intersection += 1;
+
+  for (const tA of tokensA) {
+    for (let idx = 0; idx < tokensB.length; idx++) {
+      if (matchedB.has(idx)) continue;
+      const tB = tokensB[idx]!;
+      if (isTokenMatch(tA, tB)) {
+        matchedB.add(idx);
+        intersection += 1;
+        break;
+      }
+    }
   }
-  const union = setA.size + setB.size - intersection;
+
+  const union = tokensA.length + tokensB.length - intersection;
   return union === 0 ? 0 : intersection / union;
 }
 

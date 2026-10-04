@@ -86,4 +86,28 @@ export function learnedActionCount(): number {
   return memory.entries().length;
 }
 
+export async function initCloudMemory(onUpdate?: (count: number) => void): Promise<number> {
+  try {
+    const loaded = await memory.hydrateFromCloud();
+    if (loaded > 0) {
+      persistMemory();
+    }
+    const total = learnedActionCount();
+    onUpdate?.(total);
+    return total;
+  } catch {
+    const total = learnedActionCount();
+    onUpdate?.(total);
+    return total;
+  }
+}
+
+export function getMemoryEntries() {
+  return memory.entries();
+}
+
+export function getMemoryCloudStatus() {
+  return memory.getCloudStatus();
+}
+
 export { getTabSessionId, clearCurrentTabWorkingMemory } from './session';

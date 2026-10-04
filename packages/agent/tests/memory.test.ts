@@ -96,4 +96,13 @@ describe('self-learning memory', () => {
     restored.clear();
     expect(restored.entries()).toHaveLength(0);
   });
+
+  it('matches broken English and typos with high similarity', () => {
+    // "remov dupli" vs "remove duplicate"
+    expect(querySimilarity('remov dupli', 'remove duplicate')).toBeGreaterThanOrEqual(0.6);
+    // "sorrt amunt decs" vs "sort amount descending"
+    expect(querySimilarity('sorrt amunt decs', 'sort amount descending')).toBeGreaterThanOrEqual(0.6);
+    // "mak date formt" vs "format dates"
+    expect(querySimilarity('mak date formt', 'make date format')).toBeGreaterThanOrEqual(0.6);
+  });
 });

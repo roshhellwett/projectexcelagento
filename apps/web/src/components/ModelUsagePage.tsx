@@ -147,9 +147,10 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
             hint="Derived live from the engine registry"
           />
           <StatCard
-            label="Learned actions"
+            label="Neural Cortex Patterns"
             value={`${learnedActions}`}
-            hint="Verified associations stored in this browser"
+            hint="Supabase Collective Intelligence • Verified cross-session learning"
+            testId="usage-learned-actions"
           />
         </div>
         <div className="usage-actions">
@@ -159,7 +160,7 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
             onClick={onForgetLearned}
             disabled={learnedActions === 0}
           >
-            Forget learned actions
+            Forget local actions
           </button>
         </div>
       </section>

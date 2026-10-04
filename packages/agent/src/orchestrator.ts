@@ -334,8 +334,21 @@ export class ExcelAgentOrchestrator {
       layer: 'heuristic',
       summary: heuristic.proposedAction
         ? `Heuristic planner proposed ${heuristic.proposedAction.name}.`
-        : 'Heuristic planner produced an informational answer.',
+        : heuristic.clarification
+          ? `Heuristic requested clarification: ${heuristic.clarification.question}`
+          : 'Heuristic planner produced an informational answer.',
     });
+
+    if (heuristic.clarification) {
+      emitActivity('status', 'Conductor', 'Proactively asking clarification questions to avoid errors.');
+      return {
+        message: heuristic.message,
+        clarification: heuristic.clarification,
+        source: 'heuristic',
+        trace,
+        activities,
+      };
+    }
 
     // Layer 3.5 - Multi-agent: complex requests are decomposed, executed, and reviewed.
     // Every layer after this one is the single-agent fast path.
