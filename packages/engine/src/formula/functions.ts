@@ -1,10 +1,28 @@
 import type { FormulaValue } from './types.js';
+import { isFormulaError, type FormulaErrorCode } from './errors.js';
+import {
+  coerceToDate,
+  dateToExcelSerial,
+  daysBetween,
+  excelDate,
+  formatIsoDate,
+  parseUnambiguousDate,
+} from './excel-date.js';
 
 let formulaClock: () => Date = () => new Date();
+let formulaDateSystem: '1900' | '1904' = '1900';
 
 /** Overrides the wall clock used by TODAY()/NOW() so evaluation stays deterministic per call site. */
 export function setFormulaClock(clock: () => Date): void {
   formulaClock = clock;
+}
+
+/**
+ * Overrides which epoch date serials are counted from. Legacy Mac Excel workbooks use the
+ * 1904 system, where the same serial denotes a date four years and one day earlier.
+ */
+export function setFormulaDateSystem(system: '1900' | '1904'): void {
+  formulaDateSystem = system;
 }
 
 function flatten(args: unknown[]): unknown[] {
@@ -22,12 +40,33 @@ function flatten(args: unknown[]): unknown[] {
 function toNumber(val: unknown): number {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   if (typeof val === 'boolean') return val ? 1 : 0;
-  if (val instanceof Date) return val.getTime();
+  if (isFormulaError(val)) return NaN;
+  if (val instanceof Date) {
+    const serial = dateToExcelSerial(val, formulaDateSystem);
+    return serial ?? NaN;
+  }
   if (typeof val === 'string') {
     const parsed = parseFloat(val.replace(/,/g, '').trim());
     return isNaN(parsed) ? 0 : parsed;
   }
   return 0;
+}
+
+/**
+ * Resolves a date function's argument to a UTC `Date`, propagating an incoming error and
+ * otherwise raising `#VALUE!`. This is the single gate every date function goes through, so
+ * a raw Excel serial can no longer be mistaken for a calendar year.
+ */
+function toDateOrError(val: unknown): Date | FormulaErrorCode {
+  if (isFormulaError(val)) return val;
+  return coerceToDate(val, { dateSystem: formulaDateSystem }) ?? '#VALUE!';
+}
+
+/** Unwraps a `Date | FormulaErrorCode` into the date's components, or short-circuits on error. */
+function dateParts(val: unknown): [number, number, number] | FormulaErrorCode {
+  const date = toDateOrError(val);
+  if (isFormulaError(date)) return date;
+  return [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()];
 }
 
 function isNumeric(val: unknown): boolean {
@@ -40,7 +79,7 @@ function isNumeric(val: unknown): boolean {
 
 function toString(val: unknown): string {
   if (val === null || val === undefined) return '';
-  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (val instanceof Date) return formatIsoDate(val);
   return String(val);
 }
 
@@ -56,8 +95,38 @@ function toBoolean(val: unknown): boolean {
   return Boolean(val);
 }
 
+/**
+ * Weekdays between two dates, counted in whole weeks plus a bounded remainder walk.
+ * The previous day-by-day loop took ~2.9M iterations for `NETWORKDAYS("1900-01-01","9999-12-31")`.
+ */
+function networkDaysBetween(start: Date, end: Date): number {
+  const totalDays = daysBetween(start, end) + 1;
+  if (totalDays <= 0) return 0;
+
+  const startDow = start.getUTCDay();
+  const wholeWeeks = Math.floor(totalDays / 7);
+  let count = wholeWeeks * 5;
+
+  for (let offset = wholeWeeks * 7; offset < totalDays; offset++) {
+    const dow = (startDow + offset) % 7;
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
+/**
+ * Coerces a cell value to a number using the same rule the formula functions use, or null when
+ * the value carries no magnitude. Booleans and dates are deliberately excluded: SUM, AVERAGE and
+ * the COUNT family all ignore them, and an operation that disagreed with the formulas it sits
+ * next to would quietly produce a different answer than `=SUM(A2:A10)`.
+ */
+export function toNumericOrNull(val: unknown): number | null {
+  if (!isNumeric(val)) return null;
+  return toNumber(val);
+}
+
 /** Evaluates criteria strings like ">10", "<=5", "<>Closed", "Active", or regex/wildcard */
-function matchesCriteria(val: unknown, criteria: unknown): boolean {
+export function matchesCriteria(val: unknown, criteria: unknown): boolean {
   const critStr = toString(criteria).trim();
   const valNum = isNumeric(val) ? toNumber(val) : null;
 
@@ -108,25 +177,54 @@ function matchesCriteria(val: unknown, criteria: unknown): boolean {
 
 export type FormulaFunction = (...args: unknown[]) => FormulaValue;
 
+/**
+ * Excel propagates errors through aggregations: `SUM` over a range containing `#REF!`
+ * returns `#REF!`, not a quietly reduced total. Ignoring errors is how a broken formula
+ * becomes a plausible-looking wrong number.
+ */
+function firstErrorIn(values: unknown[]): FormulaErrorCode | null {
+  for (const value of values) {
+    if (isFormulaError(value)) return value;
+  }
+  return null;
+}
+
+/** Extremum without spreading the array, which overflows the stack on large ranges. */
+function extremum(nums: number[], pick: (a: number, b: number) => number): number {
+  if (nums.length === 0) return 0;
+  return nums.reduce(pick);
+}
+
 export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   // Math & Statistics
   SUM: (...args: unknown[]) => {
-    const nums = flatten(args).filter(isNumeric).map(toNumber);
+    const flat = flatten(args);
+    const error = firstErrorIn(flat);
+    if (error) return error;
+    const nums = flat.filter(isNumeric).map(toNumber);
     return nums.reduce((a, b) => a + b, 0);
   },
   AVERAGE: (...args: unknown[]) => {
-    const nums = flatten(args).filter(isNumeric).map(toNumber);
+    const flat = flatten(args);
+    const error = firstErrorIn(flat);
+    if (error) return error;
+    const nums = flat.filter(isNumeric).map(toNumber);
     return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
   },
   MIN: (...args: unknown[]) => {
-    const nums = flatten(args).filter(isNumeric).map(toNumber);
-    return nums.length > 0 ? Math.min(...nums) : 0;
+    const flat = flatten(args);
+    const error = firstErrorIn(flat);
+    if (error) return error;
+    return extremum(flat.filter(isNumeric).map(toNumber), (a, b) => (a < b ? a : b));
   },
   MAX: (...args: unknown[]) => {
-    const nums = flatten(args).filter(isNumeric).map(toNumber);
-    return nums.length > 0 ? Math.max(...nums) : 0;
+    const flat = flatten(args);
+    const error = firstErrorIn(flat);
+    if (error) return error;
+    return extremum(flat.filter(isNumeric).map(toNumber), (a, b) => (a > b ? a : b));
   },
   COUNT: (...args: unknown[]) => {
+    // COUNT counts numbers, so an error in the range is a value to skip, not a reason to fail.
     return flatten(args).filter(isNumeric).length;
   },
   COUNTA: (...args: unknown[]) => {
@@ -136,7 +234,10 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return flatten([range]).filter((v) => v === null || v === undefined || v === '').length;
   },
   MEDIAN: (...args: unknown[]) => {
-    const nums = flatten(args)
+    const flat = flatten(args);
+    const error = firstErrorIn(flat);
+    if (error) return error;
+    const nums = flat
       .filter(isNumeric)
       .map(toNumber)
       .sort((a, b) => a - b);
@@ -209,7 +310,9 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   IFERROR: (val: unknown, fallback: unknown) => {
     if (val === null || val === undefined) return fallback as FormulaValue;
     if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) return fallback as FormulaValue;
-    if (typeof val === 'string' && val.startsWith('#')) return fallback as FormulaValue;
+    // Exact canonical-code match. A prefix test would swallow legitimate text such as the
+    // SKU "#12345", which is exactly the kind of cell a user wraps in IFERROR.
+    if (isFormulaError(val)) return fallback as FormulaValue;
     return val as FormulaValue;
   },
   AND: (...args: unknown[]) => {
@@ -592,12 +695,12 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return '#NUM!';
   },
   DATEDIF: (start: unknown, end: unknown, unit: unknown) => {
-    const a = new Date(toString(start));
-    const b = new Date(toString(end));
-    if (isNaN(a.getTime()) || isNaN(b.getTime())) return '#VALUE!';
+    const a = toDateOrError(start);
+    if (isFormulaError(a)) return a;
+    const b = toDateOrError(end);
+    if (isFormulaError(b)) return b;
     const u = toString(unit).toUpperCase();
-    const days = Math.floor((b.getTime() - a.getTime()) / 86400000);
-    if (u === 'D') return days;
+    if (u === 'D') return daysBetween(b, a);
     if (u === 'M')
       return (
         (b.getUTCFullYear() - a.getUTCFullYear()) * 12 +
@@ -613,59 +716,58 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
           ? 1
           : 0)
       );
-    return '#VALUE!';
+    return '#NUM!';
   },
   DAYS: (end: unknown, start: unknown) => {
-    const a = new Date(toString(end));
-    const b = new Date(toString(start));
-    return isNaN(a.getTime()) || isNaN(b.getTime())
-      ? '#VALUE!'
-      : Math.round((a.getTime() - b.getTime()) / 86400000);
+    const a = toDateOrError(end);
+    if (isFormulaError(a)) return a;
+    const b = toDateOrError(start);
+    return isFormulaError(b) ? b : daysBetween(a, b);
   },
   EOMONTH: (start: unknown, months: unknown) => {
-    const d = new Date(toString(start));
-    if (isNaN(d.getTime())) return '#VALUE!';
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + toNumber(months) + 1, 0))
-      .toISOString()
-      .slice(0, 10);
+    const d = toDateOrError(start);
+    if (isFormulaError(d)) return d;
+    // Day 0 of the following month is the last day of the target month.
+    const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + toNumber(months) + 1, 0));
+    return Number.isFinite(end.getTime()) ? end : '#NUM!';
   },
   EDATE: (start: unknown, months: unknown) => {
-    const d = new Date(toString(start));
-    if (isNaN(d.getTime())) return '#VALUE!';
-    return new Date(
+    const d = toDateOrError(start);
+    if (isFormulaError(d)) return d;
+    const shifted = new Date(
       Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + toNumber(months), d.getUTCDate()),
-    )
-      .toISOString()
-      .slice(0, 10);
+    );
+    return Number.isFinite(shifted.getTime()) ? shifted : '#NUM!';
   },
   WEEKDAY: (dateVal: unknown, type: unknown = 1) => {
-    const d = new Date(toString(dateVal));
-    if (isNaN(d.getTime())) return '#VALUE!';
+    const d = toDateOrError(dateVal);
+    if (isFormulaError(d)) return d;
     const dow = d.getUTCDay();
-    return toNumber(type) === 3 ? (dow === 0 ? 6 : dow - 1) : dow + 1;
+    const mode = toNumber(type);
+    // Type 3 is Excel's Monday-first numbering; the default is Sunday-first 1..7.
+    return mode === 3 ? (dow === 0 ? 6 : dow - 1) : dow + 1;
   },
   NETWORKDAYS: (start: unknown, end: unknown) => {
-    const a = new Date(toString(start));
-    const b = new Date(toString(end));
-    if (isNaN(a.getTime()) || isNaN(b.getTime())) return '#VALUE!';
-    let count = 0;
-    for (let d = new Date(a.getTime()); d <= b; d = new Date(d.getTime() + 86400000)) {
-      const day = d.getUTCDay();
-      if (day !== 0 && day !== 6) count++;
-    }
-    return count;
+    const a = toDateOrError(start);
+    if (isFormulaError(a)) return a;
+    const b = toDateOrError(end);
+    if (isFormulaError(b)) return b;
+    // Iterating one day at a time across a multi-century span would hang the tab, so this
+    // counts whole weeks and only walks the remainder.
+    if (daysBetween(a, b) < 0) return Math.abs(networkDaysBetween(b, a));
+    return networkDaysBetween(a, b);
   },
   HOUR: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCHours();
+    const d = toDateOrError(dateVal);
+    return isFormulaError(d) ? d : d.getUTCHours();
   },
   MINUTE: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCMinutes();
+    const d = toDateOrError(dateVal);
+    return isFormulaError(d) ? d : d.getUTCMinutes();
   },
   SECOND: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? '#VALUE!' : d.getUTCSeconds();
+    const d = toDateOrError(dateVal);
+    return isFormulaError(d) ? d : d.getUTCSeconds();
   },
   HLOOKUP: (lookupVal: unknown, table: unknown, rowIdx: unknown, exact: unknown = true) => {
     if (!Array.isArray(table) || table.length === 0) return '#N/A';
@@ -763,17 +865,12 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   EXACT: (t1: unknown, t2: unknown) => toString(t1) === toString(t2),
   TEXT: (val: unknown, fmt?: unknown) => {
     const format = fmt === undefined || fmt === null ? '' : toString(fmt);
-    const dateVal =
-      val instanceof Date
-        ? val
-        : typeof val === 'string' || typeof val === 'number'
-          ? new Date(typeof val === 'number' ? (val - 25569) * 86400000 : val)
-          : null;
-    const looksDate = /[yMdHs]/.test(format) && dateVal !== null && !isNaN(dateVal.getTime());
-    if (dateVal && (looksDate || format.length === 0)) {
-      if (!format) {
-        return val instanceof Date ? val.toISOString().slice(0, 10) : toString(val);
-      }
+    // A bare number is only treated as a date serial when the format actually asks for
+    // date parts, so TEXT(1234, "0.00") still formats as a number.
+    const looksDate = /[yMdhs]/.test(format.replace(/"[^"]*"/g, ''));
+    const dateVal = looksDate ? coerceToDate(val, { dateSystem: formulaDateSystem }) : null;
+    if (dateVal && !isNaN(dateVal.getTime())) {
+      if (!format) return formatIsoDate(dateVal);
       const pad = (n: number) => String(n).padStart(2, '0');
       return format
         .replace(/YYYY/g, String(dateVal.getUTCFullYear()))
@@ -800,22 +897,56 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   VALUE: (text: unknown) => toNumber(text),
 
   // Date & Time
-  TODAY: () => formulaClock().toISOString().slice(0, 10),
-  NOW: () => formulaClock().toISOString(),
+  TODAY: () => {
+    // UTC components throughout: mixing local getters with a UTC-built Date would make the
+    // result depend on the viewer's timezone and shift the day for anyone east of Greenwich.
+    const now = formulaClock();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  },
+  NOW: () => formulaClock(),
   DATE: (y: unknown, m: unknown, d: unknown) => {
-    const date = new Date(Date.UTC(toNumber(y), toNumber(m) - 1, toNumber(d)));
-    return date.toISOString().slice(0, 10);
+    const date = excelDate(toNumber(y), toNumber(m), toNumber(d));
+    return date ?? '#VALUE!';
+  },
+  DATEVALUE: (val: unknown) => {
+    const parsed = parseUnambiguousDate(toString(val));
+    return parsed ?? '#VALUE!';
   },
   YEAR: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? 0 : d.getUTCFullYear();
+    const parts = dateParts(dateVal);
+    return isFormulaError(parts) ? parts : parts[0];
   },
   MONTH: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? 0 : d.getUTCMonth() + 1;
+    const parts = dateParts(dateVal);
+    return isFormulaError(parts) ? parts : parts[1];
   },
   DAY: (dateVal: unknown) => {
-    const d = new Date(toString(dateVal));
-    return isNaN(d.getTime()) ? 0 : d.getUTCDate();
+    const parts = dateParts(dateVal);
+    return isFormulaError(parts) ? parts : parts[2];
+  },
+
+  // Information. Without this family a defensive formula cannot test what it is holding,
+  // which is why so much real-world spreadsheet logic reaches for ISERROR/ISNUMBER.
+  ISBLANK: (val: unknown) => val === null || val === undefined || val === '',
+  ISNUMBER: (val: unknown) => typeof val === 'number' && !isNaN(val),
+  ISTEXT: (val: unknown) => typeof val === 'string' && !isFormulaError(val),
+  ISNONTEXT: (val: unknown) => !(typeof val === 'string' && !isFormulaError(val)),
+  ISLOGICAL: (val: unknown) => typeof val === 'boolean',
+  ISERROR: (val: unknown) => isFormulaError(val),
+  ISERR: (val: unknown) => isFormulaError(val) && val !== '#N/A',
+  ISNA: (val: unknown) => val === '#N/A',
+  NA: () => '#N/A',
+  N: (val: unknown) => {
+    if (isFormulaError(val)) return val;
+    if (val instanceof Date) return dateToExcelSerial(val, formulaDateSystem) ?? 0;
+    return toNumber(val);
+  },
+  T: (val: unknown) => (typeof val === 'string' && !isFormulaError(val) ? val : ''),
+  TYPE: (val: unknown) => {
+    if (isFormulaError(val)) return 16;
+    if (val instanceof Date) return 16;
+    if (typeof val === 'boolean') return 4;
+    if (typeof val === 'number' || val === null || val === undefined) return 1;
+    return 2;
   },
 };

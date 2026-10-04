@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+import { useDialogA11y } from '../lib/use-dialog-a11y.js';
+
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
@@ -31,12 +33,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Escape closes, focus lands in the search field, and focus goes back to whatever opened it.
+  useDialogA11y(isOpen, cardRef, onClose);
 
   useEffect(() => {
     if (isOpen) {
       setSearch('');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [isOpen]);
 
@@ -113,10 +118,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
 
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      } else if (e.key === 'ArrowDown') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIndex((prev) => (prev + 1) % Math.max(1, filtered.length));
       } else if (e.key === 'ArrowUp') {
@@ -146,6 +148,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     >
       <div
         className="modal-card"
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        data-dialog-open="true"
         onClick={(e) => e.stopPropagation()}
         style={{
           maxWidth: '620px',
@@ -177,8 +184,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
+          <label className="sr-only" htmlFor="command-palette-input">
+            Type a command, transformation, or audit query
+          </label>
           <input
             ref={inputRef}
+            id="command-palette-input"
+            data-autofocus
             type="text"
             placeholder="Type a command, transformation, or audit query… (Esc to close)"
             value={search}
@@ -209,7 +221,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
 
         {/* Command List */}
-        <div style={{ maxHeight: '340px', overflowY: 'auto', padding: '6px' }}>
+        <div
+          className="command-list"
+          role="listbox"
+          aria-label="Commands"
+          aria-activedescendant={
+            filtered[selectedIndex] ? `command-${filtered[selectedIndex]!.id}` : undefined
+          }
+          style={{ maxHeight: '340px', overflowY: 'auto', padding: '6px' }}
+        >
           {filtered.length === 0 ? (
             <div
               style={{
@@ -227,6 +247,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               return (
                 <div
                   key={item.id}
+                  id={`command-${item.id}`}
+                  role="option"
+                  aria-selected={isSelected}
                   onClick={() => {
                     item.action();
                     onClose();

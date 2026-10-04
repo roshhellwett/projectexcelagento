@@ -52,6 +52,50 @@
   --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Dark theme: every token the app actually uses is overridden here, so the whole shell - nav,
+   grid, chat, modals, toasts - swaps at once without touching a single rule. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-canvas: #0b1220;
+  --bg-surface: #111827;
+  --bg-elevated: #1e293b;
+  --bg-panel: #111827;
+  --bg-hover: #1f2937;
+  --bg-active: #283548;
+
+  --border-subtle: #111827;
+  --border-main: #283548;
+  --border-strong: #334155;
+  --border-focus: #60a5fa;
+
+  --primary: #f8fafc;
+  --primary-hover: #e2e8f0;
+  --primary-light: #1e293b;
+
+  --accent-cyan: #38bdf8;
+  --accent-blue: #60a5fa;
+  --accent-purple: #94a3b8;
+  --accent-amber: #fbbf24;
+  --accent-rose: #f87171;
+  --accent-emerald: #4ade80;
+
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-subtle: #475569;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.55), 0 4px 6px -4px rgba(0, 0, 0, 0.45);
+}
+
+/* Inline colors that some components hard-code must not keep the light skin in dark mode. */
+:root[data-theme='dark'] .btn:disabled,
+:root[data-theme='dark'] .agent-panel,
+:root[data-theme='dark'] .grid-container {
+  background: var(--bg-surface);
+}
+
 *,
 *::before,
 *::after {
@@ -410,6 +454,9 @@ body {
   color: var(--text-main);
   cursor: cell;
   transition: background var(--transition-fast);
+  /* The in-cell editor is absolutely positioned inside this cell, not inside the scroll wrapper,
+     so it stays glued to its cell while the grid scrolls. */
+  position: relative;
 }
 
 .data-cell:hover {
@@ -446,6 +493,13 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.cell-val-date {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .cell-val-null {
   color: var(--text-subtle);
   font-style: italic;
@@ -453,6 +507,90 @@ body {
 
 .cell-val-formula {
   color: var(--accent-blue);
+}
+
+/* ---------------------------------------------------------------------------
+   Editing, resizing and filling: the three gestures that make this a spreadsheet
+   --------------------------------------------------------------------------- */
+
+/* The editor sits exactly over the cell it is editing. It is a real input, so it inherits the
+   focus ring and can be driven entirely from the keyboard. */
+.cell-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  min-width: 100%;
+  padding: 2px 4px;
+  border: 2px solid var(--accent-blue);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: var(--shadow-md);
+  outline: none;
+}
+
+/* Fill handle: the small square on the selection's corner that drags a series out of it. */
+.fill-handle {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--accent-blue);
+  cursor: crosshair;
+}
+
+.fill-handle:hover {
+  background: var(--primary);
+}
+
+/* The area a fill drag has claimed, drawn before it is committed. */
+.data-cell.fill-preview {
+  background: rgba(37, 99, 235, 0.12) !important;
+  outline: 1px dashed var(--accent-blue);
+  outline-offset: -1px;
+}
+
+/* Column resize divider. It is a real separator with a value, so it is reachable by keyboard and
+   arrow keys nudge the width for a user who never touches a pointer. */
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 4;
+  touch-action: none;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle:focus-visible {
+  background: var(--accent-blue);
+  opacity: 0.55;
+}
+
+/* Column headers need a positioning context for the divider above. */
+.column-header {
+  position: sticky;
+  overflow: visible;
+}
+
+/* Virtualisation spacers: a column window is padded with cells that hold width but no content, so
+   the row above and below stay aligned. They must be exempt from the shared minimum column width. */
+.spreadsheet-spacer {
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent;
 }
 
 /* Sheet Tabs Bar */
@@ -637,6 +775,46 @@ body {
   border-radius: var(--radius-sm);
   padding: 10px;
   font-size: 12px;
+}
+
+/* Destructive-action confirmation gate.
+   Deliberately the loudest element in the chat panel: this is the last stop before rows or
+   columns are removed, so it must not be mistaken for an ordinary button row. */
+.confirm-gate {
+  background: color-mix(in srgb, var(--accent-rose) 8%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--accent-rose) 45%, transparent);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.confirm-gate-title {
+  color: var(--accent-rose);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.confirm-gate-detail {
+  color: var(--text-main);
+  font-size: 12px;
+}
+
+.confirm-gate-reasons {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.btn-danger {
+  background: var(--accent-rose);
+  border-color: var(--accent-rose);
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.92);
 }
 
 .preview-stat-row {
@@ -2042,4 +2220,103 @@ input:focus-visible,
 /* Sheet tab active state picks up the brand accent */
 .sheet-tab.active {
   border-top: 2px solid var(--accent-blue);
+}
+
+/* ==========================================================================
+   Responsive layout
+
+   Until now the workspace was a single fixed arrangement: a 380px chat panel
+   beside the grid, and a top nav one line tall. Below 1200px that leaves the
+   grid unusably narrow, so the agent panel becomes a drawer under the grid
+   instead of a column beside it, and the nav wraps rather than clipping its
+   own controls out of sight.
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+  .workspace-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .grid-panel {
+    flex: 1 1 60%;
+    min-height: 320px;
+  }
+
+  /* The agent panel stops being a column and becomes a drawer below the grid. */
+  .agent-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 40%;
+    min-height: 280px;
+    max-height: 45vh;
+    border-left: none;
+    border-top: 1px solid var(--border-main);
+    border-radius: var(--radius-xl);
+  }
+
+  .history-drawer {
+    width: min(360px, 100vw);
+    top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  /* The nav is one row of controls today, which clips. Let it wrap and scroll instead. */
+  .top-nav {
+    height: auto;
+    min-height: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 8px 12px;
+    row-gap: 8px;
+  }
+
+  .top-nav-left,
+  .top-nav-center,
+  .top-nav-right {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .top-nav-center,
+  .top-nav-right {
+    flex: 1 1 auto;
+  }
+
+  .file-meta-pill {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .usage-page {
+    padding: 16px 16px 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .formula-bar {
+    height: auto;
+    min-height: 36px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .formula-input-display {
+    flex-basis: 100%;
+  }
+
+  .agent-panel {
+    max-height: 50vh;
+  }
+
+  .modal-overlay {
+    padding: 10px;
+  }
+
+  .modal-card {
+    max-height: 92vh;
+  }
 }

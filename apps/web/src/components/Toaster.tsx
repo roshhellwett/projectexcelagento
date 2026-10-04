@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 
-export type ToastKind = 'success' | 'error' | 'info';
+export type ToastKind = 'success' | 'error' | 'info' | 'warning';
 
 export interface Toast {
   id: string;
@@ -19,7 +19,11 @@ export function useToasts() {
   }, []);
 
   const pushToast = useCallback(
-    (kind: ToastKind, message: string, ttlMs = kind === 'error' ? 6000 : 3500) => {
+    (
+      kind: ToastKind,
+      message: string,
+      ttlMs = kind === 'error' ? 6000 : kind === 'warning' ? 9000 : 3500,
+    ) => {
       toastSequence += 1;
       const id = `toast-${Date.now().toString(36)}-${toastSequence.toString(36)}`;
       setToasts((prev) => [...prev.slice(-3), { id, kind, message }]);
@@ -32,7 +36,14 @@ export function useToasts() {
   return { toasts, pushToast, dismissToast };
 }
 
-const ICONS: Record<ToastKind, string> = { success: '✓', error: '✕', info: 'ℹ' };
+// A warning is the one state that must not be missed: it is how a partial import reports that
+// something in the user's file could not be kept.
+const ICONS: Record<ToastKind, string> = {
+  success: '✓',
+  error: '✕',
+  info: 'ℹ',
+  warning: '⚠',
+};
 
 export const ToastHost: React.FC<{ toasts: Toast[]; onDismiss: (id: string) => void }> = ({
   toasts,

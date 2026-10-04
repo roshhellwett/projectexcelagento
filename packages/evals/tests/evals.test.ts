@@ -42,6 +42,8 @@ describe('deterministic planner evals', () => {
         operation: 'delete_duplicates',
         args: first.args,
         success: true,
+        // Recorded so the replay can be checked against the sheet layout it was learned on.
+        workbook: evalWorkbook(),
       });
     }
 

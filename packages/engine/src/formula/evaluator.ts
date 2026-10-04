@@ -1,7 +1,16 @@
 import { FORMULA_FUNCTIONS } from './functions.js';
+import { isFormulaError, type FormulaErrorCode } from './errors.js';
+import { daysBetween } from './excel-date.js';
 import type { FormulaContext, FormulaValue } from './types.js';
 
 type ParsedValue = FormulaValue | FormulaValue[][];
+
+/**
+ * Guards against runaway recursion from self-referential formulas. Excel raises a
+ * circular-reference error rather than hanging; without this the engine died by stack
+ * exhaustion and reported a misleading `#ERROR!`.
+ */
+const MAX_EVALUATION_DEPTH = 64;
 
 interface Token {
   type:
@@ -159,11 +168,99 @@ export function tokenize(formulaStr: string): Token[] {
   return tokens;
 }
 
-function formulaEquals(a: ParsedValue, b: ParsedValue): boolean {
+function firstError(...values: ParsedValue[]): FormulaErrorCode | null {
+  for (const value of values) {
+    if (isFormulaError(value)) return value;
+  }
+  return null;
+}
+
+/** Excel's numeric coercion: booleans are 1/0, numeric text is parsed, anything else is `#VALUE!`. */
+function toNumeric(value: ParsedValue): number | FormulaErrorCode {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : '#NUM!';
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'string') {
+    if (isFormulaError(value)) return value;
+    const trimmed = value.trim();
+    if (trimmed === '') return 0;
+    const parsed = Number(trimmed.replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : '#VALUE!';
+  }
+  return '#VALUE!';
+}
+
+function isDateLike(value: ParsedValue): value is Date {
+  return value instanceof Date;
+}
+
+/**
+ * Excel's `+`/`-`: subtracting two dates yields a day count, and adding a number to a date
+ * shifts the date. Every other date combination is `#VALUE!`.
+ */
+function addOrSubtract(left: ParsedValue, right: ParsedValue, subtract: boolean): ParsedValue {
+  const leftIsDate = isDateLike(left);
+  const rightIsDate = isDateLike(right);
+
+  if (leftIsDate && rightIsDate) {
+    return subtract ? daysBetween(left, right) : '#VALUE!';
+  }
+
+  if (leftIsDate || rightIsDate) {
+    const date = (leftIsDate ? left : right) as Date;
+    const offset = toNumeric((leftIsDate ? right : left) as ParsedValue);
+    if (isFormulaError(offset)) return offset;
+    const shifted = new Date(date.getTime() + (subtract ? -offset : offset) * 86_400_000);
+    return Number.isFinite(shifted.getTime()) ? shifted : '#NUM!';
+  }
+
+  const a = toNumeric(left);
+  if (isFormulaError(a)) return a;
+  const b = toNumeric(right);
+  if (isFormulaError(b)) return b;
+  const result = subtract ? a - b : a + b;
+  return Number.isFinite(result) ? result : '#NUM!';
+}
+
+/** Excel's `*`, `/`, `^`: dates have no meaning here, and non-finite results are `#NUM!`. */
+function arithmetic(left: ParsedValue, right: ParsedValue, op: '*' | '/' | '^'): ParsedValue {
+  const a = toNumeric(left);
+  if (isFormulaError(a)) return a;
+  const b = toNumeric(right);
+  if (isFormulaError(b)) return b;
+
+  if (op === '/') {
+    if (b === 0) return '#DIV/0!';
+    return a / b;
+  }
+  const result = op === '*' ? a * b : Math.pow(a, b);
+  return Number.isFinite(result) ? result : '#NUM!';
+}
+
+/** Applies an ordering predicate, letting an error operand propagate instead of comparing. */
+function orderedComparison(
+  left: ParsedValue,
+  right: ParsedValue,
+  predicate: (ordering: number) => boolean,
+): ParsedValue {
+  const ordering = compareOrdered(left, right);
+  return isFormulaError(ordering) ? ordering : predicate(ordering);
+}
+
+function formulaEquals(a: ParsedValue, b: ParsedValue): ParsedValue {
+  const propagated = firstError(a, b);
+  if (propagated) return propagated;
   if (a === null && b === null) return true;
   if (a === null || b === null) return b === '' || a === '';
   if (typeof a === 'number' && typeof b === 'number') return a === b;
   if (typeof a === 'boolean' || typeof b === 'boolean') return a === b;
+  // Dates compare by day, matching Excel, so a time-of-day component cannot flip equality.
+  if (isDateLike(a) && isDateLike(b)) return daysBetween(a, b) === 0;
+  if (isDateLike(a) || isDateLike(b)) {
+    const date = (isDateLike(a) ? a : b) as Date;
+    const otherNumber = toNumeric((isDateLike(a) ? b : a) as ParsedValue);
+    if (isFormulaError(otherNumber)) return false;
+    return date.getTime() === otherNumber;
+  }
   const an = typeof a === 'string' && a.trim() !== '' ? Number(a) : NaN;
   const bn = typeof b === 'string' && b.trim() !== '' ? Number(b) : NaN;
   if (!isNaN(an) && !isNaN(bn)) return an === bn;
@@ -172,21 +269,19 @@ function formulaEquals(a: ParsedValue, b: ParsedValue): boolean {
   return String(a) === String(b);
 }
 
-function compareOrdered(a: ParsedValue, b: ParsedValue): number {
+function compareOrdered(a: ParsedValue, b: ParsedValue): number | FormulaErrorCode {
+  const propagated = firstError(a, b);
+  if (propagated) return propagated;
   const rank = (v: ParsedValue): number =>
     typeof v === 'number' ? 0 : typeof v === 'string' ? 1 : typeof v === 'boolean' ? 2 : 3;
-  const aNum =
-    typeof a === 'number'
-      ? a
-      : typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a))
-        ? Number(a)
+  const asNumber = (v: ParsedValue): number =>
+    typeof v === 'number'
+      ? v
+      : typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))
+        ? Number(v)
         : NaN;
-  const bNum =
-    typeof b === 'number'
-      ? b
-      : typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b))
-        ? Number(b)
-        : NaN;
+  const aNum = asNumber(a);
+  const bNum = asNumber(b);
   if (!isNaN(aNum) && !isNaN(bNum)) return aNum < bNum ? -1 : aNum > bNum ? 1 : 0;
   const ra = rank(a);
   const rb = rank(b);
@@ -203,6 +298,13 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
     if (tokens.length === 0) return null;
 
     let cursor = 0;
+    let depth = 0;
+
+    /** Reports whether a sheet named in a reference actually exists, so typos become `#REF!`. */
+    function sheetExists(sheet: string): boolean {
+      if (!context.hasSheet) return true;
+      return context.hasSheet(sheet);
+    }
 
     function parseExpression(): ParsedValue {
       return parseLogicalOr();
@@ -225,11 +327,11 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         cursor++;
         const right = parseAdditive();
         if (op === '=') left = formulaEquals(left, right);
-        else if (op === '<>') left = !formulaEquals(left, right);
-        else if (op === '<') left = compareOrdered(left, right) < 0;
-        else if (op === '>') left = compareOrdered(left, right) > 0;
-        else if (op === '<=') left = compareOrdered(left, right) <= 0;
-        else if (op === '>=') left = compareOrdered(left, right) >= 0;
+        else if (op === '<>') left = formulaEquals(left, right) === false;
+        else if (op === '<') left = orderedComparison(left, right, (n) => n < 0);
+        else if (op === '>') left = orderedComparison(left, right, (n) => n > 0);
+        else if (op === '<=') left = orderedComparison(left, right, (n) => n <= 0);
+        else if (op === '>=') left = orderedComparison(left, right, (n) => n >= 0);
       }
       return left;
     }
@@ -244,9 +346,8 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parseMultiplicative();
-        if (op === '+') left = Number(left) + Number(right);
-        else if (op === '-') left = Number(left) - Number(right);
-        else if (op === '&') left = String(left ?? '') + String(right ?? '');
+        if (op === '&') left = String(left ?? '') + String(right ?? '');
+        else left = addOrSubtract(left, right, op === '-');
       }
       return left;
     }
@@ -261,8 +362,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parsePower();
-        if (op === '*') left = Number(left) * Number(right);
-        else if (op === '/') left = Number(right) === 0 ? '#DIV/0!' : Number(left) / Number(right);
+        left = arithmetic(left, right, op === '*' ? '*' : '/');
       }
       return left;
     }
@@ -276,7 +376,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
       ) {
         cursor++;
         const right = parsePower(); // '^' is right-associative in Excel
-        return Math.pow(Number(left), Number(right));
+        return arithmetic(left, right, '^');
       }
       return left;
     }
@@ -291,7 +391,10 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         const op = tokens[cursor]!.value;
         cursor++;
         const v = parseUnary();
-        val = op === '-' ? -Number(v) : Number(v);
+        if (isFormulaError(v)) return v;
+        const numeric = toNumeric(v);
+        if (isFormulaError(numeric)) return numeric;
+        val = op === '-' ? -numeric : numeric;
       } else {
         val = parsePrimary();
       }
@@ -301,7 +404,10 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         tokens[cursor]?.type === 'OP' &&
         tokens[cursor]!.value === '%'
       ) {
-        val = Number(val) / 100;
+        if (isFormulaError(val)) return val;
+        const numeric = toNumeric(val);
+        if (isFormulaError(numeric)) return numeric;
+        val = numeric / 100;
         cursor++;
       }
       return val;
@@ -331,8 +437,11 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
 
       // Parentheses (expr)
       if (t.type === 'LPAREN') {
+        depth += 1;
+        if (depth > MAX_EVALUATION_DEPTH) return '#ERROR!';
         cursor++;
         const val = parseExpression();
+        depth -= 1;
         if (cursor < tokens.length && tokens[cursor]?.type === 'RPAREN') {
           cursor++;
         }
@@ -347,9 +456,10 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
           const sheet = t.sheet ?? match[1] ?? context.activeSheet;
           const col = match[2]!.toUpperCase();
           const row = parseInt(match[3]!, 10);
+          if (!sheetExists(sheet)) return '#REF!';
           return context.getCellValue(sheet, col, row);
         }
-        return null;
+        return '#REF!';
       }
 
       // Range reference (A1:B10)
@@ -362,9 +472,12 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
           const startRow = parseInt(match[3]!, 10);
           const endCol = match[4]!.toUpperCase();
           const endRow = parseInt(match[5]!, 10);
+          if (!sheetExists(sheet)) return '#REF!';
+          // A reversed range such as A5:A1 is a malformed reference, not an empty one.
+          if (endRow < startRow) return '#REF!';
           return context.getRangeValues(sheet, startCol, startRow, endCol, endRow);
         }
-        return [];
+        return '#REF!';
       }
 
       // Function call IDENT(args...)
@@ -395,17 +508,24 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
           if (fn) {
             return fn(...args);
           }
-          return `#NAME? (${fnName})`;
+          // The canonical Excel code, so IFERROR/IFNA can actually catch an unknown name.
+          return '#NAME?';
         }
 
-        return `#NAME? (${fnName})`;
+        return '#NAME?';
       }
 
       cursor++;
       return null;
     }
 
-    return parseExpression() as FormulaValue;
+    const result = parseExpression();
+
+    // Trailing tokens mean the formula was malformed. Silently returning the prefix would
+    // turn `=1+1)+DROP(A1)` into `2`, which is worse than reporting the problem.
+    if (cursor < tokens.length) return '#ERROR!';
+
+    return result as FormulaValue;
   } catch {
     return '#ERROR!';
   }

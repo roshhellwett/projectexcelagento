@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { forgetLearnedActions, learnedActionCount } from '../lib/agent-runtime.js';
+import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 import {
   AVAILABLE_MODELS,
   PROVIDER_LABELS,
@@ -40,6 +41,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     testing: false,
   });
   const [learnedCount, setLearnedCount] = useState(0);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useDialogA11y(isOpen, cardRef, onClose);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -148,10 +152,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-card"
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        data-dialog-open="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <div className="modal-title">Settings - Model Keys & Providers (BYOK)</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close settings">
+          <div className="modal-title" id="settings-modal-title">
+            Settings - Model Keys & Providers (BYOK)
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            aria-label="Close settings"
+          >
             ✕
           </button>
         </div>
@@ -165,8 +184,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <div className="form-group">
-            <label className="form-label">AI Provider</label>
+            <label className="form-label" htmlFor="settings-provider">
+              AI Provider
+            </label>
             <select
+              id="settings-provider"
+              data-autofocus
               className="select-input"
               value={provider}
               onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
@@ -181,8 +204,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {provider === 'custom' && (
             <div className="form-group">
-              <label className="form-label">Custom API Base URL (Ollama, LM Studio, vLLM)</label>
+              <label className="form-label" htmlFor="settings-base-url">
+                Custom API Base URL (Ollama, LM Studio, vLLM)
+              </label>
               <input
+                id="settings-base-url"
                 type="text"
                 className="form-input"
                 value={baseUrl}
@@ -193,11 +219,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           <div className="form-group">
-            <label className="form-label">
+            <label className="form-label" htmlFor="settings-api-key">
               API Key {provider === 'custom' ? '(optional for local)' : ''}
             </label>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <input
+                id="settings-api-key"
                 type={showKey ? 'text' : 'password'}
                 className="form-input"
                 value={apiKey}
@@ -217,6 +244,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
+                aria-pressed={showKey}
                 onClick={() => setShowKey((prev) => !prev)}
               >
                 {showKey ? 'Hide' : 'Show'}
@@ -225,10 +253,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <div className="form-group">
-            <label className="form-label">Model Selection</label>
+            <label className="form-label" htmlFor="settings-model">
+              Model Selection
+            </label>
             {modelsForCurrentProvider.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <select
+                  id="settings-model"
                   className="select-input"
                   value={
                     modelsForCurrentProvider.some((m) => m.id === model) ? model : 'custom_override'
@@ -249,17 +280,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {(!modelsForCurrentProvider.some((m) => m.id === model) ||
                   model === 'custom_override') && (
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={model === 'custom_override' ? '' : model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder="Enter custom model ID (e.g. qwen/qwen3.8-27b)"
-                  />
+                  <>
+                    <label className="sr-only" htmlFor="settings-model-override">
+                      Custom model ID
+                    </label>
+                    <input
+                      id="settings-model-override"
+                      type="text"
+                      className="form-input"
+                      value={model === 'custom_override' ? '' : model}
+                      onChange={(e) => setModel(e.target.value)}
+                      placeholder="Enter custom model ID (e.g. qwen/qwen3.8-27b)"
+                    />
+                  </>
                 )}
               </div>
             ) : (
               <input
+                id="settings-model"
                 type="text"
                 className="form-input"
                 value={model}
@@ -328,10 +366,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-ghost btn-sm" onClick={handleClear}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={handleClear}>
             Clear Key
           </button>
-          <button className="btn btn-primary btn-sm" onClick={handleSave}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={handleSave}>
             Save Preferences
           </button>
         </div>

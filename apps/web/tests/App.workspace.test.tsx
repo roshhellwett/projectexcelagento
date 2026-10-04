@@ -61,7 +61,19 @@ describe('workspace shell', () => {
 });
 
 describe('deterministic actions from chat', () => {
-  it('proposes an action, applies it, and undoes it', async () => {
+  /**
+   * `delete_duplicates` removes rows irreversibly from the user's point of view, so the engine
+   * refuses it until a human confirms. Clicking "Apply Changes" therefore opens a confirm gate
+   * instead of mutating anything, and the second, deliberate click is what applies it.
+   */
+  const applyWithConfirmation = async (user: ReturnType<typeof userEvent.setup>) => {
+    const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+    await user.click(apply);
+    const confirm = await screen.findByRole('button', { name: /Yes, apply this change/i });
+    await user.click(confirm);
+  };
+
+  it('demands confirmation before deleting rows, then applies and undoes', async () => {
     enterDemoMode();
     const user = userEvent.setup();
     const { container } = renderApp();
@@ -72,6 +84,14 @@ describe('deterministic actions from chat', () => {
 
     const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
     await user.click(apply);
+
+    // The first click must not touch the data.
+    const gate = await screen.findByRole('group', { name: /Confirm destructive change/i });
+    expect(gate).toBeInTheDocument();
+    expect(metaPillText(container)).toContain('11 rows');
+    expect(toastTexts(container).join(' ')).toMatch(/was not confirmed/i);
+
+    await user.click(screen.getByRole('button', { name: /Yes, apply this change/i }));
 
     await waitFor(() =>
       expect(toastTexts(container).join(' ')).toMatch(/delete_duplicates applied/i),
@@ -84,7 +104,36 @@ describe('deterministic actions from chat', () => {
     await waitFor(() => expect(metaPillText(container)).toContain('11 rows'));
   });
 
-  it('persists a verified action into the self-learning memory', async () => {
+  it('applies nothing when the confirmation is cancelled', async () => {
+    enterDemoMode();
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await askAgent(user, 'remove duplicate rows');
+    const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+    await user.click(apply);
+    await screen.findByRole('group', { name: /Confirm destructive change/i });
+
+    await user.click(screen.getByRole('button', { name: /Cancel/i }));
+
+    await waitFor(() => expect(metaPillText(container)).toContain('11 rows'));
+    expect(toastTexts(container).join(' ')).not.toMatch(/delete_duplicates applied/i);
+  });
+
+  it('persists a verified action into the self-learning memory only once confirmed', async () => {
+    enterDemoMode();
+    const user = userEvent.setup();
+    renderApp();
+
+    await askAgent(user, 'remove duplicate rows');
+    await applyWithConfirmation(user);
+
+    await waitFor(() =>
+      expect(localStorage.getItem('excel_agent_memory_v1') ?? '').toContain('delete_duplicates'),
+    );
+  });
+
+  it('does not learn from a change that is only awaiting confirmation', async () => {
     enterDemoMode();
     const user = userEvent.setup();
     renderApp();
@@ -92,10 +141,11 @@ describe('deterministic actions from chat', () => {
     await askAgent(user, 'remove duplicate rows');
     const apply = await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
     await user.click(apply);
+    await screen.findByRole('group', { name: /Confirm destructive change/i });
 
-    await waitFor(() =>
-      expect(localStorage.getItem('excel_agent_memory_v1')).toContain('delete_duplicates'),
-    );
+    // A pause for a human decision is not a rejection, so nothing may be recorded either way.
+    const stored = localStorage.getItem('excel_agent_memory_v1') ?? '';
+    expect(stored).not.toContain('delete_duplicates');
   });
 
   it('never touches the network during a demo-mode turn', async () => {

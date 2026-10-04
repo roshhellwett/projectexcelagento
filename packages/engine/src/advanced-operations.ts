@@ -15,16 +15,25 @@ import type {
 import {
   cellValueSchema,
   cloneWithValue,
+  issue,
   maxColumn,
   maxRow,
   previewForTransition,
   transitionResult,
+  uniqueSheetName,
   validateColumn,
   validateSheet,
   validResult,
 } from './operation-utils.js';
 import { runInvariants } from './invariants.js';
-import { cloneWorkbook, columnToIndex, createCell, getSheet, indexToColumn } from './workbook.js';
+import {
+  cloneWorkbook,
+  columnToIndex,
+  createCell,
+  getSheet,
+  indexToColumn,
+  maxColumnCount,
+} from './workbook.js';
 
 function operationReport(
   before: Workbook,
@@ -861,14 +870,6 @@ function buildCleanedRows(sourceRows: Cell[][], args: CleanToNewSheetArgs): Cell
   return rows;
 }
 
-function uniqueSheetName(workbook: Workbook, desired: string): string {
-  const names = new Set(workbook.sheets.map((s) => s.name.toLowerCase()));
-  if (!names.has(desired.toLowerCase())) return desired;
-  let suffix = 2;
-  while (names.has(`${desired} (${suffix})`.toLowerCase())) suffix += 1;
-  return `${desired} (${suffix})`;
-}
-
 function cleanToNewSheetTarget(workbook: Workbook, args: CleanToNewSheetArgs): CellRange[] {
   const source = getSheet(workbook, args.sheet);
   if (!source) return [];
@@ -932,6 +933,160 @@ export const cleanToNewSheetOperation: Operation<CleanToNewSheetArgs> = {
   },
 };
 
+// ============================================================================
+// 7. EDIT CELLS (edit_cells)
+// ============================================================================
+
+/** Excel's own sheet limits. A grid edit must never be able to build a sheet no reader can open. */
+const MAX_ROW_NUMBER = 1_048_576;
+const MAX_COLUMN_INDEX = 16_383; // XFD
+/** A bound on one call, so a runaway paste fails loudly instead of allocating a million cells. */
+const MAX_EDITS_PER_OPERATION = 20_000;
+
+export const editCellsArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  edits: z
+    .array(
+      z.object({
+        /** 1-based row. */
+        row: z.number().int().positive(),
+        column: rangeColumn,
+        /** Omitted together with `formula` clears the cell. */
+        value: cellValueSchema.optional(),
+        /** Stored with its leading `=`, matching how every other operation writes formulas. */
+        formula: z.string().optional(),
+        numberFormat: z.string().optional(),
+      }),
+    )
+    .min(1),
+});
+export type EditCellsArgs = z.infer<typeof editCellsArgsSchema>;
+export type CellEdit = EditCellsArgs['edits'][number];
+
+/**
+ * The declared target is the whole grown sheet, because this operation may pad a short row or add
+ * rows to reach an address. Those padded cells are real writes from the invariant checker's point
+ * of view, and a range covering only the requested addresses would - correctly - be rejected for
+ * touching cells outside itself.
+ */
+function editCellsTarget(workbook: Workbook, args: EditCellsArgs): CellRange[] {
+  const rows = getSheet(workbook, args.sheet)?.rows ?? [];
+  let endRow = Math.max(1, rows.length);
+  let endColumn = Math.max(0, maxColumnCount(rows) - 1);
+  for (const edit of args.edits) {
+    endRow = Math.max(endRow, Math.min(edit.row, MAX_ROW_NUMBER));
+    endColumn = Math.max(endColumn, columnToIndex(edit.column) ?? 0);
+  }
+  return [
+    {
+      sheet: args.sheet,
+      startRow: 1,
+      endRow,
+      startColumn: 'A',
+      endColumn: indexToColumn(Math.min(MAX_COLUMN_INDEX, endColumn)),
+    },
+  ];
+}
+
+function validateEditCells(workbook: Workbook, args: EditCellsArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  if (getSheet(workbook, args.sheet)) {
+    if (args.edits.length > MAX_EDITS_PER_OPERATION) {
+      errors.push(
+        issue(
+          'too-many-edits',
+          `A single edit_cells call accepts at most ${MAX_EDITS_PER_OPERATION} cells; got ${args.edits.length}.`,
+        ),
+      );
+    }
+    for (const edit of args.edits) {
+      const columnIndex = columnToIndex(edit.column);
+      if (columnIndex === undefined) {
+        errors.push(
+          issue('invalid-column', `Column "${edit.column}" is not a valid column reference.`),
+        );
+        continue;
+      }
+      if (columnIndex > MAX_COLUMN_INDEX) {
+        errors.push(
+          issue(
+            'cell-out-of-range',
+            `Column "${indexToColumn(columnIndex)}" is past the last addressable column (XFD).`,
+          ),
+        );
+      }
+      if (edit.row > MAX_ROW_NUMBER) {
+        errors.push(
+          issue(
+            'cell-out-of-range',
+            `Row ${edit.row} is past the last addressable row (${MAX_ROW_NUMBER}).`,
+          ),
+        );
+      }
+    }
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyEditCells(workbook: Workbook, args: EditCellsArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const sheet = getSheet(after, args.sheet);
+
+  if (sheet) {
+    for (const edit of args.edits) {
+      const columnIndex = columnToIndex(edit.column);
+      if (
+        columnIndex === undefined ||
+        columnIndex > MAX_COLUMN_INDEX ||
+        edit.row > MAX_ROW_NUMBER
+      ) {
+        continue;
+      }
+      // A paste into the empty space right of a short row, or below the last row, is ordinary
+      // spreadsheet behaviour, so the sheet grows to fit rather than refusing the edit.
+      while (sheet.rows.length < edit.row) sheet.rows.push([]);
+      const row = sheet.rows[edit.row - 1];
+      if (!row) continue;
+      while (row.length < columnIndex) row.push(createCell(null));
+      row[columnIndex] = cloneWithValue(row[columnIndex] ?? createCell(null), edit.value ?? null, {
+        ...(edit.formula !== undefined ? { formula: edit.formula } : {}),
+        ...(edit.numberFormat !== undefined ? { numberFormat: edit.numberFormat } : {}),
+      });
+    }
+  }
+
+  const ranges = editCellsTarget(workbook, args);
+  // `requiresConfirmation` stays false on purpose: this is the operation behind a keystroke in a
+  // cell. A confirmation gate on every character typed would make the grid unusable, and the user
+  // asking for the edit is the confirmation. Bulk and destructive work still goes through the
+  // range operations, which do demand it.
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const editCellsOperation: Operation<EditCellsArgs> = {
+  name: 'edit_cells',
+  schema: editCellsArgsSchema,
+  targetRanges: editCellsTarget,
+  validate: validateEditCells,
+  preview(workbook, args) {
+    const validation = validateEditCells(workbook, args);
+    const ranges = editCellsTarget(workbook, args);
+    if (!validation.valid) return invalidPreview(workbook, ranges, validation.errors);
+    const result = applyEditCells(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyEditCells,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: editCellsTarget(before, args),
+      // No `rowCountUnchanged`: typing into the first empty row below the data adds one, which is
+      // the whole point of a grid. Formulas may also be replaced, exactly as typing over one does.
+      allowFormulaChanges: true,
+    });
+  },
+};
+
 export const advancedOperations: Operation<unknown>[] = [
   fillBlanksOperation as Operation<unknown>,
   addComputedColumnOperation as Operation<unknown>,
@@ -939,4 +1094,5 @@ export const advancedOperations: Operation<unknown>[] = [
   mergeColumnsOperation as Operation<unknown>,
   lookupMergeOperation as Operation<unknown>,
   cleanToNewSheetOperation as Operation<unknown>,
+  editCellsOperation as Operation<unknown>,
 ];

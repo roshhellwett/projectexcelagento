@@ -21,7 +21,12 @@ export interface ChatMessage {
   sourceQuery?: string;
   proposedAction?: ProposedAction;
   preview?: Preview;
-  status?: 'pending' | 'applied' | 'error';
+  status?: 'pending' | 'applied' | 'error' | 'confirming';
+  /**
+   * Why the engine refused to apply this action without a human decision. Populated when the
+   * guardrail or the engine flags the change as destructive or wide-reaching.
+   */
+  confirmationPrompt?: { affectedCells: number; reasons: string[] };
   errorMessage?: string;
   isStreaming?: boolean;
 }
@@ -35,8 +40,9 @@ interface AgentChatProps {
   onSaveApiKey: (provider: ProviderName, key: string, baseUrl?: string) => void;
   onClearApiKey: () => void;
   onSendMessage: (query: string) => void;
-  onApplyAction: (messageId: string, action: ProposedAction) => void;
-  onApplyPlan?: (messageId: string, plan: ExecutionPlan) => void;
+  onApplyAction: (messageId: string, action: ProposedAction, confirmed?: boolean) => void;
+  onApplyPlan?: (messageId: string, plan: ExecutionPlan, confirmed?: boolean) => void;
+  onCancelAction?: (messageId: string) => void;
   onUndoLast: () => void;
   canUndo: boolean;
   onStop?: () => void;
@@ -55,6 +61,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onSendMessage,
   onApplyAction,
   onApplyPlan,
+  onCancelAction,
   onUndoLast,
   canUndo,
   onStop,
@@ -112,6 +119,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
         return '⚡';
       case 'thinking':
         return '💭';
+      case 'warning':
+        return '⚠️';
       default:
         return '✨';
     }
@@ -175,9 +184,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
             <form onSubmit={handleActivateKey} className="byok-gate-form">
               <div className="form-group">
-                <label className="form-label">Select AI Provider</label>
+                <span className="form-label" id="byok-provider-label">
+                  Select AI Provider
+                </span>
                 <div
                   className="provider-chips"
+                  role="group"
+                  aria-labelledby="byok-provider-label"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
@@ -186,6 +199,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 >
                   <button
                     type="button"
+                    aria-pressed={setupProvider === 'groq'}
                     className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('groq')}
                   >
@@ -193,6 +207,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                   <button
                     type="button"
+                    aria-pressed={setupProvider === 'gemini'}
                     className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('gemini')}
                   >
@@ -200,6 +215,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                   <button
                     type="button"
+                    aria-pressed={setupProvider === 'openrouter'}
                     className={`provider-chip ${setupProvider === 'openrouter' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('openrouter')}
                   >
@@ -207,6 +223,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                   <button
                     type="button"
+                    aria-pressed={setupProvider === 'openai'}
                     className={`provider-chip ${setupProvider === 'openai' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('openai')}
                   >
@@ -214,6 +231,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                   <button
                     type="button"
+                    aria-pressed={setupProvider === 'custom'}
                     className={`provider-chip ${setupProvider === 'custom' ? 'selected' : ''}`}
                     onClick={() => setSetupProvider('custom')}
                   >
@@ -224,8 +242,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
               {setupProvider === 'custom' && (
                 <div className="form-group">
-                  <label className="form-label">Endpoint Base URL</label>
+                  <label className="form-label" htmlFor="byok-base-url">
+                    Endpoint Base URL
+                  </label>
                   <input
+                    id="byok-base-url"
                     type="text"
                     className="form-input"
                     placeholder="http://localhost:11434/v1"
@@ -236,7 +257,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               )}
 
               <div className="form-group">
-                <label className="form-label">
+                <label className="form-label" htmlFor="byok-api-key">
                   {setupProvider === 'groq'
                     ? 'Groq API Key (starts with gsk_)'
                     : setupProvider === 'gemini'
@@ -249,6 +270,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 </label>
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <input
+                    id="byok-api-key"
                     type={showKeyText ? 'text' : 'password'}
                     className="form-input"
                     style={{ width: '100%', paddingRight: '40px' }}
@@ -270,6 +292,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
+                    aria-pressed={showKeyText}
                     style={{ position: 'absolute', right: '4px', height: '26px', padding: '0 6px' }}
                     onClick={() => setShowKeyText(!showKeyText)}
                   >
@@ -560,6 +583,53 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         </div>
                       )}
 
+                      {/*
+                        A destructive or wide-reaching change never happens on one click. The
+                        first press states exactly what will be lost and how many cells it
+                        touches; only a deliberate second press confirms.
+                      */}
+                      {msg.proposedAction && msg.status === 'confirming' && (
+                        <div
+                          className="confirm-gate"
+                          role="group"
+                          aria-label="Confirm destructive change"
+                        >
+                          <div className="confirm-gate-body">
+                            <div className="confirm-gate-title">
+                              This cannot be undone from the preview. Confirm to continue.
+                            </div>
+                            <div className="confirm-gate-detail">
+                              <strong>{msg.proposedAction.name}</strong> will affect{' '}
+                              <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong> cell
+                              {msg.confirmationPrompt?.affectedCells === 1 ? '' : 's'}.
+                            </div>
+                            {(msg.confirmationPrompt?.reasons.length ?? 0) > 0 && (
+                              <ul className="confirm-gate-reasons">
+                                {msg.confirmationPrompt!.reasons.map((reason) => (
+                                  <li key={reason}>{reason}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                          <div className="action-buttons-group">
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => onApplyAction(msg.id, msg.proposedAction!, true)}
+                              disabled={isProcessing}
+                            >
+                              Yes, apply this change
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => onCancelAction?.(msg.id)}
+                              disabled={isProcessing}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {msg.status === 'applied' && canUndo && (
                         <div className="action-buttons-group">
                           <button className="btn btn-ghost btn-sm" onClick={onUndoLast}>
@@ -622,8 +692,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               </div>
             )}
             <input
+              id="agent-chat-input"
               type="text"
               className="chat-input"
+              aria-label="Ask ExcelAgento"
               placeholder="Ask ExcelAgento (e.g. 'Format dates in col C to YYYY-MM-DD')…"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}

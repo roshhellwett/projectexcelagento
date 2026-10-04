@@ -330,7 +330,11 @@ describe('privacy and token discipline', () => {
     expect(system).toContain(SHEET);
     // The profile carries headers and aggregates, and stays token-efficient.
     expect(system).toContain('Order ID');
-    expect(system.length).toBeLessThan(16000);
+    // The ceiling tracks the size of the operation catalogue, which grows when the engine gains an
+    // operation. It was 16,000 for the original 17 tools; the five business operations added to the
+    // catalogue (aggregate_column, group_and_summarize, join_sheets, fill_series, categorize_column)
+    // are worth roughly 5,800 characters on their own, so the budget moved rather than the features.
+    expect(system.length).toBeLessThan(20000);
 
     // The user turn is exactly what the user typed, nothing added.
     const body = JSON.parse(String(init.body)) as {

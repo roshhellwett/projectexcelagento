@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import type { DateSystem } from './formula/excel-date.js';
 
 export type CellValue = string | number | boolean | Date | null;
 export type CellType = 'blank' | 'string' | 'number' | 'boolean' | 'date' | 'formula';
@@ -17,6 +18,15 @@ export interface Sheet {
 
 export interface Workbook {
   sheets: Sheet[];
+  /**
+   * Which epoch this workbook's date serials are counted from.
+   *
+   * This belongs to the workbook, not to any one reader: a legacy Mac Excel file written in
+   * the 1904 system renders correctly in the grid but evaluates its formulas four years and a
+   * day off unless every consumer reads the epoch from here. Optional and defaulting to '1900'
+   * so existing workbooks and callers keep working unchanged.
+   */
+  dateSystem?: DateSystem;
 }
 
 export interface CellLocation {
@@ -69,6 +79,16 @@ export interface Report {
   addedRows?: number;
   deletedColumns?: number;
   addedColumns?: number;
+  /**
+   * The computed aggregate of an `aggregate_column` call. Always a number: an aggregation that
+   * matched nothing reports 0 plus a warning rather than a missing value, so a caller reading the
+   * result never has to guess whether the number is real.
+   */
+  aggregate?: number;
+  /** Rows or groups a criteria, a join, or an aggregation could not resolve to a value. */
+  unmatchedRows?: number;
+  /** Rows of a join that found a matching lookup key. */
+  matchedRows?: number;
 }
 
 /** A reversible change to one cell. Addresses and rows are one-based. */
@@ -127,5 +147,4 @@ export interface Operation<Args> {
 export interface HistoryEntry {
   operationName: string;
   patch: Patch;
-  inverse: Patch;
 }

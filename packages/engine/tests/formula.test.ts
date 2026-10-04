@@ -203,7 +203,10 @@ describe('Formula Evaluator Engine', () => {
 
   describe('Date Functions', () => {
     it('evaluates DATE, YEAR, MONTH, DAY', () => {
-      expect(evaluateFormula('=DATE(2026, 10, 4)', context)).toBe('2026-10-04');
+      // DATE yields a real Date, not a string, so date arithmetic composes.
+      expect(evaluateFormula('=DATE(2026, 10, 4)', context)).toEqual(
+        new Date(Date.UTC(2026, 9, 4)),
+      );
       expect(evaluateFormula('=YEAR("2026-10-04")', context)).toBe(2026);
       expect(evaluateFormula('=MONTH("2026-10-04")', context)).toBe(10);
       expect(evaluateFormula('=DAY("2026-10-04")', context)).toBe(4);

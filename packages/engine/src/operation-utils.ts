@@ -153,6 +153,54 @@ export function cellAt(
   return getSheet(workbook, sheetName)?.rows[row - 1]?.[column];
 }
 
+interface NumericRange {
+  startRow: number;
+  endRow: number;
+  startColumn: number;
+  endColumn: number;
+}
+
+/**
+ * Parse the column bounds of every declared range for one sheet exactly once.
+ * `columnToIndex` normalizes and regex-tests its argument, so resolving the
+ * ranges inside the per-cell loop made every operation O(cells x ranges) with a
+ * string parse on each comparison.
+ */
+function numericRangesForSheet(ranges: CellRange[], sheetName: string): NumericRange[] {
+  const resolved: NumericRange[] = [];
+  for (const range of ranges) {
+    if (range.sheet !== sheetName) {
+      continue;
+    }
+    const startColumn = columnToIndex(range.startColumn);
+    const endColumn = columnToIndex(range.endColumn);
+    if (startColumn === undefined || endColumn === undefined) {
+      continue;
+    }
+    resolved.push({
+      startRow: range.startRow,
+      endRow: range.endRow,
+      startColumn,
+      endColumn,
+    });
+  }
+  return resolved;
+}
+
+function rangeContains(ranges: NumericRange[], row: number, column: number): boolean {
+  for (const range of ranges) {
+    if (
+      row >= range.startRow &&
+      row <= range.endRow &&
+      column >= range.startColumn &&
+      column <= range.endColumn
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function previewForTransition(
   before: Workbook,
   after: Workbook,
@@ -169,6 +217,12 @@ export function previewForTransition(
   ]);
 
   for (const sheetName of sheetNames) {
+    // Ranges are resolved per sheet up front and membership is only tested for
+    // cells that actually changed, so the scan stays O(cells + ranges).
+    const numericRanges = numericRangesForSheet(ranges, sheetName);
+    if (numericRanges.length === 0) {
+      continue;
+    }
     const beforeSheet = getSheet(before, sheetName);
     const afterSheet = getSheet(after, sheetName);
     const rows = Math.max(beforeSheet?.rows.length ?? 0, afterSheet?.rows.length ?? 0);
@@ -184,20 +238,7 @@ export function previewForTransition(
           beforeCell === undefined
             ? afterCell !== undefined
             : afterCell === undefined || !cellEquals(beforeCell, afterCell);
-        const inRange = ranges.some((range) => {
-          const startColumn = columnToIndex(range.startColumn);
-          const endColumn = columnToIndex(range.endColumn);
-          return (
-            range.sheet === sheetName &&
-            startColumn !== undefined &&
-            endColumn !== undefined &&
-            row >= range.startRow &&
-            row <= range.endRow &&
-            column >= startColumn &&
-            column <= endColumn
-          );
-        });
-        if (changed && inRange) {
+        if (changed && rangeContains(numericRanges, row, column)) {
           affectedCells += 1;
           if (changes.length < 20) {
             changes.push({
@@ -266,6 +307,19 @@ function countCells(workbook: Workbook): number {
     (total, sheet) => total + sheet.rows.reduce((rows, row) => rows + row.length, 0),
     0,
   );
+}
+
+/**
+ * A sheet name that is not taken yet. Two operations can legitimately ask for the same derived
+ * sheet name, and overwriting the first result in place would destroy work the user still has in
+ * their history - so a collision appends a counter instead of silently replacing anything.
+ */
+export function uniqueSheetName(workbook: Workbook, desired: string): string {
+  const names = new Set(workbook.sheets.map((sheet) => sheet.name.toLowerCase()));
+  if (!names.has(desired.toLowerCase())) return desired;
+  let suffix = 2;
+  while (names.has(`${desired} (${suffix})`.toLowerCase())) suffix += 1;
+  return `${desired} (${suffix})`;
 }
 
 export function textForCell(cell: Cell | undefined): string {

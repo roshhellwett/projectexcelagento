@@ -143,7 +143,14 @@ export interface ExecutionPlan {
 }
 
 export type AgentEventType =
-  'thinking' | 'inspecting' | 'planning' | 'tool_call' | 'guardrail_check' | 'status';
+  | 'thinking'
+  | 'inspecting'
+  | 'planning'
+  | 'tool_call'
+  | 'guardrail_check'
+  /** Something was refused or had to be given up. Must read as distinct from progress. */
+  | 'warning'
+  | 'status';
 
 export interface AgentActivityEvent {
   id: string;
@@ -182,6 +189,15 @@ export interface MemoryRecord {
   failures: number;
   createdAt: number;
   lastUsedAt: number;
+  /**
+   * Identity of the sheet shape this was learned against: its header names in order.
+   *
+   * Learned arguments are column LETTERS, and letters move. Learn "sort by revenue" on a sheet
+   * whose revenue is column E, then delete column D, and the replay still targets E - which now
+   * holds a different field. Schema validation passes, the guardrail approves, and the user's
+   * data is silently reshuffled. Comparing this fingerprint before a replay is what stops it.
+   */
+  schemaFingerprint?: string;
 }
 
 export interface MemoryStore {
@@ -190,6 +206,16 @@ export interface MemoryStore {
   ): MemoryRecord;
   recordOutcome(operation: string, sheetName: string, success: boolean, key?: string): void;
   retrieve(query: string, sheetName: string, threshold?: number): MemoryRecord | undefined;
+  /**
+   * Retrieves a record only if its learned arguments still fit the sheet's current shape.
+   * Callers replaying a learned action against real user data must use this, not `retrieve`.
+   */
+  retrieveForWorkbook?(
+    query: string,
+    workbook: Workbook,
+    sheetName: string,
+    threshold?: number,
+  ): MemoryRecord | undefined;
   entries(): MemoryRecord[];
   toJSON(): string;
   confidenceOf?(record: MemoryRecord): number;

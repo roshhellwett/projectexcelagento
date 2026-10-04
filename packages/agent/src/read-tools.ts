@@ -278,10 +278,10 @@ export function calculateAggregate(
         resultValue = values.reduce((a, b) => a + b, 0) / values.length;
         break;
       case 'min':
-        resultValue = Math.min(...values);
+        resultValue = values.reduce((lowest, value) => Math.min(lowest, value), Infinity);
         break;
       case 'max':
-        resultValue = Math.max(...values);
+        resultValue = values.reduce((highest, value) => Math.max(highest, value), -Infinity);
         break;
     }
   }

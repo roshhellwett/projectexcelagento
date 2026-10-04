@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { HistoryEntry } from '@excel-agent/engine';
+
+import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 
 interface HistoryDrawerProps {
   isOpen: boolean;
@@ -16,10 +18,22 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   currentPosition,
   onStepBack,
 }) => {
+  const drawerRef = useRef<HTMLElement>(null);
+  // The drawer is not a modal - the grid stays usable behind it - but Escape still closes it and
+  // focus still returns to the control that opened it.
+  useDialogA11y(isOpen, drawerRef, onClose);
+
   if (!isOpen) return null;
 
   return (
-    <aside className="history-drawer">
+    <aside
+      className="history-drawer"
+      ref={drawerRef}
+      role="dialog"
+      aria-modal="false"
+      aria-label="Operation audit log"
+      data-dialog-open="true"
+    >
       <div className="agent-header">
         <div className="agent-title-group">
           <svg
@@ -41,7 +55,12 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           </div>
         </div>
 
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          aria-label="Close history"
+          onClick={onClose}
+        >
           ✕
         </button>
       </div>
@@ -60,6 +79,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Original loaded workbook</p>
           {currentPosition !== 0 && (
             <button
+              type="button"
               className="btn btn-secondary btn-sm"
               style={{ marginTop: '4px' }}
               onClick={() => onStepBack(0)}
@@ -92,6 +112,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
 
               {!isCurrent && (
                 <button
+                  type="button"
                   className="btn btn-secondary btn-sm"
                   style={{ marginTop: '4px' }}
                   onClick={() => onStepBack(stepNum)}

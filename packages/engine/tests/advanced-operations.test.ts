@@ -9,6 +9,7 @@ import {
   lookupMergeOperation,
   mergeColumnsOperation,
   splitColumnOperation,
+  HistoryStack,
   type Cell,
   type Workbook,
 } from '../src/index.js';
@@ -249,6 +250,84 @@ describe('advanced operations', () => {
       expect(values(result.workbook, 3, 'Orders')).toEqual([102, 'C2', 'Globex']);
       expect(values(result.workbook, 4, 'Orders')).toEqual([103, 'C99', null]);
       expect(lookupMergeOperation.invariants(before, result.workbook, args).valid).toBe(true);
+    });
+  });
+
+  describe('edit_cells', () => {
+    it('writes a value and undoes it through the registry', () => {
+      const before = workbook([row('Name', 'Qty'), row('Widget', 2)]);
+      const registry = createOperationRegistry();
+
+      const result = applyOperation(
+        before,
+        'edit_cells',
+        { sheet: 'Data', edits: [{ row: 2, column: 'B', value: 7 }] },
+        { registry, history: new HistoryStack(before, { snapshotEvery: 5 }) },
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(values(result.workbook, 2)).toEqual(['Widget', 7]);
+        // A keystroke in a cell must not stop and ask a human to confirm itself.
+        expect(result.preview.requiresConfirmation).toBe(false);
+        expect(result.report.affectedCells).toBe(1);
+      }
+    });
+
+    it('grows a short row and the sheet so a paste past the data lands', () => {
+      const before = workbook([row('A', 'B'), row(1)]);
+
+      const result = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: [
+          { row: 1, column: 'D', value: 'far right' },
+          { row: 3, column: 'A', value: 'new row' },
+        ],
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.workbook.sheets[0]?.rows).toHaveLength(3);
+        expect(values(result.workbook, 1)).toEqual(['A', 'B', null, 'far right']);
+        expect(values(result.workbook, 3)).toEqual(['new row']);
+      }
+    });
+
+    it('stores a formula and clears a cell back to blank', () => {
+      const before = workbook([row('A'), row(5)]);
+
+      const written = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: [{ row: 2, column: 'A', formula: '=A1*2' }],
+      });
+      expect(written.ok).toBe(true);
+      if (written.ok) {
+        expect(written.workbook.sheets[0]?.rows[1]?.[0]?.formula).toBe('=A1*2');
+        expect(written.workbook.sheets[0]?.rows[1]?.[0]?.type).toBe('formula');
+      }
+
+      const cleared = applyOperation(written.ok ? written.workbook : before, 'edit_cells', {
+        sheet: 'Data',
+        edits: [{ row: 2, column: 'A' }],
+      });
+      expect(cleared.ok).toBe(true);
+      if (cleared.ok) {
+        expect(cleared.workbook.sheets[0]?.rows[1]?.[0]?.value).toBe(null);
+        expect(cleared.workbook.sheets[0]?.rows[1]?.[0]?.formula).toBeUndefined();
+      }
+    });
+
+    it('refuses an address past the last column of a spreadsheet', () => {
+      const before = workbook([row('A')]);
+
+      const result = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: [{ row: 1, column: 'XFE', value: 'nope' }],
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.error.code).toBe('validation-error');
+      expect(result.error.messages.join(' ')).toMatch(/XFD/);
     });
   });
 

@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import {
   type Workbook,
   type Sheet,
   type ApplyOperationResult,
+  type DateSystem,
   type Preview,
   applyOperation,
   HistoryStack,
   cloneWorkbook,
+  maxColumnCount,
 } from '@excel-agent/engine';
 
 import { TopNav } from './components/TopNav.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
 import type { CellSelection } from './lib/selection-context.js';
+import type { CellEdit } from './lib/grid-edit.js';
 import { AgentChat, type ChatMessage } from './components/AgentChat.js';
 import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
@@ -25,6 +28,7 @@ import {
   createSampleWorkbook,
   xlsxToWorkbook,
   downloadWorkbookAsXlsx,
+  type ImportReport,
 } from './lib/engine-adapter.js';
 
 import {
@@ -64,6 +68,15 @@ const initialWorkbook = createSampleWorkbook();
 /** Top-level pages. The usage view is URL-addressable via `#/usage`. */
 export type WorkspaceView = 'workspace' | 'usage';
 
+/** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
+function describeDelimiter(delimiter: string): string {
+  if (delimiter === 'tab') return 'tab';
+  if (delimiter === ',') return 'comma';
+  if (delimiter === ';') return 'semicolon';
+  if (delimiter === '|') return 'pipe';
+  return delimiter;
+}
+
 function readViewFromHash(): WorkspaceView {
   try {
     if (typeof window === 'undefined') return 'workspace';
@@ -80,6 +93,9 @@ export const App: React.FC = () => {
   );
   const [fileName, setFileName] = useState('sample-orders.xlsx');
   const [hasUserUploadedFile, setHasUserUploadedFile] = useState(false);
+  // Which epoch the loaded workbook's serials count from; a 1904 file read as 1900 would show
+  // every date four years and a day early.
+  const [dateSystem, setDateSystem] = useState<DateSystem>('1900');
 
   // Search in sheet
   const [searchQuery, setSearchQuery] = useState('');
@@ -208,11 +224,15 @@ export const App: React.FC = () => {
 
   const sheetAudit = useMemo(() => auditSheet(currentSheet), [currentSheet]);
 
-  // Search results and highlighted cells
+  // Search results and highlighted cells.
+  // The matcher walks every cell, so it runs against a deferred copy of the query: typing stays
+  // responsive on a large sheet because React is free to keep the previous highlight on screen
+  // while the new one is computed.
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const searchMatches = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    return searchCellsInSheet(currentSheet, searchQuery);
-  }, [currentSheet, searchQuery]);
+    if (!deferredSearchQuery.trim()) return [];
+    return searchCellsInSheet(currentSheet, deferredSearchQuery);
+  }, [currentSheet, deferredSearchQuery]);
 
   const searchHighlightCells = useMemo(() => {
     return new Set(searchMatches.map((m) => `${m.sheet}:${m.row}:${m.column}`));
@@ -225,12 +245,20 @@ export const App: React.FC = () => {
 
   // Execute an engine operation transactionally
   const executeOperation = useCallback(
-    (name: string, input: unknown, learnQuery?: string): ApplyOperationResult => {
+    (
+      name: string,
+      input: unknown,
+      learnQuery?: string,
+      confirmed = false,
+      // A grid keystroke must not raise a toast per character, but a refusal still must be loud.
+      options?: { quiet?: boolean },
+    ): ApplyOperationResult => {
       setIsProcessing(true);
       try {
         const result = applyOperation(workbook, name, input, {
           registry,
           history: historyStack,
+          confirmed,
         });
 
         const args =
@@ -250,22 +278,31 @@ export const App: React.FC = () => {
             }
           }
           setRecentChangedCells(changedKeys);
-          pushToast(
-            'success',
-            `${name} applied - ${result.report.affectedCells} cell(s) updated, invariants verified.`,
-          );
+          if (!options?.quiet) {
+            pushToast(
+              'success',
+              `${name} applied - ${result.report.affectedCells} cell(s) updated, invariants verified.`,
+            );
+          }
         } else {
           pushToast('error', result.error.messages.join(' '));
         }
 
-        // Self-learning: reinforce or decay the association for this request.
-        if (learnQuery) {
+        // Self-learning: reinforce or decay the association for this request. A change that is
+        // merely awaiting confirmation is neither a success nor a rejection, so it must not
+        // decay what was learned - the user has not said it was wrong, only that they have not
+        // agreed to it yet.
+        const awaitingConfirmation = !result.ok && result.error.code === 'confirmation-required';
+        if (learnQuery && !awaitingConfirmation) {
           orchestrator.learn({
             query: learnQuery,
             sheetName,
             operation: name,
             args,
             success: result.ok,
+            // Ties the learned arguments to the column layout they were correct for, so a
+            // later replay can be refused if the sheet has since been reshaped.
+            workbook: result.ok ? result.workbook : workbook,
           });
           persistMemory();
           setLearnedActions(learnedActionCount());
@@ -277,6 +314,19 @@ export const App: React.FC = () => {
       }
     },
     [workbook, historyStack, activeSheetName, pushToast],
+  );
+
+  /**
+   * Commits a grid edit - a typed cell, a cleared range, a paste, a fill - through the engine, so it
+   * lands in the same undo stack and the same history log as every other change. It never demands
+   * confirmation: the person typing is the decision.
+   */
+  const handleEditCells = useCallback(
+    (sheet: string, edits: CellEdit[]) => {
+      if (edits.length === 0) return;
+      executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+    },
+    [executeOperation],
   );
 
   // Undo / Redo handlers
@@ -333,11 +383,17 @@ export const App: React.FC = () => {
   }, [handleUndo, handleRedo]);
 
   // Load new workbook
-  const loadNewWorkbook = (wb: Workbook, newFileName: string, isUserUpload = false) => {
+  const loadNewWorkbook = (
+    wb: Workbook,
+    newFileName: string,
+    isUserUpload = false,
+    system: DateSystem = '1900',
+  ) => {
     setWorkbook(wb);
     setActiveSheetName(wb.sheets[0]?.name || 'Sheet1');
     setFileName(newFileName);
     setHasUserUploadedFile(isUserUpload);
+    setDateSystem(system);
     const newStack = new HistoryStack(wb, { snapshotEvery: 5 });
     setHistoryStack(newStack);
     setHistoryRevision(0);
@@ -357,6 +413,41 @@ export const App: React.FC = () => {
   };
 
   // Upload handler
+  /**
+   * Tells the user how their file was interpreted and what could not be kept.
+   *
+   * A silent import is the worst outcome: the user opens a formatted report with merged
+   * titles and colour-coded status columns, is told it "loaded", works on it, exports, and
+   * hands back a flattened file with no idea anything was dropped.
+   */
+  const reportImport = (report: ImportReport, fileName: string, totalRows: number) => {
+    if (totalRows === 0) {
+      pushToast('info', `"${fileName}" loaded but contains no rows.`);
+      return;
+    }
+
+    const details: string[] = [];
+    if (report.source === 'csv') {
+      details.push(
+        `read as ${report.encoding.toUpperCase()}, ${describeDelimiter(report.delimiter)}-delimited`,
+      );
+    }
+    if (report.dateSystem === '1904') details.push('1904 date system');
+    if (report.cellsConvertedToDates > 0) {
+      details.push(`${report.cellsConvertedToDates} date cells`);
+    }
+
+    const summary = `Loaded "${fileName}" - ${totalRows} rows${details.length > 0 ? ` (${details.join(', ')})` : ''}.`;
+    if (report.dropped.length === 0) {
+      pushToast('success', summary);
+      return;
+    }
+    pushToast(
+      'warning',
+      `${summary} Not carried over: ${report.dropped.join(', ')}. Exporting will not restore these.`,
+    );
+  };
+
   const handleFileUpload = (file: File) => {
     const MAX_BYTES = 50 * 1024 * 1024;
     if (file.size > MAX_BYTES) {
@@ -373,17 +464,10 @@ export const App: React.FC = () => {
         return;
       }
       try {
-        const wb = await xlsxToWorkbook(buffer);
+        const { workbook: wb, report } = await xlsxToWorkbook(buffer);
         const totalRows = wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
-        if (totalRows === 0) {
-          pushToast('info', `"${file.name}" loaded but contains no rows.`);
-        } else {
-          pushToast(
-            'success',
-            `Loaded "${file.name}" - ${wb.sheets.length} sheet(s), ${totalRows} rows.`,
-          );
-        }
-        loadNewWorkbook(wb, file.name, true);
+        loadNewWorkbook(wb, file.name, true, report.dateSystem);
+        reportImport(report, file.name, totalRows);
       } catch (error) {
         pushToast(
           'error',
@@ -405,8 +489,10 @@ export const App: React.FC = () => {
       const response = await fetch(`/fixtures/${fixtureName}`);
       if (!response.ok) throw new Error('Fixture file not found');
       const buffer = await response.arrayBuffer();
-      const wb = await xlsxToWorkbook(buffer);
-      loadNewWorkbook(wb, fixtureName, true);
+      const { workbook: wb, report } = await xlsxToWorkbook(buffer);
+      loadNewWorkbook(wb, fixtureName, true, report.dateSystem);
+      const fixtureRows = wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
+      reportImport(report, fixtureName, fixtureRows);
     } catch (error) {
       pushToast('error', error instanceof Error ? error.message : `Could not load ${fixtureName}`);
     }
@@ -589,26 +675,52 @@ export const App: React.FC = () => {
   };
 
   // Apply multi-step execution plan from chat
-  const handleApplyPlan = (messageId: string, plan: ExecutionPlan) => {
+  const handleApplyPlan = (messageId: string, plan: ExecutionPlan, confirmed = false) => {
     setIsProcessing(true);
     let currentWb = workbook;
     let appliedCount = 0;
     const updatedSteps = [...plan.steps];
     let planFailed = false;
+    // Remembered so a partial run can be rewound through history rather than guessed at.
+    const historyPositionBefore = historyStack.position;
 
     try {
       for (let i = 0; i < updatedSteps.length; i++) {
         const step = updatedSteps[i];
         if (!step) continue;
+
+        // A step the guardrail already rejected must never be executed just because it is part
+        // of a batch. Applying the rest is still worth offering, so it is skipped, not fatal.
+        if (step.status === 'error' && !confirmed) {
+          pushToast(
+            'warning',
+            `Skipped Step ${i + 1} (${step.operation}): ${step.error ?? 'this step failed validation'}.`,
+          );
+          continue;
+        }
+
         const result = applyOperation(currentWb, step.operation, step.args, {
           registry,
           history: historyStack,
+          confirmed,
         });
 
         if (result.ok) {
           currentWb = result.workbook;
           appliedCount++;
           updatedSteps[i] = { ...step, status: 'completed' };
+        } else if (result.error.code === 'confirmation-required') {
+          planFailed = true;
+          updatedSteps[i] = {
+            ...step,
+            status: 'error',
+            error: result.error.messages.join(', '),
+          };
+          pushToast(
+            'warning',
+            `Plan needs confirmation at Step ${i + 1} (${step.operation}). Nothing was applied - review the plan and apply again to confirm.`,
+          );
+          break;
         } else {
           planFailed = true;
           updatedSteps[i] = {
@@ -624,7 +736,21 @@ export const App: React.FC = () => {
         }
       }
 
-      setWorkbook(currentWb);
+      // A plan is one unit of work. If any step failed, the workbook is left exactly as it was
+      // rather than half-transformed, because there is no "undo the plan" affordance for a user
+      // to discover and pressing Ctrl+Z a step at a time is not a recovery strategy.
+      const rolledBack = planFailed && appliedCount > 0;
+      if (rolledBack) {
+        pushToast(
+          'info',
+          `Rolled back ${appliedCount} applied step(s) so the workbook stays consistent.`,
+        );
+        // Rewind history to where the plan started, so the partial run leaves neither the
+        // workbook nor the undo stack in a half-transformed state.
+        historyStack.restore(historyPositionBefore);
+      }
+
+      setWorkbook(rolledBack ? workbook : currentWb);
       setHistoryRevision((r) => r + 1);
 
       const finalStatus: 'applied' | 'error' = planFailed ? 'error' : 'applied';
@@ -658,34 +784,68 @@ export const App: React.FC = () => {
   };
 
   // Apply proposed action from chat
-  const handleApplyAction = (messageId: string, action: ProposedAction) => {
+  const handleApplyAction = (messageId: string, action: ProposedAction, confirmed = false) => {
     const sourceQuery = messages.find((message) => message.id === messageId)?.sourceQuery;
-    const result = executeOperation(action.name, action.args, sourceQuery);
+    const result = executeOperation(action.name, action.args, sourceQuery, confirmed);
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.id === messageId) {
-          if (result.ok) {
-            const affectedCount =
-              result.report.affectedCells ??
-              result.report.removedRows ??
-              result.report.deletedColumns ??
-              result.report.addedColumns ??
-              0;
-            return {
-              ...m,
-              status: 'applied',
-              text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
-            };
-          } else {
-            return {
-              ...m,
-              status: 'error',
-              errorMessage: result.error.messages.join(', '),
-            };
-          }
+        if (m.id !== messageId) return m;
+        if (result.ok) {
+          const affectedCount =
+            result.report.affectedCells ??
+            result.report.removedRows ??
+            result.report.deletedColumns ??
+            result.report.addedColumns ??
+            0;
+          return {
+            ...m,
+            status: 'applied',
+            confirmationPrompt: undefined,
+            text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
+          };
         }
-        return m;
+        // The engine refused pending a human decision. Move the card into its confirm state
+        // instead of showing an error, so the user can approve or dismiss it.
+        if (result.error.code === 'confirmation-required') {
+          return {
+            ...m,
+            status: 'confirming',
+            confirmationPrompt: {
+              affectedCells: result.preview?.affectedCells ?? 0,
+              reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
+            },
+          };
+        }
+        return {
+          ...m,
+          status: 'error',
+          confirmationPrompt: undefined,
+          errorMessage: result.error.messages.join(', '),
+        };
       }),
+    );
+  };
+
+  const handleCancelAction = (messageId: string) => {
+    // A cancellation is a real signal: the agent proposed the wrong thing.
+    const message = messages.find((m) => m.id === messageId);
+    if (message?.proposedAction && message.sourceQuery) {
+      orchestrator.learn({
+        query: message.sourceQuery,
+        sheetName: activeSheetName,
+        operation: message.proposedAction.name,
+        args: message.proposedAction.args,
+        success: false,
+      });
+      persistMemory();
+      setLearnedActions(learnedActionCount());
+    }
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, status: 'error', confirmationPrompt: undefined, errorMessage: 'Cancelled.' }
+          : m,
+      ),
     );
   };
 
@@ -716,7 +876,7 @@ export const App: React.FC = () => {
               sheetName: activeSheetName,
               sheets: workbook.sheets.length,
               rows: currentSheet.rows.length,
-              cols: Math.max(...currentSheet.rows.map((row) => row.length), 0),
+              cols: maxColumnCount(currentSheet.rows),
             }}
             onBack={() => navigate('workspace')}
             onOpenSettings={() => setIsSettingsOpen(true)}
@@ -746,7 +906,7 @@ export const App: React.FC = () => {
         fileName={fileName}
         activeSheetName={activeSheetName}
         rowCount={currentSheet.rows.length}
-        colCount={Math.max(...currentSheet.rows.map((r) => r.length), 0)}
+        colCount={maxColumnCount(currentSheet.rows)}
         canUndo={historyStack.canUndo}
         canRedo={historyStack.canRedo}
         historyLength={historyStack.length}
@@ -774,12 +934,14 @@ export const App: React.FC = () => {
           <SpreadsheetGrid
             workbook={workbook}
             activeSheetName={activeSheetName}
+            dateSystem={dateSystem}
             onSelectSheet={(sheet) => setActiveSheetName(sheet)}
             recentChangedCells={recentChangedCells}
             searchHighlightCells={searchHighlightCells}
             onQuickSort={handleQuickSort}
             onFileDrop={handleFileUpload}
             onAddSelectionContext={setSelectionContext}
+            onEditCells={handleEditCells}
           />
         </ErrorBoundary>
 
@@ -796,6 +958,7 @@ export const App: React.FC = () => {
             onSendMessage={handleSendMessage}
             onApplyAction={handleApplyAction}
             onApplyPlan={handleApplyPlan}
+            onCancelAction={handleCancelAction}
             onUndoLast={handleUndo}
             canUndo={historyStack.canUndo}
             onStop={() => turnAbortRef.current?.abort()}

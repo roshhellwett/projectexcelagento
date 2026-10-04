@@ -970,13 +970,78 @@ export const setCellsArgsSchema = z.object({
 });
 export type SetCellsArgs = z.infer<typeof setCellsArgsSchema>;
 
+interface CellRun {
+  startRow: number;
+  endRow: number;
+  startColumn: number;
+  endColumn: number;
+}
+
+/** Extend the previous run into a rectangle when the next run sits directly to its right. */
+function pushRun(runs: CellRun[], startRow: number, endRow: number, column: number): void {
+  const previous = runs[runs.length - 1];
+  if (
+    previous !== undefined &&
+    previous.endColumn === column - 1 &&
+    previous.startRow === startRow &&
+    previous.endRow === endRow
+  ) {
+    previous.endColumn = column;
+    return;
+  }
+  runs.push({ startRow, endRow, startColumn: column, endColumn: column });
+}
+
+/**
+ * Coalesce the written addresses into contiguous row runs and merge horizontally
+ * adjacent runs into rectangles. A 300-cell batch used to declare 300 single-cell
+ * ranges, which then fed the O(cells x ranges) target checks. The invariant reads
+ * these ranges only as the SET of covered cells, so the rectangles stay
+ * semantically equivalent - and because every written address is inside one of
+ * them, coverage is never under-reported.
+ */
 function setCellsTarget(_workbook: Workbook, args: SetCellsArgs): CellRange[] {
-  return args.cells.map((cell) => ({
+  const rowsByColumn = new Map<number, Set<number>>();
+  for (const cell of args.cells) {
+    const column = columnToIndex(cell.column);
+    if (column === undefined) {
+      continue;
+    }
+    const rows = rowsByColumn.get(column);
+    if (rows) {
+      rows.add(cell.row);
+    } else {
+      rowsByColumn.set(column, new Set([cell.row]));
+    }
+  }
+
+  const runs: CellRun[] = [];
+  for (const column of [...rowsByColumn.keys()].sort((left, right) => left - right)) {
+    const rows = [...(rowsByColumn.get(column) as Set<number>)].sort((left, right) => left - right);
+    let startRow = rows[0] as number;
+    let endRow = startRow - 1;
+    for (const row of rows) {
+      if (row === endRow + 1) {
+        endRow = row;
+        continue;
+      }
+      if (endRow >= startRow) {
+        pushRun(runs, startRow, endRow, column);
+      }
+      startRow = row;
+      endRow = row;
+    }
+    if (endRow >= startRow) {
+      pushRun(runs, startRow, endRow, column);
+    }
+  }
+
+  return runs.map((run) => ({
     sheet: args.sheet,
-    startRow: cell.row,
-    endRow: cell.row,
-    startColumn: cell.column,
-    endColumn: cell.column,
+    startRow: run.startRow,
+    endRow: run.endRow,
+    startColumn: indexToColumn(run.startColumn),
+    endColumn: indexToColumn(run.endColumn),
   }));
 }
 

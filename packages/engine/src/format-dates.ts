@@ -12,6 +12,7 @@ import type {
   ValidationResult,
   Workbook,
 } from './types.js';
+import { FICTITIOUS_SERIAL_60, excelSerialToDate } from './formula/excel-date.js';
 import { runInvariants } from './invariants.js';
 import {
   cellEquals,
@@ -56,9 +57,6 @@ interface ScannedCell {
   parsed: ParsedDate;
 }
 
-const MAX_EXCEL_SERIAL_1900 = 2_958_465;
-const MAX_EXCEL_SERIAL_1904 = 2_957_003;
-
 function issue(code: string, message: string, location?: CellLocation): ValidationIssue {
   return { code, message, ...(location ? { location } : {}) };
 }
@@ -84,38 +82,29 @@ function utcDate(year: number, month: number, day: number): Date | undefined {
   return date;
 }
 
+/**
+ * Resolves an Excel serial to a day, deferring the epoch arithmetic to `excel-date.ts` so this
+ * operation cannot drift from the formula engine or the grid renderer.
+ *
+ * The 1900 system carries Excel's own leap-year bug: serial 60 names 1900-02-29, a day that never
+ * existed. The shared converter refuses it, and this wrapper keeps the distinction the report
+ * needs - serial 60 is a warning about a real value, while an out-of-range serial is simply not a
+ * date and must be left alone.
+ */
 function parseExcelSerial(serial: number, dateSystem: FormatDatesArgs['dateSystem']): ParsedDate {
   if (!Number.isFinite(serial)) {
     return { kind: 'invalid', reason: 'The numeric value is not finite.' };
   }
 
-  if (dateSystem === '1900') {
-    if (serial < 1 || serial > MAX_EXCEL_SERIAL_1900) {
-      return { kind: 'not-date' };
-    }
-    if (serial === 60) {
-      return {
-        kind: 'invalid',
-        reason: 'Excel serial 60 is the fictitious 1900-02-29 and cannot be represented.',
-      };
-    }
-
-    // Excel's 1900 date system includes a fictitious leap day. Adding one day
-    // before that day keeps serial 1 = 1900-01-01 and serial 61 = 1900-03-01.
-    const adjustedSerial = serial < 60 ? serial + 1 : serial;
+  if (dateSystem === '1900' && serial === FICTITIOUS_SERIAL_60) {
     return {
-      kind: 'date',
-      date: new Date(Date.UTC(1899, 11, 30) + adjustedSerial * 86_400_000),
+      kind: 'invalid',
+      reason: 'Excel serial 60 is the fictitious 1900-02-29 and cannot be represented.',
     };
   }
 
-  if (serial < 0 || serial > MAX_EXCEL_SERIAL_1904) {
-    return { kind: 'not-date' };
-  }
-  return {
-    kind: 'date',
-    date: new Date(Date.UTC(1904, 0, 1) + serial * 86_400_000),
-  };
+  const date = excelSerialToDate(serial, dateSystem);
+  return date ? { kind: 'date', date } : { kind: 'not-date' };
 }
 
 function parseTextDate(text: string): ParsedDate {

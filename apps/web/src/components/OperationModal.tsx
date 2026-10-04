@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { type Workbook, indexToColumn } from '@excel-agent/engine';
+import React, { useRef, useState } from 'react';
+import { type Workbook, indexToColumn, maxColumnCount } from '@excel-agent/engine';
+
+import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 
 interface OperationModalProps {
   isOpen: boolean;
@@ -40,17 +42,15 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   activeSheetName,
   onExecute,
 }) => {
-  if (!isOpen) return null;
-
-  const currentSheet =
-    workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
-  const totalCols = currentSheet ? Math.max(...currentSheet.rows.map((r) => r.length), 0) : 0;
-  const colLetters = Array.from({ length: totalCols }).map((_, i) => indexToColumn(i));
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Every hook runs whether or not the modal is showing, so opening it is not a different
+  // component as far as React is concerned.
+  useDialogA11y(isOpen, cardRef, onClose);
 
   const [selectedOp, setSelectedOp] = useState('format_dates');
 
   // Form states
-  const [col, setCol] = useState(colLetters[0] || 'A');
+  const [col, setCol] = useState('A');
   const [dateFormat, setDateFormat] = useState<'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD/MM/YYYY'>(
     'YYYY-MM-DD',
   );
@@ -66,6 +66,13 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   const [fillValue, setFillValue] = useState('');
   const [cellCoord, setCellCoord] = useState('A2');
   const [cellVal, setCellVal] = useState('');
+
+  if (!isOpen) return null;
+
+  const currentSheet =
+    workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
+  const totalCols = currentSheet ? maxColumnCount(currentSheet.rows) : 0;
+  const colLetters = Array.from({ length: totalCols }).map((_, i) => indexToColumn(i));
 
   const handleRun = () => {
     if (!currentSheet) return;
@@ -188,20 +195,45 @@ export const OperationModal: React.FC<OperationModalProps> = ({
     onClose();
   };
 
+  const columnOptions = colLetters.map((c) => (
+    <option key={c} value={c}>
+      Column {c}
+    </option>
+  ));
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-card"
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="operation-modal-title"
+        data-dialog-open="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <div className="modal-title">Run Engine Operation</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+          <div className="modal-title" id="operation-modal-title">
+            Run Engine Operation
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-label="Close"
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
 
         <div className="modal-body">
           <div className="form-group">
-            <label className="form-label">Select Operation</label>
+            <label className="form-label" htmlFor="op-operation">
+              Select Operation
+            </label>
             <select
+              id="op-operation"
+              data-autofocus
               className="select-input"
               value={selectedOp}
               onChange={(e) => setSelectedOp(e.target.value)}
@@ -218,23 +250,25 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'format_dates' && (
             <>
               <div className="form-group">
-                <label className="form-label">Target Column</label>
+                <label className="form-label" htmlFor="op-column">
+                  Target Column
+                </label>
                 <select
+                  id="op-column"
                   className="select-input"
                   value={col}
                   onChange={(e) => setCol(e.target.value)}
                 >
-                  {colLetters.map((c) => (
-                    <option key={c} value={c}>
-                      Column {c}
-                    </option>
-                  ))}
+                  {columnOptions}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Desired Date Format</label>
+                <label className="form-label" htmlFor="op-date-format">
+                  Desired Date Format
+                </label>
                 <select
+                  id="op-date-format"
                   className="select-input"
                   value={dateFormat}
                   onChange={(e) =>
@@ -252,23 +286,25 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'normalize_text' && (
             <>
               <div className="form-group">
-                <label className="form-label">Target Column</label>
+                <label className="form-label" htmlFor="op-column">
+                  Target Column
+                </label>
                 <select
+                  id="op-column"
                   className="select-input"
                   value={col}
                   onChange={(e) => setCol(e.target.value)}
                 >
-                  {colLetters.map((c) => (
-                    <option key={c} value={c}>
-                      Column {c}
-                    </option>
-                  ))}
+                  {columnOptions}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Transform Type</label>
+                <label className="form-label" htmlFor="op-text-transform">
+                  Transform Type
+                </label>
                 <select
+                  id="op-text-transform"
                   className="select-input"
                   value={textTransform}
                   onChange={(e) =>
@@ -289,23 +325,25 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'sort_range' && (
             <>
               <div className="form-group">
-                <label className="form-label">Sort Column</label>
+                <label className="form-label" htmlFor="op-column">
+                  Sort Column
+                </label>
                 <select
+                  id="op-column"
                   className="select-input"
                   value={col}
                   onChange={(e) => setCol(e.target.value)}
                 >
-                  {colLetters.map((c) => (
-                    <option key={c} value={c}>
-                      Column {c}
-                    </option>
-                  ))}
+                  {columnOptions}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Sort Direction</label>
+                <label className="form-label" htmlFor="op-sort-direction">
+                  Sort Direction
+                </label>
                 <select
+                  id="op-sort-direction"
                   className="select-input"
                   value={sortDir}
                   onChange={(e) => setSortDir(e.target.value as 'asc' | 'desc')}
@@ -320,23 +358,25 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'filter_rows' && (
             <>
               <div className="form-group">
-                <label className="form-label">Filter Column</label>
+                <label className="form-label" htmlFor="op-column">
+                  Filter Column
+                </label>
                 <select
+                  id="op-column"
                   className="select-input"
                   value={col}
                   onChange={(e) => setCol(e.target.value)}
                 >
-                  {colLetters.map((c) => (
-                    <option key={c} value={c}>
-                      Column {c}
-                    </option>
-                  ))}
+                  {columnOptions}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Operator</label>
+                <label className="form-label" htmlFor="op-filter-operator">
+                  Operator
+                </label>
                 <select
+                  id="op-filter-operator"
                   className="select-input"
                   value={filterCond}
                   onChange={(e) => setFilterCond(e.target.value as FilterOperator)}
@@ -354,8 +394,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
               </div>
 
               <div className="form-group">
-                <label className="form-label">Comparison Value</label>
+                <label className="form-label" htmlFor="op-filter-value">
+                  Comparison Value
+                </label>
                 <input
+                  id="op-filter-value"
                   type="text"
                   className="form-input"
                   value={filterVal}
@@ -369,8 +412,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'find_replace' && (
             <>
               <div className="form-group">
-                <label className="form-label">Find Text</label>
+                <label className="form-label" htmlFor="op-find">
+                  Find Text
+                </label>
                 <input
+                  id="op-find"
                   type="text"
                   className="form-input"
                   value={findText}
@@ -379,8 +425,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Replace With</label>
+                <label className="form-label" htmlFor="op-replace">
+                  Replace With
+                </label>
                 <input
+                  id="op-replace"
                   type="text"
                   className="form-input"
                   value={replaceText}
@@ -402,22 +451,24 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'rename_column' && (
             <>
               <div className="form-group">
-                <label className="form-label">Select Column</label>
+                <label className="form-label" htmlFor="op-column">
+                  Select Column
+                </label>
                 <select
+                  id="op-column"
                   className="select-input"
                   value={col}
                   onChange={(e) => setCol(e.target.value)}
                 >
-                  {colLetters.map((c) => (
-                    <option key={c} value={c}>
-                      Column {c}
-                    </option>
-                  ))}
+                  {columnOptions}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">New Header Name</label>
+                <label className="form-label" htmlFor="op-new-column-name">
+                  New Header Name
+                </label>
                 <input
+                  id="op-new-column-name"
                   type="text"
                   className="form-input"
                   value={newColName}
@@ -430,13 +481,16 @@ export const OperationModal: React.FC<OperationModalProps> = ({
 
           {selectedOp === 'delete_column' && (
             <div className="form-group">
-              <label className="form-label">Column to Delete</label>
-              <select className="select-input" value={col} onChange={(e) => setCol(e.target.value)}>
-                {colLetters.map((c) => (
-                  <option key={c} value={c}>
-                    Column {c}
-                  </option>
-                ))}
+              <label className="form-label" htmlFor="op-column">
+                Column to Delete
+              </label>
+              <select
+                id="op-column"
+                className="select-input"
+                value={col}
+                onChange={(e) => setCol(e.target.value)}
+              >
+                {columnOptions}
               </select>
             </div>
           )}
@@ -444,8 +498,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'add_column' && (
             <>
               <div className="form-group">
-                <label className="form-label">Column Name</label>
+                <label className="form-label" htmlFor="op-new-column-name">
+                  Column Name
+                </label>
                 <input
+                  id="op-new-column-name"
                   type="text"
                   className="form-input"
                   value={newColName}
@@ -454,8 +511,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Initial Default Value</label>
+                <label className="form-label" htmlFor="op-default-value">
+                  Initial Default Value
+                </label>
                 <input
+                  id="op-default-value"
                   type="text"
                   className="form-input"
                   value={fillValue}
@@ -469,8 +529,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           {selectedOp === 'set_cells' && (
             <>
               <div className="form-group">
-                <label className="form-label">Cell Address (e.g. C3)</label>
+                <label className="form-label" htmlFor="op-cell-address">
+                  Cell Address (e.g. C3)
+                </label>
                 <input
+                  id="op-cell-address"
                   type="text"
                   className="form-input"
                   value={cellCoord}
@@ -478,8 +541,11 @@ export const OperationModal: React.FC<OperationModalProps> = ({
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">New Cell Value</label>
+                <label className="form-label" htmlFor="op-cell-value">
+                  New Cell Value
+                </label>
                 <input
+                  id="op-cell-value"
                   type="text"
                   className="form-input"
                   value={cellVal}
@@ -492,10 +558,10 @@ export const OperationModal: React.FC<OperationModalProps> = ({
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary btn-sm" onClick={handleRun}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={handleRun}>
             Execute Operation
           </button>
         </div>

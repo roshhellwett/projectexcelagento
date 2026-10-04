@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createCell, createOperationRegistry, type Workbook } from '@excel-agent/engine';
 
-import { createMemoryStore, createOrchestrator } from '../src/index.js';
+import { createMemoryStore, createOrchestrator, sheetFingerprint } from '../src/index.js';
 
 function ordersWorkbook(): Workbook {
   return {
@@ -110,6 +110,9 @@ describe('ExcelAgentOrchestrator', () => {
       operation: 'delete_duplicates',
       args: { sheet: 'Orders', columns: ['A', 'B', 'C'], headerRow: 1, keep: 'first' },
       sheetName: 'Orders',
+      // The learned arguments are column letters, so they are only valid against the header
+      // layout they were learned on.
+      schemaFingerprint: sheetFingerprint(ordersWorkbook(), 'Orders'),
     });
     memory.recordOutcome('delete_duplicates', 'Orders', true);
     memory.recordOutcome('delete_duplicates', 'Orders', true);
@@ -124,6 +127,39 @@ describe('ExcelAgentOrchestrator', () => {
     expect(decision.source).toBe('memory');
     expect(decision.action?.name).toBe('delete_duplicates');
     expect(decision.guardrail?.passed).toBe(true);
+  });
+
+  it('refuses to replay a learned action after the sheet shape has changed', async () => {
+    const memory = createMemoryStore();
+    memory.remember({
+      key: 'sort by revenue',
+      rawQuery: 'sort by revenue',
+      operation: 'sort_range',
+      // "Revenue" is column C in this layout.
+      args: { sheet: 'Orders', column: 'C', direction: 'desc', startRow: 2 },
+      sheetName: 'Orders',
+      schemaFingerprint: sheetFingerprint(ordersWorkbook(), 'Orders'),
+    });
+    for (let i = 0; i < 4; i += 1) memory.recordOutcome('sort_range', 'Orders', true);
+
+    // A column is deleted, so every letter from D onward shifts left and column C is no longer
+    // revenue. Replaying the frozen args would sort by the wrong field and pass every check.
+    const reshaped = ordersWorkbook();
+    reshaped.sheets[0]!.rows[0] = [createCell('Order ID'), createCell('Customer')];
+    for (const row of reshaped.sheets[0]!.rows) row.splice(2, 1);
+
+    const orchestrator = createOrchestrator({ registry, memory });
+    const decision = await orchestrator.decide({
+      query: 'sort by revenue',
+      workbook: reshaped,
+      sheetName: 'Orders',
+    });
+
+    // The stale record must not be replayed. Whatever happens next must be freshly derived.
+    expect(decision.source).not.toBe('memory');
+    expect(
+      decision.trace.some((step) => step.layer === 'memory' && step.summary.includes('sort_range')),
+    ).toBe(false);
   });
 
   it('exposes a tool catalog derived from the engine registry', () => {

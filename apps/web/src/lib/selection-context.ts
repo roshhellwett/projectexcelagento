@@ -12,10 +12,23 @@ export interface CellSelection {
   summary: string;
 }
 
+/**
+ * Renders a cell value for inclusion in the agent query.
+ *
+ * This summary is concatenated into the query string that the deterministic keyword planner
+ * scans, so a cell whose text happens to be "delete all rows" would otherwise steer the
+ * planner by itself. Collapsing whitespace and stripping the separators that structure a
+ * request keeps a cell's words from being read as a command, while the value stays visible to
+ * the user and to the model.
+ */
 const preview = (value: unknown): string => {
   if (value === null || value === undefined || value === '') return '(empty)';
-  const s = String(value);
-  return s.length > 40 ? `${s.slice(0, 40)}...` : s;
+  const text = value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  const inert = text
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[;:`"'\\]/g, ' ')
+    .trim();
+  return inert.length > 40 ? `${inert.slice(0, 40)}...` : inert;
 };
 
 export function describeCellSelection(

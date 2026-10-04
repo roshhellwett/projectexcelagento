@@ -147,6 +147,12 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
     category: 'transform',
     example: { sheet: 'Sheet1', targetSheet: 'Sheet1_Clean' },
   },
+  edit_cells: {
+    description:
+      'Write specific values into individual cells, growing the sheet when an address is past the current data. Use for precise, targeted edits; prefer the range operations for bulk work.',
+    category: 'transform',
+    example: { sheet: 'Sheet1', edits: [{ row: 2, column: 'B', value: 60 }] },
+  },
   lookup_merge: {
     description:
       'Merge and match values from another sheet based on a common key column (VLOOKUP / XLOOKUP behavior).',
@@ -159,6 +165,71 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
       lookupValueColumn: 'B',
       headerName: 'Customer Name',
       headerRow: 1,
+    },
+  },
+  aggregate_column: {
+    description:
+      'Compute one number for a column: sum, average, count, count_distinct, min, max, median, or stdev. Writes nothing and returns the value in the report. criteria takes a COUNTIF expression such as ">100", or an operator with its operand in criteriaValue.',
+    category: 'transform',
+    example: {
+      sheet: 'Sheet1',
+      column: 'D',
+      aggregation: 'sum',
+      criteria: '>100',
+    },
+  },
+  group_and_summarize: {
+    description:
+      'Pivot: group rows by one or more columns, aggregate a value column (sum, average, count, min, max), and write the result to a new sheet, sorted by group key. Text in the value column is counted and reported, not read as zero.',
+    category: 'transform',
+    example: {
+      sheet: 'Sheet1',
+      groupBy: ['B'],
+      valueColumn: 'D',
+      aggregation: 'sum',
+      targetSheet: 'By Region',
+    },
+  },
+  join_sheets: {
+    description:
+      'Join two sheets on a key column, appending one or more lookup columns. Keys match case-insensitively after trimming; duplicate lookup keys keep the first match and warn. An inner join drops unmatched rows and needs confirmation; a left join keeps them blank.',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      keyColumn: 'B',
+      lookupSheet: 'Customers',
+      lookupKeyColumn: 'A',
+      lookupValueColumn: 'B',
+      headerName: 'Customer Name',
+      joinType: 'left',
+    },
+  },
+  fill_series: {
+    description:
+      'Autofill a column below a source range: copy repeats values, linear extrapolates a step, date repeats a day/week/month/year interval, text increments a trailing number. Refuses when the source cannot support the strategy and confirms before overwriting.',
+    category: 'transform',
+    example: {
+      sheet: 'Sheet1',
+      column: 'A',
+      strategy: 'linear',
+      sourceRange: 'A2:A3',
+      targetStartRow: 4,
+      targetEndRow: 12,
+    },
+  },
+  categorize_column: {
+    description:
+      'Label each row with the first matching rule (equals, not_equals, contains, starts_with, ends_with, gt/gte/lt/lte, between) or otherwise. Refuses a duplicate column name unless afterColumn places it explicitly.',
+    category: 'columns',
+    example: {
+      sheet: 'Sheet1',
+      sourceColumn: 'D',
+      newColumnName: 'Amount Band',
+      rules: [
+        { operator: 'gte', value: 1000, label: 'Large' },
+        { operator: 'between', value: [100, 999], label: 'Medium' },
+      ],
+      otherwise: 'Small',
     },
   },
 };

@@ -1,13 +1,16 @@
-import {
-  createCell,
-  type Cell,
-  type CellValue,
-  type Workbook,
-  type Sheet,
-} from '@excel-agent/engine';
+import { createCell, type Workbook } from '@excel-agent/engine';
 import { parseXlsxWorker, exportXlsxWorker } from './worker-client.js';
+import {
+  parseWorkbookBytes,
+  workbookToXlsxBytes,
+  MAX_IMPORTED_CELLS,
+  type ImportReport,
+} from './workbook-io.js';
 
 type XlsxModule = typeof import('xlsx');
+
+export { MAX_IMPORTED_CELLS };
+export type { ImportReport };
 
 let xlsxLoad: Promise<XlsxModule> | null = null;
 
@@ -22,139 +25,24 @@ function loadXlsx(): Promise<XlsxModule> {
   return xlsxLoad;
 }
 
-/** Guard against pathological sheets that would freeze the browser tab. */
-export const MAX_IMPORTED_CELLS = 1_500_000;
-
-function looksLikeZip(bytes: Uint8Array): boolean {
-  return (
-    bytes.length > 3 &&
-    bytes[0] === 0x50 &&
-    bytes[1] === 0x4b &&
-    bytes[2] === 0x03 &&
-    bytes[3] === 0x04
-  );
-}
-
-function looksLikeOle2(bytes: Uint8Array): boolean {
-  return (
-    bytes.length > 7 &&
-    bytes[0] === 0xd0 &&
-    bytes[1] === 0xcf &&
-    bytes[2] === 0x11 &&
-    bytes[3] === 0xe0 &&
-    bytes[4] === 0xa1 &&
-    bytes[5] === 0xb1 &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0xe1
-  );
-}
-
 /**
- * Parse an uploaded workbook. Handles both real .xlsx/.xlsm archives (detected by
- * their ZIP magic bytes) and plain-text CSV/TSV files, and refuses sheets large
- * enough to hang the tab.
+ * Parse an uploaded workbook. Delegates to the same parser the worker uses, so the
+ * main-thread fallback and the worker path can never disagree about what a file contains.
  */
-export async function xlsxToWorkbook(arrayBuffer: ArrayBuffer): Promise<Workbook> {
+export async function xlsxToWorkbook(
+  arrayBuffer: ArrayBuffer,
+): Promise<{ workbook: Workbook; report: ImportReport }> {
   // Offload to background Web Worker thread to keep the UI at 60 FPS
   const workerResult = await parseXlsxWorker(arrayBuffer);
   if (workerResult) return workerResult;
 
   const XLSX = await loadXlsx();
-  const bytes = new Uint8Array(arrayBuffer);
-  const isBinary = looksLikeZip(bytes) || looksLikeOle2(bytes);
-  const wb = isBinary
-    ? XLSX.read(bytes, {
-        type: 'array',
-        cellDates: false,
-        cellFormula: true,
-        cellStyles: true,
-      })
-    : XLSX.read(new TextDecoder().decode(bytes), {
-        type: 'string',
-        cellDates: false,
-        cellFormula: true,
-      });
-
-  const sheets: Sheet[] = wb.SheetNames.map((sheetName) => {
-    const ws = wb.Sheets[sheetName];
-    if (!ws || !ws['!ref']) {
-      return { name: sheetName, rows: [] };
-    }
-
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    const rowCount = range.e.r + 1;
-    const colCount = range.e.c + 1;
-
-    if (rowCount * colCount > MAX_IMPORTED_CELLS) {
-      throw new Error(
-        `Sheet "${sheetName}" contains ${rowCount * colCount} cells, above the ${MAX_IMPORTED_CELLS} safety limit.`,
-      );
-    }
-
-    const rows: Cell[][] = [];
-    for (let r = 0; r < rowCount; r += 1) {
-      const rowCells: Cell[] = [];
-      for (let c = 0; c < colCount; c += 1) {
-        const cellAddress = XLSX.utils.encode_cell({ r, c });
-        const cellObj = ws[cellAddress];
-
-        if (!cellObj) {
-          rowCells.push(createCell(null));
-          continue;
-        }
-
-        let val: CellValue = null;
-        if (typeof cellObj.v === 'string') {
-          val = cellObj.v;
-        } else if (typeof cellObj.v === 'number') {
-          val = cellObj.v;
-        } else if (typeof cellObj.v === 'boolean') {
-          val = cellObj.v;
-        } else if (cellObj.v !== undefined && cellObj.v !== null) {
-          val = String(cellObj.v);
-        }
-
-        const formula = typeof cellObj.f === 'string' ? cellObj.f : undefined;
-        const numberFormat = typeof cellObj.z === 'string' ? cellObj.z : undefined;
-
-        rowCells.push(createCell(val, { formula, numberFormat }));
-      }
-      rows.push(rowCells);
-    }
-
-    return {
-      name: sheetName,
-      rows,
-    };
-  });
-
-  return {
-    sheets: sheets.length > 0 ? sheets : [{ name: 'Sheet1', rows: [] }],
-  };
-}
-
-/** Excel forbids these characters in sheet names and caps names at 31 characters. */
-function sanitizeSheetName(name: string, used: Set<string>): string {
-  const base =
-    (name || 'Sheet')
-      .replace(/[:\\/?*[\]]/g, ' ')
-      .trim()
-      .slice(0, 31) || 'Sheet';
-  let candidate = base;
-  let suffix = 2;
-  while (used.has(candidate.toLowerCase())) {
-    const tag = `_${suffix}`;
-    candidate = `${base.slice(0, 31 - tag.length)}${tag}`;
-    suffix += 1;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
+  return parseWorkbookBytes(XLSX, arrayBuffer);
 }
 
 /**
- * Serialize a workbook to a real .xlsx byte array. Blank cells stay blank (not
- * empty strings), formulas keep their cached value, per-cell number formats are
- * reapplied, and sheet names are made Excel-legal and unique.
+ * Serialize a workbook to a real .xlsx byte array. Delegates to the same writer the worker
+ * uses, so the two paths cannot drift apart in how they treat dates, blanks, or formats.
  */
 export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Array> {
   // Offload to background Web Worker thread if available
@@ -162,63 +50,7 @@ export async function workbookToXlsxBuffer(workbook: Workbook): Promise<Uint8Arr
   if (workerResult) return workerResult;
 
   const XLSX = await loadXlsx();
-  const wb = XLSX.utils.book_new();
-  const usedNames = new Set<string>();
-
-  for (const sheet of workbook.sheets) {
-    const aoa: unknown[][] = sheet.rows.map((row) =>
-      row.map((cell) => {
-        if (cell.value === null || cell.value === '') {
-          return null;
-        }
-        return cell.value;
-      }),
-    );
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-
-    // Write formula cells explicitly: aoa_to_sheet does not understand {f, v} objects.
-    sheet.rows.forEach((row, rowIndex) => {
-      row.forEach((cell, columnIndex) => {
-        if (!cell.formula) return;
-        const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-        const cached = cell.value;
-        const type =
-          typeof cached === 'number'
-            ? 'n'
-            : typeof cached === 'boolean'
-              ? 'b'
-              : cached instanceof Date
-                ? 'd'
-                : 'str';
-        (ws as Record<string, unknown>)[address] = {
-          t: type,
-          f: cell.formula.replace(/^=/, ''),
-          v: cached ?? null,
-        };
-      });
-    });
-
-    // Preserve per-cell number formats so dates and currencies survive the trip.
-    sheet.rows.forEach((row, rowIndex) => {
-      row.forEach((cell, columnIndex) => {
-        if (!cell.numberFormat) return;
-        const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-        const target = ws[address] as { z?: string } | undefined;
-        if (target) target.z = cell.numberFormat;
-      });
-    });
-
-    // Pin the used range so trailing blank columns/rows are not silently dropped.
-    const rows = Math.max(1, sheet.rows.length);
-    const columns = Math.max(1, ...sheet.rows.map((row) => row.length), 0);
-    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows - 1, c: columns - 1 } });
-
-    XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName(sheet.name, usedNames));
-  }
-
-  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  return new Uint8Array(out);
+  return workbookToXlsxBytes(XLSX, workbook);
 }
 
 export async function downloadWorkbookAsXlsx(

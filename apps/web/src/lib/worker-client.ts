@@ -1,4 +1,5 @@
 import type { Workbook } from '@excel-agent/engine';
+import type { ImportReport } from './workbook-io.js';
 
 class WorkerRequestError extends Error {
   constructor(
@@ -107,10 +108,14 @@ function postToWorker<T>(type: string, payload?: unknown, timeoutMs = 60000): Pr
  * Offloads Excel parsing to a Web Worker thread.
  * Returns null if Web Workers are unavailable, allowing fallback.
  */
-export async function parseXlsxWorker(arrayBuffer: ArrayBuffer): Promise<Workbook | null> {
+export async function parseXlsxWorker(
+  arrayBuffer: ArrayBuffer,
+): Promise<{ workbook: Workbook; report: ImportReport } | null> {
   if (!isWorkerSupported()) return null;
   try {
-    return await postToWorker<Workbook>('PARSE_XLSX', { arrayBuffer });
+    return await postToWorker<{ workbook: Workbook; report: ImportReport }>('PARSE_XLSX', {
+      arrayBuffer,
+    });
   } catch (err) {
     if (err instanceof WorkerRequestError && (err.kind === 'unavailable' || err.kind === 'crash')) {
       console.warn('Worker unavailable, falling back to main thread:', err);

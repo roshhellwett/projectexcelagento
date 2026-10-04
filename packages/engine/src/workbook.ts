@@ -122,6 +122,15 @@ export function cellValueEquals(left: CellValue, right: CellValue): boolean {
   if (left instanceof Date && right instanceof Date) {
     return left.getTime() === right.getTime();
   }
+  if (typeof left === 'number' && typeof right === 'number') {
+    // `NaN === NaN` is false, so a single NaN cell made `workbookEquals` fail
+    // forever. The operation registry verifies that a patch restores the
+    // workbook before and after every operation, so one NaN anywhere would fail
+    // EVERY subsequent operation with "The inverse patch does not restore the
+    // original workbook." and permanently lock the user out of their workbook.
+    // NaN is treated as equal to NaN so a round-tripped NaN stays a no-op.
+    return left === right || (Number.isNaN(left) && Number.isNaN(right));
+  }
   return left === right;
 }
 
@@ -129,13 +138,26 @@ export function effectiveCellType(cell: Cell): CellType {
   return cell.type ?? cellTypeForValue(cell.value, cell.formula);
 }
 
+/**
+ * Structural equality for a single cell. One rule for blanks: `createCell(null)`
+ * and `createCell('')` are the same empty cell. `cellTypeForValue` already types
+ * both as `blank`, so treating them as different made a patch that normalized
+ * '' to null (or null to '') look like a real change forever, which broke
+ * round-trips and made empty-string normalization impossible. Callers that need
+ * the literal difference (for example filter matching on `equals`) should use
+ * `cellValueEquals`, which stays strict.
+ */
 export function cellEquals(left: Cell, right: Cell): boolean {
   return (
-    cellValueEquals(left.value, right.value) &&
+    cellValueEquals(blankEquivalent(left.value), blankEquivalent(right.value)) &&
     effectiveCellType(left) === effectiveCellType(right) &&
     left.formula === right.formula &&
     left.numberFormat === right.numberFormat
   );
+}
+
+function blankEquivalent(value: CellValue): CellValue {
+  return value === '' ? null : value;
 }
 
 export function patchForChange(address: CellLocation, before: Cell, after: Cell): CellPatch {

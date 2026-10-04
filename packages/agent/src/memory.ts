@@ -1,3 +1,4 @@
+import type { Workbook } from '@excel-agent/engine';
 import type { MemoryRecord, MemoryStore } from './types.js';
 
 const STOP_WORDS = new Set([
@@ -64,6 +65,26 @@ export function querySimilarity(left: string, right: string): number {
   }
   const union = setA.size + setB.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Identifies a sheet's shape by its header names in order.
+ *
+ * Column letters are positional, so any argument naming a column stops meaning what it meant
+ * as soon as the sheet is reshaped. Fingerprinting the headers turns that invisible hazard into
+ * a check that can be run before a replay. The row count is deliberately excluded: appending
+ * rows is routine and must not invalidate what was learned.
+ */
+export function schemaFingerprint(headers: string[]): string {
+  return headers.map((header) => header.trim().toLowerCase()).join('\u0001');
+}
+
+/** Reads the header row of a sheet, tolerating the ragged rows an import can produce. */
+export function sheetFingerprint(workbook: Workbook, sheetName: string): string | undefined {
+  const sheet = workbook.sheets.find((candidate) => candidate.name === sheetName);
+  const headerRow = sheet?.rows[0];
+  if (!headerRow) return undefined;
+  return schemaFingerprint(headerRow.map((cell) => String(cell.value ?? '')));
 }
 
 let sequence = 0;
@@ -146,6 +167,32 @@ export class InMemoryMemoryStore implements MemoryStore {
       }
     }
     if (best) best.lastUsedAt = Date.now();
+    return best;
+  }
+
+  /**
+   * Retrieves a replayable record, refusing any whose learned arguments no longer fit the sheet.
+   *
+   * This is separate from `retrieve` because staleness is a property of the data, not of the
+   * query: the words may match perfectly while the column letters they referred to have shifted.
+   * Callers must use this before replaying a learned action against real user data.
+   */
+  retrieveForWorkbook(
+    query: string,
+    workbook: Workbook,
+    sheetName: string,
+    threshold = 0.6,
+  ): MemoryRecord | undefined {
+    const best = this.retrieve(query, sheetName, threshold);
+    if (!best) return undefined;
+
+    // A record learned before fingerprints existed cannot be checked, so it is not replayed.
+    // Trusting an unverifiable record is exactly the failure this guards against.
+    if (typeof best.schemaFingerprint !== 'string') return undefined;
+
+    const current = sheetFingerprint(workbook, sheetName);
+    if (current === undefined || current !== best.schemaFingerprint) return undefined;
+
     return best;
   }
 

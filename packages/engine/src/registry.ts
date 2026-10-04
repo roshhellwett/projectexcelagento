@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 
 import { formatDatesOperation } from './format-dates.js';
+import { analyticsOperations } from './analytics-operations.js';
 import { initialOperations } from './operations.js';
 import { advancedOperations } from './advanced-operations.js';
 import { invariantNoCellsOutsideTargetRange } from './invariants.js';
@@ -49,6 +50,7 @@ export function createOperationRegistry(): OperationRegistry {
   const registry = new OperationRegistry().register(formatDatesOperation);
   for (const operation of initialOperations) registry.register(operation);
   for (const operation of advancedOperations) registry.register(operation);
+  for (const operation of analyticsOperations) registry.register(operation);
   return registry;
 }
 
@@ -73,6 +75,11 @@ export type ApplyOperationResult =
 export interface ApplyOperationOptions {
   registry?: OperationRegistry;
   history?: HistoryStack;
+  /**
+   * Required when the operation's preview declares `requiresConfirmation`. Until a caller sets
+   * this, such an operation is refused rather than applied - which is what makes the flag a
+   * guarantee instead of a suggestion.
+   */
   confirmed?: boolean;
 }
 
@@ -121,6 +128,21 @@ export function applyOperation(
         preview.errors.map((issue) => issue.message),
       );
     }
+
+    // A destructive or wide-reaching operation stops here and asks to be confirmed. This is the
+    // hard wall: an operation that declares it needs confirmation can never be applied by
+    // accident, because the only way through is a caller that explicitly confirms.
+    if (preview.requiresConfirmation && !options.confirmed) {
+      const message =
+        preview.affectedCells === 1
+          ? 'This change affects 1 cell and was not confirmed.'
+          : `This change affects ${preview.affectedCells} cells and was not confirmed.`;
+      return failure('confirmation-required', [
+        message,
+        ...preview.warnings.map((issue) => issue.message),
+      ]);
+    }
+
     const result = operation.apply(cloneWorkbook(before), args);
     const check = operation.invariants(cloneWorkbook(before), cloneWorkbook(result.workbook), args);
     const errors = [

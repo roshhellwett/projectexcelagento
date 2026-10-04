@@ -1,4 +1,25 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
+import { getActiveTheme, toggleTheme } from '../lib/theme.js';
+
+/**
+ * Persistent light/dark switch. The state is owned by the document element (see theme.ts), so
+ * this button does not need to be wired into the workspace's state tree.
+ */
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme());
+  return (
+    <button
+      className="btn btn-ghost btn-sm"
+      onClick={() => setTheme(toggleTheme())}
+      title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      aria-pressed={theme === 'dark'}
+      aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      data-testid="theme-toggle"
+    >
+      {theme === 'dark' ? '☀' : '☾'}
+    </button>
+  );
+}
 
 interface TopNavProps {
   fileName: string;
@@ -96,7 +117,11 @@ export const TopNav: React.FC<TopNavProps> = ({
           </span>
         </div>
 
+        <label className="sr-only" htmlFor="top-nav-fixture">
+          Load test fixtures
+        </label>
         <select
+          id="top-nav-fixture"
           className="select-input"
           title="Load Test Fixtures"
           onChange={(e) => {
@@ -120,8 +145,12 @@ export const TopNav: React.FC<TopNavProps> = ({
       <div className="top-nav-center">
         {/* Quick In-Sheet Search */}
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <label className="sr-only" htmlFor="top-nav-search">
+            Find in sheet
+          </label>
           <input
-            type="text"
+            id="top-nav-search"
+            type="search"
             className="form-input"
             style={{
               height: '30px',
@@ -205,14 +234,22 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
+        <label className="sr-only" htmlFor="top-nav-file">
+          Upload Excel or CSV file
+        </label>
         <input
           type="file"
+          id="top-nav-file"
           ref={fileInputRef}
           style={{ display: 'none' }}
+          // Reached through the Upload button, so it is kept out of the tab order and the tree.
+          tabIndex={-1}
+          aria-hidden="true"
           accept=".xlsx,.xls,.csv"
           onChange={handleFileChange}
         />
         <button
+          type="button"
           className="btn btn-secondary btn-sm"
           onClick={() => fileInputRef.current?.click()}
           title="Upload Excel or CSV file"
@@ -361,6 +398,8 @@ export const TopNav: React.FC<TopNavProps> = ({
         >
           Reset
         </button>
+
+        <ThemeToggle />
 
         <button
           className="btn btn-ghost btn-sm"

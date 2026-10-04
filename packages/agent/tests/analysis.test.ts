@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { createCell, type Workbook } from '@excel-agent/engine';
+import { createCell, type Sheet, type Workbook } from '@excel-agent/engine';
 
-import { analyzeSpreadsheetIntentAndData, resolveColumn, getColumnProfiles } from '../src/index.js';
+import {
+  analyzeSpreadsheetIntentAndData,
+  auditSheet,
+  buildSheetContext,
+  buildSystemPrompt,
+  resolveColumn,
+  getColumnProfiles,
+} from '../src/index.js';
 
 const SHEET = 'Orders';
 
@@ -111,5 +118,32 @@ describe('informational turns never mutate the workbook', () => {
     ]) {
       expect(plan(query).proposedAction).toBeUndefined();
     }
+  });
+});
+
+describe('sheet-scale column counting', () => {
+  /** 200k data rows: past the ~125k limit where spreading an array into Math.max throws. */
+  function tallSheet(rowCount: number): Sheet {
+    const rows = [[createCell('Amount')]];
+    for (let index = 1; index <= rowCount; index += 1) rows.push([createCell(index)]);
+    return { name: SHEET, rows };
+  }
+
+  it('profiles a 200k-row column without overflowing the stack', () => {
+    const sheet = tallSheet(200_000);
+    const [profile] = getColumnProfiles(sheet);
+
+    expect(profile?.letter).toBe('A');
+    expect(profile?.min).toBe(1);
+    expect(profile?.max).toBe(200_000);
+    expect(profile?.nonBlankCount).toBe(200_000);
+  });
+
+  it('audits and builds the agent context for a 200k-row sheet', () => {
+    const sheet = tallSheet(200_000);
+
+    expect(auditSheet(sheet).totalCols).toBe(1);
+    expect(JSON.parse(buildSheetContext(sheet)).cols).toBe(1);
+    expect(() => buildSystemPrompt(sheet, [])).not.toThrow();
   });
 });

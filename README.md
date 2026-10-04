@@ -13,13 +13,15 @@ uploaded spreadsheets, no secrets to manage.
 
 ## Why it is trustworthy
 
-| Guarantee                        | How it is enforced                                                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Changes are correct              | Every edit runs through the pure `@excel-agent/engine` with Zod schema validation, a bounded preview, and invariant checks              |
-| Changes are reversible           | Each operation returns a forward patch **and** an inverse patch; a snapshot-backed `HistoryStack` powers undo/redo and time travel      |
-| The model cannot wreck your data | A **guardrail layer** re-validates any AI-proposed action against the engine before it is shown; unknown or invalid actions are blocked |
-| Your data stays local            | Spreadsheets never leave the browser. Only a compact column profile is sent to your chosen model                                        |
-| Failures are contained           | Invariant violations roll back automatically and never commit to history                                                                |
+| Guarantee                          | How it is enforced                                                                                                                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Changes are correct                | Every edit runs through the pure `@excel-agent/engine` with Zod schema validation, a bounded preview, and invariant checks                                                                                                                       |
+| Changes are reversible             | Each operation returns a forward patch **and** an inverse patch; a snapshot-backed `HistoryStack` powers undo/redo and time travel                                                                                                               |
+| The model cannot wreck your data   | A **guardrail layer** re-validates any AI-proposed action against the engine before it is shown; unknown or invalid actions are blocked                                                                                                          |
+| Destructive changes are deliberate | `applyOperation` _refuses_ any operation whose preview declares `requiresConfirmation` until the caller passes `confirmed: true`; the chat shows a two-step gate naming the operation and affected cell count. Cancel is a signal, not a failure |
+| Plans are atomic                   | A multi-step plan that fails any step rewinds through the history stack, leaving the workbook exactly as it was                                                                                                                                  |
+| Your data stays local              | Spreadsheets never leave the browser. Only a compact column profile is sent to your chosen model                                                                                                                                                 |
+| Failures are contained             | Invariant violations roll back automatically and never commit to history                                                                                                                                                                         |
 
 ## Architecture
 
@@ -40,12 +42,34 @@ intent -> memory -> heuristic -> llm -> guardrail -> execute -> verify -> learn
 ```
 
 1. **Intent** - social turns never touch the workbook.
-2. **Memory** - replays previously _verified_ actions (self-learning). Unproven memories are never replayed.
+2. **Memory** - replays previously _verified_ actions (self-learning). Unproven memories are never replayed,
+   and a replay is refused when the sheet's header fingerprint has changed since it was learned.
 3. **Heuristic** - deterministic, offline planner. Works with no API key at all.
 4. **LLM (BYOK)** - optional reasoning layer (Groq, OpenRouter, Gemini) with retry, timeout, and backoff.
-5. **Guardrail** - schema + engine validation + bounded preview. The hard wall.
+5. **Guardrail** - schema + engine validation + bounded preview. The hard wall. Never substitutes
+   a different mutation behind the model's own prose.
 6. **Execute / Verify** - transactional apply with forward/inverse patch verification.
-7. **Learn** - successful associations are reinforced; failures decay them.
+7. **Learn** - successful associations are reinforced; failures decay them. A cancellation is a
+   pause, not a rejection, so it never counts as a failure.
+
+### Complex requests get a real multi-agent turn
+
+Simple requests stay on the fast path. When a request spans multiple kinds of work
+("clean duplicates, then group by region, then summarize"), the orchestrator routes it to
+`packages/agent/src/multi-agent.ts`, which genuinely decomposes and parallelizes:
+
+```
+Conductor -> decompose into segments
+Analyst    -> profiles every column + aggregates *in parallel* (one real Promise.all gather)
+Planner    -> drafts a strict-JSON ExecutionPlan using only engine-cataloged operations
+Critic     -> reviews the plan against the request before anything executes
+Verifier   -> schema.safeParse + validate + preview on *every* step, before offering it
+```
+
+Provider failures inside the pipeline fall back to the single-agent path - the turn never
+fails silently. The resulting plan uses the same `ExecutionPlan` shape the UI already renders,
+and the UI's existing plan-execution gate (guardrail + confirmation + atomic multi-step
+apply) governs it.
 
 ### Full transparency: the Model & Usage page
 
@@ -124,7 +148,14 @@ stored in `localStorage` and sent directly from the browser to the provider.
 ## Operations
 
 `format_dates`, `normalize_text`, `sort_range`, `filter_rows`, `find_replace`,
-`delete_duplicates`, `rename_column`, `delete_column`, `add_column`, `set_cells`.
+`delete_duplicates`, `rename_column`, `delete_column`, `add_column`, `set_cells`,
+`fill_blanks`, `add_computed_column`, `split_column`, `merge_columns`, `lookup_merge`,
+`clean_to_new_sheet`,
+plus the analytics suite in `packages/engine/src/analytics-operations.ts`:
+`aggregate_column`, `group_and_summarize` (a real pivot, multi-key), `join_sheets`
+(inner/left joins across sheets, first-wins on duplicate keys with a warning),
+`fill_series` (linear/date/text autofill), and `categorize_column` (first-match
+conditional logic).
 
 Adding a new engine operation automatically appears in the model's tool contract (derived
 from the Zod schema) and fails the build until it is documented in `packages/agent/src/tools.ts`.

@@ -4,7 +4,21 @@ import {
   type CellValue,
   columnToIndex,
   indexToColumn,
+  maxColumnCount,
 } from '@excel-agent/engine';
+
+/**
+ * Spreading an array into `Math.min`/`Math.max` throws a RangeError once the
+ * array passes roughly 125k elements, which a single wide or tall column
+ * reaches. These helpers keep the same result without touching the call stack.
+ */
+function smallest(values: number[]): number {
+  return values.reduce((current, value) => Math.min(current, value), Infinity);
+}
+
+function largest(values: number[]): number {
+  return values.reduce((current, value) => Math.max(current, value), -Infinity);
+}
 
 export interface ProposedAction {
   name: string;
@@ -109,7 +123,7 @@ export function searchCellsInSheet(sheet: Sheet, query: string): CellMatch[] {
 }
 
 export function getColumnProfiles(sheet: Sheet): ColumnMetadata[] {
-  const totalCols = Math.max(...sheet.rows.map((r) => r.length), 0);
+  const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] || [];
   const dataRows = sheet.rows.slice(1);
 
@@ -160,8 +174,8 @@ export function getColumnProfiles(sheet: Sheet): ColumnMetadata[] {
     if (isNumeric && numericValues.length > 0) {
       sum = numericValues.reduce((a, b) => a + b, 0);
       avg = sum / numericValues.length;
-      min = Math.min(...numericValues);
-      max = Math.max(...numericValues);
+      min = smallest(numericValues);
+      max = largest(numericValues);
     }
 
     columns.push({
@@ -283,7 +297,7 @@ export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnM
 
 export function auditSheet(sheet: Sheet): SheetAudit {
   const totalRows = sheet.rows.length;
-  const totalCols = Math.max(...sheet.rows.map((r) => r.length), 0);
+  const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] || [];
   const headers = headerRow.map((c, i) =>
     c?.value !== null && c?.value !== undefined ? String(c.value) : `Col ${indexToColumn(i)}`,
@@ -836,8 +850,8 @@ export function analyzeSpreadsheetIntentAndData(
     if (targetCol && targetCol.numericValues.length > 0) {
       const sum = targetCol.sum ?? targetCol.numericValues.reduce((a, b) => a + b, 0);
       const avg = targetCol.avg ?? sum / targetCol.numericValues.length;
-      const min = targetCol.min ?? Math.min(...targetCol.numericValues);
-      const max = targetCol.max ?? Math.max(...targetCol.numericValues);
+      const min = targetCol.min ?? smallest(targetCol.numericValues);
+      const max = targetCol.max ?? largest(targetCol.numericValues);
       const count = targetCol.numericValues.length;
 
       return {
