@@ -196,10 +196,10 @@ export const TopNav: React.FC<TopNavProps> = ({
             type="search"
             className="form-input"
             style={{
-              height: '30px',
-              padding: '4px 28px 4px 28px',
-              fontSize: '12px',
-              width: '160px',
+              height: '28px',
+              padding: '3px 24px 3px 26px',
+              fontSize: '11.5px',
+              width: '125px',
               background: 'var(--bg-elevated)',
             }}
             placeholder="Find in sheet…"
@@ -288,23 +288,23 @@ export const TopNav: React.FC<TopNavProps> = ({
 
       <div className="top-nav-right">
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm btn-icon"
           onClick={onUndo}
           disabled={!canUndo}
           title="Undo (Ctrl+Z)"
+          aria-label="Undo"
         >
           <Undo2 size={14} />
-          Undo
         </button>
 
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm btn-icon"
           onClick={onRedo}
           disabled={!canRedo}
           title="Redo (Ctrl+Y)"
+          aria-label="Redo"
         >
           <Redo2 size={14} />
-          Redo
         </button>
 
         <button
@@ -358,9 +358,10 @@ export const TopNav: React.FC<TopNavProps> = ({
         <ThemeToggle />
 
         <button
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm btn-icon"
           onClick={onOpenSettings}
           title="API Keys & Settings"
+          aria-label="API Keys & Settings"
         >
           <Settings size={14} />
         </button>

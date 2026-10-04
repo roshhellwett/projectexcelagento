@@ -104,7 +104,7 @@ function parseBlocks(text: string): Block[] {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       blocks.push({ type: 'heading', level: heading[1]!.length, text: heading[2]! });
       i += 1;
@@ -161,7 +161,7 @@ function parseBlocks(text: string): Block[] {
 const BlockView: React.FC<{ block: Block }> = ({ block }) => {
   switch (block.type) {
     case 'heading': {
-      const Tag = block.level === 1 ? 'h3' : block.level === 2 ? 'h4' : 'h5';
+      const Tag = block.level === 1 ? 'h3' : block.level === 2 ? 'h4' : block.level === 3 ? 'h5' : 'h6';
       return <Tag className="md-heading">{renderInline(block.text)}</Tag>;
     }
     case 'code':

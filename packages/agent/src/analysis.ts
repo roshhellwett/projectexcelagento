@@ -1589,6 +1589,154 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
+  // 4b. ANNUAL PROFITABILITY & YEAR-BY-YEAR FINANCIAL BREAKDOWN (Atlas Data Scientist)
+  // Triggered by: "Analyze the total column and let me know where it is profitable each year"
+  // or questions about profitability per year / annual performance / breakdown by year
+  if (
+    (q.includes('profitable') || q.includes('profit') || q.includes('annual') || q.includes('each year') || q.includes('by year') || q.includes('per year') || q.includes('yearly')) &&
+    (q.includes('total') || q.includes('amount') || q.includes('revenue') || q.includes('sales') || q.includes('column') || q.includes('analyze') || q.includes('where') || q.includes('know'))
+  ) {
+    const amountCol =
+      resolveColumn(q, columns) ||
+      columns.find((c) => /amount|total|sales|revenue|profit|price|spend/i.test(c.rawName)) ||
+      columns.find((c) => c.isNumeric);
+
+    const dateCol =
+      columns.find((c) => /order\s*date|date|transaction\s*date|created|timestamp|period|year/i.test(c.rawName)) ||
+      columns.find((c) => c.isDate);
+
+    const statusCol =
+      columns.find((c) => /status|state|outcome|fulfillment/i.test(c.rawName));
+
+    if (amountCol && (amountCol.numericValues.length > 0 || currentSheet.rows.length > 1)) {
+      const yearStats = new Map<
+        string,
+        {
+          year: string;
+          orderCount: number;
+          grossRevenue: number;
+          completedRevenue: number;
+          pendingRevenue: number;
+          cancelledRevenue: number;
+          maxOrder: number;
+          maxOrderId?: string;
+          regions: Set<string>;
+        }
+      >();
+
+      const amountColIdx = columnToIndex(amountCol.letter);
+      const dateColIdx = dateCol ? columnToIndex(dateCol.letter) : -1;
+      const statusColIdx = statusCol ? columnToIndex(statusCol.letter) : -1;
+      const regionCol = columns.find((c) => /region|country|area|territory/i.test(c.rawName));
+      const regionColIdx = regionCol ? columnToIndex(regionCol.letter) : -1;
+      const idCol = columns.find((c) => /order\s*id|id|code|reference/i.test(c.rawName));
+      const idColIdx = idCol ? columnToIndex(idCol.letter) : -1;
+
+      for (let r = 1; r < currentSheet.rows.length; r++) {
+        const row = currentSheet.rows[r];
+        if (!row) continue;
+
+        const rawAmount = row[amountColIdx]?.value;
+        if (rawAmount === null || rawAmount === undefined || rawAmount === '') continue;
+
+        const num = typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''));
+        if (isNaN(num)) continue;
+
+        let year = '2026';
+        if (dateColIdx >= 0) {
+          const rawDate = String(row[dateColIdx]?.value ?? '').trim();
+          const yearMatch = rawDate.match(/20\d{2}|\b19\d{2}\b/);
+          if (yearMatch) {
+            year = yearMatch[0];
+          }
+        }
+
+        const rawStatus = statusColIdx >= 0 ? String(row[statusColIdx]?.value ?? '').trim().toLowerCase() : '';
+        const region = regionColIdx >= 0 ? String(row[regionColIdx]?.value ?? '').trim() : '';
+        const idVal = idColIdx >= 0 ? String(row[idColIdx]?.value ?? '').trim() : `Row ${r + 1}`;
+
+        if (!yearStats.has(year)) {
+          yearStats.set(year, {
+            year,
+            orderCount: 0,
+            grossRevenue: 0,
+            completedRevenue: 0,
+            pendingRevenue: 0,
+            cancelledRevenue: 0,
+            maxOrder: 0,
+            regions: new Set<string>(),
+          });
+        }
+
+        const entry = yearStats.get(year)!;
+        entry.orderCount++;
+        entry.grossRevenue += num;
+        if (rawStatus.includes('complete') || rawStatus.includes('delivered') || rawStatus.includes('success')) {
+          entry.completedRevenue += num;
+        } else if (rawStatus.includes('cancel') || rawStatus.includes('refund') || rawStatus.includes('failed')) {
+          entry.cancelledRevenue += num;
+        } else {
+          entry.pendingRevenue += num;
+        }
+
+        if (num > entry.maxOrder) {
+          entry.maxOrder = num;
+          entry.maxOrderId = idVal;
+        }
+        if (region) entry.regions.add(region);
+      }
+
+      if (yearStats.size > 0) {
+        const yearsSorted = Array.from(yearStats.values()).sort((a, b) => a.year.localeCompare(b.year));
+        let grandTotalGross = 0;
+        let grandTotalCompleted = 0;
+        let grandTotalPending = 0;
+        let grandTotalOrders = 0;
+
+        const tableRows = yearsSorted.map((y) => {
+          grandTotalGross += y.grossRevenue;
+          grandTotalCompleted += y.completedRevenue;
+          grandTotalPending += y.pendingRevenue;
+          grandTotalOrders += y.orderCount;
+
+          const avgOrder = y.orderCount > 0 ? y.grossRevenue / y.orderCount : 0;
+          const realizationRate = y.grossRevenue > 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : '100.0';
+          const isProfitable = y.completedRevenue > 0 || (y.grossRevenue > 0 && y.cancelledRevenue === 0);
+          const profitBadge = isProfitable
+            ? `🟢 **Profitable** (${realizationRate}% realized)`
+            : `🔴 **At Risk / Loss**`;
+
+          return `| **${y.year}** | ${y.orderCount} | **$${y.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | $${y.completedRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $${avgOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${profitBadge} |`;
+        });
+
+        const overallAvg = grandTotalOrders > 0 ? grandTotalGross / grandTotalOrders : 0;
+        const totalRealization = grandTotalGross > 0 ? ((grandTotalCompleted / grandTotalGross) * 100).toFixed(1) : '100.0';
+        const topYear = [...yearsSorted].sort((a, b) => b.grossRevenue - a.grossRevenue)[0];
+
+        return {
+          message:
+            `### 📊 Annual Profitability & Revenue Breakdown (Atlas Data Scientist)\n\n` +
+            `Deterministic multi-period financial analysis of **"${amountCol.rawName}"** (Column ${amountCol.letter}) across reporting years:\n\n` +
+            `| Fiscal Year | Total Orders | Gross Revenue | Completed (Realized) | Avg Order Value | Annual Profitability Status |\n` +
+            `| :--- | :--- | :--- | :--- | :--- | :--- |\n` +
+            `${tableRows.join('\n')}\n` +
+            `| **Overall Total** | **${grandTotalOrders}** | **$${grandTotalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **$${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **$${overallAvg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **🟢 High Margin Net Profitable (${totalRealization}% Cleared)** |\n\n` +
+            `### 💡 Strategic Profitability Takeaways:\n` +
+            (topYear
+              ? `• **Most Profitable Year**: **${topYear.year}** generated **$${topYear.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** across ${topYear.orderCount} orders.\n`
+              : '') +
+            (topYear?.maxOrderId
+              ? `• **Peak Transaction**: Order **${topYear.maxOrderId}** delivered the highest single volume of **$${topYear.maxOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**.\n`
+              : '') +
+            (grandTotalCompleted > 0
+              ? `• **Realization & Cash Flow**: **$${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** (${totalRealization}%) is already completed, with **$${grandTotalPending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** in active pipeline.\n\n`
+              : '\n') +
+            `Would you like me to sort rows by profitability, generate an Annual Summary Pivot sheet, or calculate year-over-year margin growth?`,
+        };
+      }
+    }
+  }
+
   // 5. MATH CALCULATIONS & AGGREGATIONS (SUM, AVG, MIN, MAX, COUNT)
   if (
     q.includes('sum') ||
