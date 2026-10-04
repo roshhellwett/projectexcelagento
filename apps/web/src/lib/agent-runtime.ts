@@ -1,7 +1,14 @@
-import { createMemoryStore, createOrchestrator } from '@excel-agent/agent';
+import { SupabaseMemoryStore, createOrchestrator } from '@excel-agent/agent';
 import { createOperationRegistry } from '@excel-agent/engine';
 
 const MEMORY_KEY = 'excel_agent_memory_v1';
+
+const SUPABASE_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  'https://fsepapdadtrlddkyqqxu.supabase.co';
+const SUPABASE_KEY =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  'sb_publishable_8JPAZFfCaS_U8nAAqc1rrQ_V6OSKAic';
 
 function storage(): Storage | undefined {
   try {
@@ -20,12 +27,41 @@ function readMemory(): string | undefined {
 }
 
 /**
- * Single shared runtime for the workspace: one engine registry, one self-learning
- * memory (persisted to the browser), and one multi-layer orchestrator.
+ * Single shared runtime for the workspace: one engine registry, one dual-store Supabase
+ * self-learning memory (with 100MB ephemeral scratchpad and 400MB collective cortex),
+ * and one multi-layer orchestrator.
  */
 export const registry = createOperationRegistry();
 
-export const memory = createMemoryStore(readMemory());
+const isTestMode =
+  (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST))) ||
+  (typeof import.meta !== 'undefined' && (import.meta.env?.MODE === 'test' || Boolean(import.meta.env?.VITEST)));
+
+export const memory = new SupabaseMemoryStore({
+  url: SUPABASE_URL,
+  apiKey: SUPABASE_KEY,
+  enabled: !isTestMode,
+  timeoutMs: 2500,
+  minConfidence: 0.5,
+});
+
+// Preload any existing browser local storage into the local hot-cache
+const localCache = readMemory();
+if (localCache) {
+  try {
+    // If local memory serialized JSON exists, seed the in-memory cache
+    const parsed = JSON.parse(localCache) as { records?: any[] };
+    if (Array.isArray(parsed.records)) {
+      for (const rec of parsed.records) {
+        if (rec && typeof rec === 'object') {
+          memory.remember(rec);
+        }
+      }
+    }
+  } catch {
+    // Ignore corrupt local cache
+  }
+}
 
 export const orchestrator = createOrchestrator({ registry, memory });
 

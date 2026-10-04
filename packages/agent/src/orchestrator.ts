@@ -189,13 +189,13 @@ export class ExcelAgentOrchestrator {
 
     // Layer 2 - Memory: Replay proven learned operation
     const memoryHit = this.memory?.retrieveForWorkbook
-      ? this.memory.retrieveForWorkbook(
+      ? await this.memory.retrieveForWorkbook(
           input.query,
           input.workbook,
           sheetName,
           this.memorySimilarity,
         )
-      : this.memory?.retrieve(input.query, sheetName, this.memorySimilarity);
+      : await this.memory?.retrieve(input.query, sheetName, this.memorySimilarity);
     if (memoryHit) {
       const confidentEnough = this.memory?.confidenceOf
         ? this.memory.confidenceOf(memoryHit) >= this.memoryConfidence

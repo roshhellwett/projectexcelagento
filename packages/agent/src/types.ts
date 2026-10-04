@@ -205,7 +205,11 @@ export interface MemoryStore {
     record: Omit<MemoryRecord, 'id' | 'createdAt' | 'lastUsedAt' | 'successes' | 'failures'>,
   ): MemoryRecord;
   recordOutcome(operation: string, sheetName: string, success: boolean, key?: string): void;
-  retrieve(query: string, sheetName: string, threshold?: number): MemoryRecord | undefined;
+  retrieve(
+    query: string,
+    sheetName: string,
+    threshold?: number,
+  ): Promise<MemoryRecord | undefined> | MemoryRecord | undefined;
   /**
    * Retrieves a record only if its learned arguments still fit the sheet's current shape.
    * Callers replaying a learned action against real user data must use this, not `retrieve`.
@@ -215,7 +219,7 @@ export interface MemoryStore {
     workbook: Workbook,
     sheetName: string,
     threshold?: number,
-  ): MemoryRecord | undefined;
+  ): Promise<MemoryRecord | undefined> | MemoryRecord | undefined;
   entries(): MemoryRecord[];
   toJSON(): string;
   confidenceOf?(record: MemoryRecord): number;
