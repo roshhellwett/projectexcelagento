@@ -1060,7 +1060,7 @@ export const App: React.FC<{
 
     try {
       // Build conversation history for multi-turn reasoning context
-      const conversationHistory: LLMChatMessage[] = messages.slice(-10).map((m) => ({
+      const conversationHistory: LLMChatMessage[] = messages.slice(-30).map((m) => ({
         role: m.sender === 'user' ? 'user' : 'assistant',
         content: m.text,
       }));

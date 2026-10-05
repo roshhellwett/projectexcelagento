@@ -24,13 +24,12 @@ export function sanitizeUntrusted(value: unknown, maxLength = 120): string {
 }
 
 /**
- * A compact, token-efficient profile of the active sheet. Full cell data is never
- * sent to the model — only headers, types, cardinality, aggregates, and a sample.
+ * A rich, comprehensive profile of the active sheet with extensive samples.
  *
  * Every string that originated in the file passes through `sanitizeUntrusted`, because the file
  * is user-supplied and its cells are the single most likely place for an instruction to hide.
  */
-export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
+export function buildSheetContext(sheet: Sheet, sampleSize = 10): string {
   const rowCount = sheet.rows.length;
   const colCount = maxColumnCount(sheet.rows);
   const profiles = getCompactColumnProfiles(sheet);
@@ -54,13 +53,13 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
       : {}),
   }));
 
-  const sampleProfiles = visibleProfiles.slice(0, 32);
+  const sampleProfiles = visibleProfiles.slice(0, 64);
   const sampleRows = sheet.rows.slice(0, sampleSize).map((row, rowIndex) => {
     const record: Record<string, unknown> = { _row: rowIndex + 1 };
     sampleProfiles.forEach((profile, columnIndex) => {
       const value = row[columnIndex]?.value;
-      record[`${profile.letter}_${sanitizeUntrusted(profile.rawName, 40)}`] =
-        typeof value === 'number' || typeof value === 'boolean' ? value : sanitizeUntrusted(value);
+      record[`${profile.letter}_${sanitizeUntrusted(profile.rawName, 50)}`] =
+        typeof value === 'number' || typeof value === 'boolean' ? value : sanitizeUntrusted(value, 200);
     });
     return record;
   });
@@ -80,8 +79,8 @@ function buildWorkbookMap(workbook: Workbook): string {
   return workbook.sheets
     .map((sheet) => {
       const headers = (sheet.rows[0] ?? [])
-        .slice(0, 16)
-        .map((cell, index) => sanitizeUntrusted(cell?.value || indexToColumn(index), 36));
+        .slice(0, 64)
+        .map((cell, index) => sanitizeUntrusted(cell?.value || indexToColumn(index), 48));
       const columnCount = maxColumnCount(sheet.rows);
       const omitted = Math.max(0, columnCount - headers.length);
       return `- ${sanitizeUntrusted(sheet.name, 60)}: ${sheet.rows.length} rows × ${columnCount} columns; headers: ${headers.join(', ')}${omitted ? ` (+${omitted} more; available through read tools)` : ''}`;
@@ -101,6 +100,10 @@ ${buildSheetContext(sheet)}
 ${workbook ? `\nWorkbook map (all worksheets):\n${buildWorkbookMap(workbook)}` : ''}
 
 Rules:
+0. Token & Reasoning Freedom:
+   - There are ZERO limits on context length, tokens, or depth of analytical reasoning. You have full freedom to burn as many tokens as needed to achieve world-class, deep, thorough, and presentation-ready Excel deliverables.
+   - Never rush, truncate, or abbreviate your analysis to conserve tokens. Take the space you need to reason clearly and verify all facts.
+   - Use read tools proactively to inspect comprehensive data ranges before drawing conclusions.
 1. Understand any plain language phrasing, including English, Hindi, Hinglish, business slang, or shorthand. Users describe outcomes ("clean this", "totals at the bottom", "carve out high value", "standardize dates"), never API names.
 2. Broad analyst directives ("clean the data", "make this sheet clean and structured", "can you make this sheet clean and structured so that it can be understandable", "clean and structured the sheet", "give me structured data", "tidy up", "prepare for presentation", "make it executive ready"):
    - Proactively inspect the worksheet profile and call an operation tool (e.g. \`clean_to_new_sheet\` or a tailored multi-step \`create_execution_plan\`).

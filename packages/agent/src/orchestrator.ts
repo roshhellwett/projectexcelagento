@@ -488,7 +488,7 @@ export class ExcelAgentOrchestrator {
       }
 
       if (input.conversationHistory && input.conversationHistory.length > 0) {
-        const recentHistory = input.conversationHistory.slice(-8);
+        const recentHistory = input.conversationHistory.slice(-30);
         for (const historyItem of recentHistory) {
           if (historyItem.role !== 'system') {
             messages.push({
@@ -564,8 +564,17 @@ Execute this workflow:
       let lastError: unknown;
       let usedModel = config.model || candidateModels[0] || 'default';
 
+      const activeMaxTokens =
+        config.provider === 'groq'
+          ? Math.min(config.maxTokens ?? 8192, 8192)
+          : (config.maxTokens ?? 32768);
+
       for (const candidateModel of candidateModels) {
-        const currentConfig: ProviderConfig = { ...config, model: candidateModel };
+        const currentConfig: ProviderConfig = {
+          ...config,
+          model: candidateModel,
+          maxTokens: activeMaxTokens,
+        };
         try {
           if (input.callbacks && typeof input.callbacks.onToken === 'function') {
             response = await completeStream(
@@ -634,7 +643,7 @@ Execute this workflow:
         let currentToolCalls = response.toolCalls;
         let resolved = false;
 
-        while (!resolved && currentToolCalls && currentToolCalls.length > 0 && turns < 15) {
+        while (!resolved && currentToolCalls && currentToolCalls.length > 0 && turns < 30) {
           throwIfCancelled(config.provider, config.signal);
           turns += 1;
           messages.push({
@@ -803,14 +812,14 @@ Execute this workflow:
               if (input.callbacks && typeof input.callbacks.onToken === 'function') {
                 followUp = await completeStream(
                   messages,
-                  { ...config, model: fallbackModel },
+                  { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
                   input.callbacks,
                   this.toolDefinitions,
                 );
               } else {
                 followUp = await complete(
                   messages,
-                  { ...config, model: fallbackModel },
+                  { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
                   this.toolDefinitions,
                 );
               }
@@ -860,7 +869,7 @@ Execute this workflow:
                 finalResponseContent,
               ));
 
-          if (isIncomplete && (!currentToolCalls || currentToolCalls.length === 0) && turns < 14) {
+          if (isIncomplete && (!currentToolCalls || currentToolCalls.length === 0) && turns < 29) {
             messages.push({
               role: 'assistant',
               content: finalResponseContent,
@@ -880,14 +889,14 @@ Execute this workflow:
                 if (input.callbacks && typeof input.callbacks.onToken === 'function') {
                   continuation = await completeStream(
                     messages,
-                    { ...config, model: fallbackModel },
+                    { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
                     input.callbacks,
                     this.toolDefinitions,
                   );
                 } else {
                   continuation = await complete(
                     messages,
-                    { ...config, model: fallbackModel },
+                    { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
                     this.toolDefinitions,
                   );
                 }

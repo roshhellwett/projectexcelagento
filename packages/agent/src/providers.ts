@@ -27,9 +27,16 @@ export class ProviderError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_RETRIES = 2;
 export const DEFAULT_MAX_TOKENS = 8192;
+
+export function resolveMaxTokens(provider: ProviderName, requested?: number): number {
+  if (provider === 'groq') {
+    return Math.min(requested ?? 8192, 8192);
+  }
+  return requested ?? DEFAULT_MAX_TOKENS;
+}
 
 export const FALLBACK_MODELS: Record<ProviderName, string[]> = {
   groq: [
@@ -296,7 +303,7 @@ function openAiCompatibleAdapter(
         model,
         messages: formatMessagesForOpenAI(messages),
         temperature: config.temperature ?? 0.2,
-        max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+        max_tokens: resolveMaxTokens(name, config.maxTokens),
       };
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
@@ -361,7 +368,7 @@ function openAiCompatibleAdapter(
         model,
         messages: formatMessagesForOpenAI(messages),
         temperature: config.temperature ?? 0.2,
-        max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+        max_tokens: resolveMaxTokens(name, config.maxTokens),
         stream: true,
         stream_options: { include_usage: true },
       };
@@ -704,7 +711,7 @@ export const geminiAdapter: ProviderAdapter = {
           tools: geminiTools,
           generationConfig: {
             temperature: config.temperature ?? 0.2,
-            maxOutputTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+            maxOutputTokens: resolveMaxTokens('gemini', config.maxTokens),
           },
         }),
       },

@@ -149,7 +149,7 @@ export function readCellRange(
   workbook: Workbook,
   sheetName: string | undefined,
   startRow = 1,
-  endRow = 15,
+  endRow = 50,
   startColumn = 'A',
   endColumn?: string,
 ): CellRangeResult | { error: string } {
@@ -160,13 +160,13 @@ export function readCellRange(
   const maxCol = sheetMaxCols(sheet.rows);
   const endColIdx = endColumn
     ? (columnToIndex(endColumn) ?? maxCol - 1)
-    : Math.min(startColIdx + 10, maxCol - 1);
+    : Math.min(startColIdx + 50, maxCol - 1);
 
   const boundedStartRow = Math.max(1, startRow);
   const boundedEndRow = Math.min(
     Math.max(boundedStartRow, endRow),
     sheet.rows.length,
-    boundedStartRow + 250,
+    boundedStartRow + 1000,
   );
 
   // Intelligently identify the best header row across the top 10 rows (handles sheets with title rows)
@@ -221,7 +221,7 @@ export function searchSheet(
   workbook: Workbook,
   sheetName: string | undefined,
   query: string,
-  limit = 50,
+  limit = 100,
 ): SearchSheetResult | { error: string } {
   const sheet = resolveSheet(workbook, sheetName);
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
@@ -353,7 +353,7 @@ export function querySheetRecords(
   workbook: Workbook,
   sheetName: string | undefined,
   conditions: QuerySheetCondition[],
-  limit = 25,
+  limit = 100,
 ): QuerySheetRecordsResult | { error: string } {
   const sheet = resolveSheet(workbook, sheetName);
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
