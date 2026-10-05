@@ -170,6 +170,23 @@ export function isUnstructuredSourceSheet(sheet: Sheet): boolean {
   return false;
 }
 
+export function extractSchemaFromCodeSheet(sheet: Sheet): string[] | null {
+  let combined = '';
+  for (let r = 0; r < Math.min(sheet.rows.length, 120); r++) {
+    const val = String(sheet.rows[r]?.[0]?.value ?? '').trim();
+    combined += val + '\n';
+  }
+  const multiMatch = combined.match(/(?:COLUMNS|HEADERS|FIELDS|SCHEMA)\s*=\s*\[([\s\S]*?)\]/i);
+  if (multiMatch && multiMatch[1]) {
+    const items = multiMatch[1]
+      .split(',')
+      .map((s) => s.replace(/['"\r\n]+/g, '').trim())
+      .filter(Boolean);
+    if (items.length >= 2) return items;
+  }
+  return null;
+}
+
 export function getColumnProfiles(
   sheet: Sheet,
   readValue?: (column: number, row: number) => CellValue,
@@ -1500,18 +1517,34 @@ export function analyzeSpreadsheetIntentAndData(
       /(?:clean|cleaning|tidy|tidying|structure|structuring|organize|organizing|format|prepare|extract)[\s\S]{0,80}?(?:new\s+(?:sheet|tab)|separate\s+(?:sheet|tab)|clean\s+sheet|new\s+dataset)/i,
     ) ||
     raw.match(
-      /\b(?:clean|structure|tidy|organize|prepare|standardize)\s+(?:up\s+)?(?:the\s+|this\s+)?(?:data|dataset|sheet|records|worksheet|table|everything)\b/i,
+      /\b(?:clean|structure|tidy|organize|prepare|standardize)\s+(?:up\s+)?(?:the\s+|this\s+)?(?:data|dataset|sheet|records|worksheet|table|everything|it)\b/i,
     ) ||
     raw.match(
       /\b(?:make|turn|convert|format)\s+(?:the\s+|this\s+)?(?:sheet|data|table|dataset|worksheet|it)\s+(?:look\s+)?(?:clean|structured|understandable|presentable|organized|tidy)/i,
     ) ||
     raw.match(
-      /\b(?:clean\s+and\s+structure|structure\s+and\s+clean|clean\s+up\s+and\s+structure|clean\s+and\s+structured)\b/i,
+      /\b(?:clean\s+and\s+structure|structure\s+and\s+clean|clean\s+up\s+and\s+structure|clean\s+and\s+structured|structure\s+it|clean\s+it|told\s+me\s+to\s+structure|asked\s+me\s+to\s+structure|need\s+to\s+structure)\b/i,
     ) ||
     raw.match(
       /^(?:clean\s+data|structured\s+data|clean\s+the\s+data|give\s+me\s+(?:the\s+)?structured\s+data|tidy\s+up|make\s+it\s+clean|clean\s+up|clean\s+and\s+structured?)$/i,
     );
   if (cleanSheetMatch) {
+    if (isUnstructuredSourceSheet(currentSheet)) {
+      const extractedCols = extractSchemaFromCodeSheet(currentSheet);
+      if (extractedCols && extractedCols.length >= 2) {
+        const targetSheetName = `${currentSheet.name}_Structured`;
+        return {
+          message: `I analyzed the specification in **${currentSheet.name}** and extracted its defined table schema (${extractedCols.length} columns):\n\n• **Columns:** \`${extractedCols.join('`, `')}\`\n\nClick **Apply Changes** to create the structured **${targetSheetName}** table!`,
+          proposedAction: {
+            name: 'create_sheet',
+            args: { sheetName: targetSheetName, headers: extractedCols },
+            explanation: `Create structured table sheet "${targetSheetName}" with schema extracted from ${currentSheet.name}.`,
+            category: 'structure',
+          },
+        };
+      }
+    }
+
     const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]([^'"]+)['"]/i);
     const targetName = namedMatch?.[1]?.trim() || `${currentSheet.name}_Cleaned`;
     return {

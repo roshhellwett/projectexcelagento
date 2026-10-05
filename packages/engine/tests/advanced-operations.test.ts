@@ -687,5 +687,37 @@ describe('advanced operations', () => {
         expect(res.report.affectedCells).toBe(1);
       }
     });
+
+    it('clean_to_new_sheet preserves single-column data rows without dropping them as section banners', () => {
+      const reg = createOperationRegistry();
+      const before: Workbook = {
+        sheets: [
+          {
+            name: 'CodeDump',
+            rows: [
+              row('#!/usr/bin/env python3'),
+              row('import os, sys'),
+              row('def main(): pass'),
+              row('if __name__ == "__main__": main()'),
+            ],
+          },
+        ],
+      };
+
+      const result = reg.applyOperation(before, 'clean_to_new_sheet', {
+        sheet: 'CodeDump',
+        targetSheet: 'Cleaned',
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const cleanedSheet = result.workbook.sheets.find((s) => s.name === 'Cleaned');
+        expect(cleanedSheet).toBeDefined();
+        expect(cleanedSheet!.rows.length).toBe(4);
+        expect(cleanedSheet!.rows[0]![0]!.value).toBe('#!/usr/bin/env python3');
+        expect(cleanedSheet!.rows[1]![0]!.value).toBe('import os, sys');
+      }
+    });
   });
 });
+

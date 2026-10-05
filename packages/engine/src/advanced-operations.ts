@@ -968,12 +968,13 @@ function buildCleanedRows(sourceRows: Cell[][], args: CleanToNewSheetArgs): Cell
   let rows = cleaned.slice(headerIdx);
 
   if (args.dropEmptyRows) {
+    const totalCols = maxColumnCount(rows);
     rows = rows.filter((row, idx) => {
       if (idx === 0) return true;
       const nonBlank = row.filter((cell) => !cellIsBlank(cell));
       if (nonBlank.length === 0) return false;
-      // Section banners like "Cash Flow statement" float alone in one cell — drop them.
-      if (nonBlank.length === 1 && typeof nonBlank[0]!.value === 'string') return false;
+      // Section banners like "Cash Flow statement" float alone in one cell — drop them ONLY in wide multi-column tables (> 2 columns).
+      if (totalCols > 2 && nonBlank.length === 1 && typeof nonBlank[0]!.value === 'string') return false;
       return true;
     });
   }

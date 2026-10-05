@@ -545,4 +545,45 @@ describe('row horizontal aggregation analysis', () => {
     expect(res.proposedAction?.name).toBe('add_computed_column');
     expect(res.proposedAction?.args.headerName).toBe('Profit Margin');
   });
+
+  it('extracts table schema from unstructured script sheet when asked to structure it', () => {
+    const scriptWb: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('""" zenith_leads.py """')],
+            [
+              createCell(
+                'COLUMNS = ["#", "Company", "Area", "Business Type", "Phone", "Email", "Website", "Lead Quality"]',
+              ),
+            ],
+            [createCell('def discover(): pass')],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'client gave me this sheet and told me to structure it',
+      scriptWb,
+      'Worksheet',
+    );
+
+    expect(res.proposedAction).toBeDefined();
+    expect(res.proposedAction?.name).toBe('create_sheet');
+    expect(res.proposedAction?.args.sheetName).toBe('Worksheet_Structured');
+    expect(res.proposedAction?.args.headers).toEqual([
+      '#',
+      'Company',
+      'Area',
+      'Business Type',
+      'Phone',
+      'Email',
+      'Website',
+      'Lead Quality',
+    ]);
+  });
 });
+
