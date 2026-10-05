@@ -1,6 +1,10 @@
 import type { Cell, CellRange, InvariantOptions, InvariantResult, Workbook } from './types.js';
 import { cellEquals, columnToIndex, indexToColumn } from './workbook.js';
 
+function effectiveDateSystem(workbook: Workbook): '1900' | '1904' {
+  return workbook.dateSystem ?? '1900';
+}
+
 function rangeBounds(range: CellRange): { startColumn: number; endColumn: number } | undefined {
   const startColumn = columnToIndex(range.startColumn);
   const endColumn = columnToIndex(range.endColumn);
@@ -135,6 +139,9 @@ export function invariantNoCellsOutsideTargetRange(
   ranges: CellRange[],
 ): string[] {
   const errors: string[] = [];
+  if (effectiveDateSystem(before) !== effectiveDateSystem(after)) {
+    errors.push('Workbook date system metadata changed outside the declared cell target ranges.');
+  }
   const allSheetNames = new Set([
     ...before.sheets.map((sheet) => sheet.name),
     ...after.sheets.map((sheet) => sheet.name),

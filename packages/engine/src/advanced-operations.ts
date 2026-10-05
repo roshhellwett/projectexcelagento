@@ -27,6 +27,7 @@ import {
   validateColumn,
   validateSheet,
   validResult,
+  withFormulaStructureSafety,
 } from './operation-utils.js';
 import { runInvariants } from './invariants.js';
 import { matchesFilter } from './operations.js';
@@ -553,7 +554,7 @@ function applyAddComputedColumn(workbook: Workbook, args: AddComputedColumnArgs)
   );
 }
 
-export const addComputedColumnOperation: Operation<AddComputedColumnArgs> = {
+export const addComputedColumnOperation = withFormulaStructureSafety<AddComputedColumnArgs>({
   name: 'add_computed_column',
   schema: addComputedColumnArgsSchema,
   targetRanges: addComputedColumnTarget,
@@ -572,7 +573,7 @@ export const addComputedColumnOperation: Operation<AddComputedColumnArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 // ============================================================================
 // 3. SPLIT COLUMN (split_column)
@@ -694,7 +695,7 @@ function applySplitColumn(workbook: Workbook, args: SplitColumnArgs): OperationR
   );
 }
 
-export const splitColumnOperation: Operation<SplitColumnArgs> = {
+export const splitColumnOperation = withFormulaStructureSafety<SplitColumnArgs>({
   name: 'split_column',
   schema: splitColumnArgsSchema,
   targetRanges: splitColumnTarget,
@@ -713,7 +714,7 @@ export const splitColumnOperation: Operation<SplitColumnArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 // ============================================================================
 // 4. MERGE COLUMNS (merge_columns)
@@ -780,7 +781,7 @@ function applyMergeColumns(workbook: Workbook, args: MergeColumnsArgs): Operatio
   );
 }
 
-export const mergeColumnsOperation: Operation<MergeColumnsArgs> = {
+export const mergeColumnsOperation = withFormulaStructureSafety<MergeColumnsArgs>({
   name: 'merge_columns',
   schema: mergeColumnsArgsSchema,
   targetRanges: mergeColumnsTarget,
@@ -799,7 +800,7 @@ export const mergeColumnsOperation: Operation<MergeColumnsArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 // ============================================================================
 // 5. LOOKUP MERGE (lookup_merge / VLOOKUP)
@@ -878,7 +879,7 @@ function applyLookupMerge(workbook: Workbook, args: LookupMergeArgs): OperationR
   );
 }
 
-export const lookupMergeOperation: Operation<LookupMergeArgs> = {
+export const lookupMergeOperation = withFormulaStructureSafety<LookupMergeArgs>({
   name: 'lookup_merge',
   schema: lookupMergeArgsSchema,
   targetRanges: lookupMergeTarget,
@@ -897,7 +898,7 @@ export const lookupMergeOperation: Operation<LookupMergeArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 // ============================================================================
 // 6. CLEAN TO NEW SHEET (clean_to_new_sheet)
@@ -977,7 +978,7 @@ function buildCleanedRows(sourceRows: Cell[][], args: CleanToNewSheetArgs): Cell
     });
   }
   if (args.dropEmptyColumns) {
-    const width = Math.max(0, ...rows.map((row) => row.length));
+    const width = maxColumnCount(rows);
     const keepColumns: number[] = [];
     for (let c = 0; c < width; c += 1) {
       if (rows.some((row) => !cellIsBlank(row[c]))) keepColumns.push(c);
@@ -992,7 +993,7 @@ function cleanToNewSheetTarget(workbook: Workbook, args: CleanToNewSheetArgs): C
   if (!source) return [];
   const cleaned = buildCleanedRows(source.rows, args);
   const name = uniqueSheetName(workbook, args.targetSheet);
-  const cols = Math.max(1, ...cleaned.map((row) => row.length));
+  const cols = Math.max(1, maxColumnCount(cleaned));
   return [
     {
       sheet: name,
@@ -1030,7 +1031,7 @@ function applyCleanToNewSheet(workbook: Workbook, args: CleanToNewSheetArgs): Op
   return transitionResult(before, after, operationReport(before, after, ranges));
 }
 
-export const cleanToNewSheetOperation: Operation<CleanToNewSheetArgs> = {
+export const cleanToNewSheetOperation = withFormulaStructureSafety<CleanToNewSheetArgs>({
   name: 'clean_to_new_sheet',
   schema: cleanToNewSheetArgsSchema,
   targetRanges: cleanToNewSheetTarget,
@@ -1048,7 +1049,7 @@ export const cleanToNewSheetOperation: Operation<CleanToNewSheetArgs> = {
       targetRanges: cleanToNewSheetTarget(before, args),
     });
   },
-};
+});
 
 // ============================================================================
 // 7. EDIT CELLS (edit_cells)
@@ -1294,7 +1295,7 @@ function applyFilterToNewSheet(workbook: Workbook, args: FilterToNewSheetArgs): 
 
     if (args.dropFromSource) {
       const remainingRows = dataRows.filter((r) => !matchesFilter(r[colIndex], args));
-      source.rows.splice(start, dataRows.length, ...remainingRows);
+      source.rows = source.rows.slice(0, start).concat(remainingRows);
     }
 
     const newSheetName = uniqueSheetName(after, args.targetSheet);
@@ -1307,7 +1308,7 @@ function applyFilterToNewSheet(workbook: Workbook, args: FilterToNewSheetArgs): 
   return transitionResult(before, after, operationReport(before, after, ranges));
 }
 
-export const filterToNewSheetOperation: Operation<FilterToNewSheetArgs> = {
+export const filterToNewSheetOperation = withFormulaStructureSafety<FilterToNewSheetArgs>({
   name: 'filter_to_new_sheet',
   schema: filterToNewSheetArgsSchema,
   targetRanges: filterToNewSheetTarget,
@@ -1325,7 +1326,7 @@ export const filterToNewSheetOperation: Operation<FilterToNewSheetArgs> = {
       targetRanges: filterToNewSheetTarget(before, args),
     });
   },
-};
+});
 
 // ============================================================================
 // 9. CREATE SHEET (create_sheet)
@@ -1484,7 +1485,7 @@ function applyDeleteSheet(workbook: Workbook, args: DeleteSheetArgs): OperationR
   return transitionResult(before, after, operationReport(before, after, ranges));
 }
 
-export const deleteSheetOperation: Operation<DeleteSheetArgs> = {
+export const deleteSheetOperation = withFormulaStructureSafety<DeleteSheetArgs>({
   name: 'delete_sheet',
   schema: deleteSheetArgsSchema,
   targetRanges: deleteSheetTarget,
@@ -1505,7 +1506,7 @@ export const deleteSheetOperation: Operation<DeleteSheetArgs> = {
       targetRanges: deleteSheetTarget(before, args),
     });
   },
-};
+});
 
 // ============================================================================
 // 12. ADD SUMMARY ROW (add_summary_row)

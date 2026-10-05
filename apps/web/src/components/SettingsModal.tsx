@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-import { forgetLearnedActions, learnedActionCount } from '../lib/agent-runtime.js';
+import {
+  forgetLearnedActions,
+  getMemoryCloudStatus,
+  learnedActionCount,
+} from '../lib/agent-runtime.js';
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 import {
   AVAILABLE_MODELS,
@@ -58,6 +62,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, [isOpen, settings]);
 
   if (!isOpen) return null;
+  const cloudMemory = getMemoryCloudStatus();
 
   const handleProviderChange = (newProvider: ProviderName) => {
     setProvider(newProvider);
@@ -365,7 +370,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
                   }}
                 />
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>Supabase Neural Cortex</span>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Learned action memory</span>
               </div>
               <span
                 style={{
@@ -377,7 +382,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   border: '1px solid rgba(16, 185, 129, 0.25)',
                 }}
               >
-                Connected (ap-south-1)
+                {cloudMemory.enabled ? 'Cloud configured · not connection-tested' : 'Local only'}
               </span>
             </div>
             <div
@@ -388,8 +393,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 lineHeight: 1.4,
               }}
             >
-              Dual-store architecture with 100MB ephemeral scratchpad and 400MB collective
-              intelligence cortex. Verified actions automatically sync to cloud.
+              {cloudMemory.enabled
+                ? 'Optional synchronization sends queries, learned operation arguments, and working-step context to the deployment-configured backend. Clearing local actions does not delete cloud records.'
+                : 'Verified actions stay in this browser. Cloud synchronization is disabled for this deployment.'}
             </div>
             <div
               style={{

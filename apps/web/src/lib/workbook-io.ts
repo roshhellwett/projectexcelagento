@@ -1,7 +1,9 @@
 import type { WorkSheet, WorkBook } from 'xlsx';
 import {
   createCell,
+  createWorkbookValueReader,
   dateToExcelSerial,
+  isFormulaError,
   excelSerialToDate,
   isDateNumberFormat,
   type Cell,
@@ -425,8 +427,11 @@ function sheetFromWorksheet(
       const numberFormat = typeof cellObj.z === 'string' ? cellObj.z : undefined;
 
       let value: CellValue = null;
-      if (cellObj.t === 'e') {
-        value = typeof cellObj.w === 'string' ? cellObj.w : EXCEL_ERROR_TEXT[Number(cellObj.v)] ?? '#VALUE!';
+      if (cellObj.t === 'e' && cellObj.v !== undefined && cellObj.v !== null) {
+        value =
+          typeof cellObj.w === 'string'
+            ? cellObj.w
+            : (EXCEL_ERROR_TEXT[Number(cellObj.v)] ?? '#VALUE!');
       } else if (cellObj.v === undefined || cellObj.v === null) {
         value = null;
       } else if (typeof cellObj.v === 'string') {
@@ -562,7 +567,13 @@ export function parseWorkbookBytes(
 /** Fallback format for a date that carries no format of its own, so it still reads as a date. */
 const DEFAULT_DATE_FORMAT = 'yyyy-mm-dd';
 const EXCEL_ERROR_TEXT: Record<number, string> = {
-  0: '#NULL!', 7: '#DIV/0!', 15: '#VALUE!', 23: '#REF!', 29: '#NAME?', 36: '#NUM!', 42: '#N/A',
+  0: '#NULL!',
+  7: '#DIV/0!',
+  15: '#VALUE!',
+  23: '#REF!',
+  29: '#NAME?',
+  36: '#NUM!',
+  42: '#N/A',
 };
 
 /**
@@ -602,21 +613,72 @@ export function sanitizeSheetName(name: string, used: Set<string>): string {
   return candidate;
 }
 
+interface SheetJsZipApi {
+  read(bytes: Uint8Array, options: { type: 'buffer' }): unknown;
+  find(archive: unknown, path: string): { content: Uint8Array } | null;
+  utils: { cfb_add(archive: unknown, path: string, content: Uint8Array): unknown };
+  write(
+    archive: unknown,
+    options: { fileType: 'zip'; type: 'buffer'; compression: boolean },
+  ): Uint8Array | number[] | ArrayBuffer;
+}
+
+/**
+ * SheetJS CE (including 0.18.5 and 0.20.3) reads CalcPr but does not write it. Use its bundled
+ * ZIP API to put the instructions in the actual workbook XML. No Node APIs or extra ZIP
+ * dependency are needed, so worker and browser exports use the same path. Never pretend
+ * recalculation was requested if the XML part cannot be updated.
+ */
+function requestExcelRecalculation(XLSX: XlsxModule, bytes: Uint8Array): Uint8Array {
+  const zip = XLSX.CFB as SheetJsZipApi;
+  const archive = zip.read(bytes, { type: 'buffer' });
+  const part = zip.find(archive, '/xl/workbook.xml');
+  if (!part)
+    throw new Error(
+      'Cannot export formulas: workbook.xml is missing; recalculation could not be enabled.',
+    );
+  const xml = new TextDecoder().decode(part.content);
+  if (!xml.includes('</workbook>'))
+    throw new Error('Cannot export formulas: invalid workbook XML.');
+  const calcPr = '<calcPr calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>';
+  const updated = /<calcPr\b/.test(xml)
+    ? xml.replace(/<calcPr\b[^>]*(?:\/>|>[\s\S]*?<\/calcPr>)/, calcPr)
+    : xml.replace('</workbook>', `${calcPr}</workbook>`);
+  zip.utils.cfb_add(archive, '/xl/workbook.xml', new TextEncoder().encode(updated));
+  return new Uint8Array(zip.write(archive, { fileType: 'zip', type: 'buffer', compression: true }));
+}
+
 /**
  * Serializes a workbook to real .xlsx bytes.
  *
- * Blank cells stay blank rather than becoming empty strings, formulas keep their cached value,
- * per-cell number formats are reapplied, dates are written as serials, sheet names are made
- * Excel-legal and unique, and Excel is asked to recalculate on load rather than trusting values
- * this workspace computed itself.
+ * Blank cells stay blank, formula caches are evaluated against this immutable snapshot,
+ * per-cell formats and the date epoch are retained, and actual XML requests a full Excel
+ * recalculation for unsupported formulas. Sheet names are made Excel-legal only when doing
+ * so cannot silently invalidate formulas; conflicting formula-bearing exports are refused.
  */
 export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8Array {
   const book = XLSX.utils.book_new();
   const usedNames = new Set<string>();
+  const sheetNames = workbook.sheets.map((sheet) => sanitizeSheetName(sheet.name, usedNames));
+  const hasFormulas = workbook.sheets.some((sheet) =>
+    sheet.rows.some((row) => row.some((cell) => cell.formula !== undefined)),
+  );
+  const conflict = workbook.sheets.findIndex((sheet, index) => sheet.name !== sheetNames[index]);
+  if (hasFormulas && conflict >= 0) {
+    const original = workbook.sheets[conflict]!.name;
+    throw new Error(
+      `Cannot export: sheet name "${original}" would be renamed to "${sheetNames[conflict]}". ` +
+        'That could break sheet-qualified formula references. Rename the sheets and update their references in Excel or LibreOffice, ' +
+        'or replace the formulas with values before exporting.',
+    );
+  }
   const dateSystem = workbook.dateSystem ?? '1900';
+  const read = createWorkbookValueReader(workbook);
 
-  for (const sheet of workbook.sheets) {
-    const aoa: unknown[][] = sheet.rows.map((row) => row.map((cell) => valueForExport(cell, dateSystem)));
+  for (const [sheetIndex, sheet] of workbook.sheets.entries()) {
+    const aoa: unknown[][] = sheet.rows.map((row) =>
+      row.map((cell) => valueForExport(cell, dateSystem)),
+    );
     const worksheet = XLSX.utils.aoa_to_sheet(aoa) as Record<string, unknown>;
 
     // Write formula cells explicitly: aoa_to_sheet does not understand {f, v} objects.
@@ -624,19 +686,22 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
       row.forEach((cell, columnIndex) => {
         if (!cell.formula) return;
         const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-        const cached = cell.value instanceof Date ? dateToExcelSerial(cell.value, dateSystem) : cell.value;
+        const live = read(sheet.name, columnIndex, rowIndex + 1);
+        const cached = live instanceof Date ? dateToExcelSerial(live, dateSystem) : live;
+        // The evaluator represents both Excel errors and literal error-looking text as strings,
+        // and an unknown function may be valid in Excel. Do not invent a typed error cache or
+        // reuse a stale numeric cache in either case: preserve the formula for recalculation.
+        const uncached = isFormulaError(cached);
         const type =
-          typeof cached === 'number'
+          typeof cached === 'number' || cached === null || uncached
             ? 'n'
             : typeof cached === 'boolean'
               ? 'b'
-              : cached === null || cached === undefined
-                ? 'n'
-                : 'str';
+              : 'str';
         worksheet[address] = {
           t: type,
           f: cell.formula.replace(/^=/, ''),
-          v: cached ?? null,
+          ...(!uncached ? { v: cached ?? null } : {}),
         };
       });
     });
@@ -656,8 +721,8 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
       });
     });
 
-    // `Math.max(...rows.map(...))` overflows the stack past ~125k rows, which is reachable at a
-    // fraction of the import cell limit. A reduce has no such ceiling.
+    // A spread-based `Math.max(...rows.map(...))` overflows the stack past ~125k rows, which is
+    // reachable at a fraction of the import cell limit. A linear scan has no such ceiling.
     let widest = 0;
     for (const row of sheet.rows) if (row.length > widest) widest = row.length;
     const rowCount = Math.max(1, sheet.rows.length);
@@ -668,14 +733,14 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
       e: { r: rowCount - 1, c: columnCount - 1 },
     });
 
-    XLSX.utils.book_append_sheet(book, worksheet, sanitizeSheetName(sheet.name, usedNames));
+    XLSX.utils.book_append_sheet(book, worksheet, sheetNames[sheetIndex]!);
   }
 
   book.Workbook = {
     ...book.Workbook,
     WBProps: { ...book.Workbook?.WBProps, date1904: dateSystem === '1904' },
-    CalcPr: { fullCalcOnLoad: true },
-  } as typeof book.Workbook;
+  };
 
-  return new Uint8Array(XLSX.write(book, { bookType: 'xlsx', type: 'array' }));
+  const bytes = new Uint8Array(XLSX.write(book, { bookType: 'xlsx', type: 'array' }));
+  return hasFormulas ? requestExcelRecalculation(XLSX, bytes) : bytes;
 }

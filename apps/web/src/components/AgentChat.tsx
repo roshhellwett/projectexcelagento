@@ -28,12 +28,23 @@ import {
   type ProviderName,
   type SheetAudit,
   type AgentActivityEvent,
+  type EvidenceItem,
   type ExecutionPlan,
   type ClarificationQuestion,
 } from '../lib/agent-helper.js';
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
 import { MarkdownText } from './MarkdownText.js';
+
+export interface TaskReceipt {
+  id: string;
+  status: 'applied' | 'undone' | 'failed';
+  request: string;
+  createdAt: number;
+  completedAt?: number;
+  workbookContext?: { generation: number; revision: number; fileName: string; sheetName: string };
+  operations: { name: string; affectedCells: number; warnings: string[] }[];
+}
 
 export interface ChatMessage {
   id: string;
@@ -43,11 +54,16 @@ export interface ChatMessage {
   activities?: AgentActivityEvent[];
   plan?: ExecutionPlan;
   clarification?: ClarificationQuestion;
+  evidence?: EvidenceItem[];
+  receipt?: TaskReceipt;
   /** The user request that produced this message, used for self-learning feedback. */
   sourceQuery?: string;
   proposedAction?: ProposedAction;
   preview?: Preview;
-  status?: 'pending' | 'applied' | 'error' | 'confirming';
+  /** Every preview/confirmation belongs to exactly one document revision. */
+  workbookContext?: { generation: number; revision: number };
+  status?: 'pending' | 'applied' | 'error' | 'confirming' | 'stale';
+  staleReason?: string;
   /**
    * Why the engine refused to apply this action without a human decision. Populated when the
    * guardrail or the engine flags the change as destructive or wide-reaching.
@@ -113,10 +129,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const composerRef = React.useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = React.useRef(true);
   const reducedMotion = useReducedMotion();
-  const quickWorkflows = React.useMemo(() => workspaceWorkflows(workflowProfiles).filter((workflow) => ['duplicates', 'missing', 'statistics'].includes(workflow.id)), [workflowProfiles]);
+  const quickWorkflows = React.useMemo(
+    () =>
+      workspaceWorkflows(workflowProfiles).filter((workflow) =>
+        ['duplicates', 'missing', 'statistics'].includes(workflow.id),
+      ),
+    [workflowProfiles],
+  );
 
   React.useEffect(() => {
-    if (nearBottomRef.current) messagesEndRef.current?.scrollIntoView?.({ behavior: reducedMotion || isProcessing ? 'auto' : 'smooth', block: 'end' });
+    if (nearBottomRef.current)
+      messagesEndRef.current?.scrollIntoView?.({
+        behavior: reducedMotion || isProcessing ? 'auto' : 'smooth',
+        block: 'end',
+      });
   }, [messages.length, messages[messages.length - 1]?.text, isProcessing, reducedMotion]);
 
   // BYOK setup state
@@ -271,7 +297,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <Sparkles size={14} className="agent-sparkle-icon" />
                 <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
               </div>
-              <div className="studio-agent-title"><span className="studio-eyebrow">YOUR PARTNER IN THE WORK</span><span className="agent-title">ExcelAgento Copilot</span></div>
+              <div className="studio-agent-title">
+                <span className="studio-eyebrow">YOUR PARTNER IN THE WORK</span>
+                <span className="agent-title">ExcelAgento Copilot</span>
+              </div>
             </div>
             {hasApiKey && (
               <button
@@ -323,146 +352,175 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
             <h3 className="byok-gate-title">Get started with ExcelAgento</h3>
             <p className="byok-gate-desc">
-              The spreadsheet is yours. Let the repetitive work be ours. Start locally, then connect your favorite model whenever you need it.
+              The spreadsheet is yours. Let the repetitive work be ours. Start locally, then connect
+              your favorite model whenever you need it.
             </p>
-            <button type="button" className="btn btn-primary studio-start-button" onClick={handleDemoKey}>
-              <Sparkles size={16} />Try the local agent — no key needed<ArrowUpRight size={16} />
+            <button
+              type="button"
+              className="btn btn-primary studio-start-button"
+              onClick={handleDemoKey}
+            >
+              <Sparkles size={16} />
+              Try the local agent — no key needed
+              <ArrowUpRight size={16} />
             </button>
-            <div className="studio-onboarding-steps"><span><b>01</b> Describe your task</span><span><b>02</b> Review the preview</span><span><b>03</b> Make it happen</span></div>
-            <details className="studio-provider-details"><summary><KeyRound size={14} />Connect an AI provider<span>Optional</span></summary>
-            <form onSubmit={handleActivateKey} className="byok-gate-form">
-              <div className="form-group">
-                <span className="form-label" id="byok-provider-label">
-                  Select AI Provider
-                </span>
-                <div
-                  className="provider-chips"
-                  role="group"
-                  aria-labelledby="byok-provider-label"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-                    gap: '4px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    aria-pressed={setupProvider === 'groq'}
-                    className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('groq')}
-                  >
-                    Groq
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={setupProvider === 'gemini'}
-                    className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('gemini')}
-                  >
-                    Gemini
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={setupProvider === 'openrouter'}
-                    className={`provider-chip ${setupProvider === 'openrouter' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('openrouter')}
-                  >
-                    OpenRouter
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={setupProvider === 'openai'}
-                    className={`provider-chip ${setupProvider === 'openai' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('openai')}
-                  >
-                    OpenAI
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={setupProvider === 'custom'}
-                    className={`provider-chip ${setupProvider === 'custom' ? 'selected' : ''}`}
-                    onClick={() => setSetupProvider('custom')}
-                  >
-                    Ollama/Local
-                  </button>
-                </div>
-              </div>
-
-              {setupProvider === 'custom' && (
+            <div className="studio-onboarding-steps">
+              <span>
+                <b>01</b> Describe your task
+              </span>
+              <span>
+                <b>02</b> Review the preview
+              </span>
+              <span>
+                <b>03</b> Make it happen
+              </span>
+            </div>
+            <details className="studio-provider-details">
+              <summary>
+                <KeyRound size={14} />
+                Connect an AI provider<span>Optional</span>
+              </summary>
+              <form onSubmit={handleActivateKey} className="byok-gate-form">
                 <div className="form-group">
-                  <label className="form-label" htmlFor="byok-base-url">
-                    Endpoint Base URL
-                  </label>
-                  <input
-                    id="byok-base-url"
-                    type="text"
-                    className="form-input"
-                    placeholder="http://localhost:11434/v1"
-                    value={setupBaseUrl}
-                    onChange={(e) => setSetupBaseUrl(e.target.value)}
-                  />
-                </div>
-              )}
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="byok-api-key">
-                  {setupProvider === 'groq'
-                    ? 'Groq API Key (starts with gsk_)'
-                    : setupProvider === 'gemini'
-                      ? 'Google Gemini Key (AIzaSy...)'
-                      : setupProvider === 'openrouter'
-                        ? 'OpenRouter Key (sk-or-...)'
-                        : setupProvider === 'openai'
-                          ? 'OpenAI Key (sk-...)'
-                          : 'API Key (Optional for Ollama)'}
-                </label>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <input
-                    id="byok-api-key"
-                    type={showKeyText ? 'text' : 'password'}
-                    className="form-input"
-                    style={{ width: '100%', paddingRight: '40px' }}
-                    placeholder={
-                      setupProvider === 'groq'
-                        ? 'gsk_...'
-                        : setupProvider === 'gemini'
-                          ? 'AIzaSy...'
-                          : setupProvider === 'openrouter'
-                            ? 'sk-or-...'
-                            : setupProvider === 'openai'
-                              ? 'sk-...'
-                              : 'ollama / none'
-                    }
-                    value={setupKey}
-                    onChange={(e) => setSetupKey(e.target.value)}
-                    required={setupProvider !== 'custom'}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    aria-pressed={showKeyText}
-                    style={{ position: 'absolute', right: '4px', height: '26px', padding: '0 6px' }}
-                    onClick={() => setShowKeyText(!showKeyText)}
+                  <span className="form-label" id="byok-provider-label">
+                    Select AI Provider
+                  </span>
+                  <div
+                    className="provider-chips"
+                    role="group"
+                    aria-labelledby="byok-provider-label"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+                      gap: '4px',
+                    }}
                   >
-                    {showKeyText ? 'Hide' : 'Show'}
-                  </button>
+                    <button
+                      type="button"
+                      aria-pressed={setupProvider === 'groq'}
+                      className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
+                      onClick={() => setSetupProvider('groq')}
+                    >
+                      Groq
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={setupProvider === 'gemini'}
+                      className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
+                      onClick={() => setSetupProvider('gemini')}
+                    >
+                      Gemini
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={setupProvider === 'openrouter'}
+                      className={`provider-chip ${setupProvider === 'openrouter' ? 'selected' : ''}`}
+                      onClick={() => setSetupProvider('openrouter')}
+                    >
+                      OpenRouter
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={setupProvider === 'openai'}
+                      className={`provider-chip ${setupProvider === 'openai' ? 'selected' : ''}`}
+                      onClick={() => setSetupProvider('openai')}
+                    >
+                      OpenAI
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={setupProvider === 'custom'}
+                      className={`provider-chip ${setupProvider === 'custom' ? 'selected' : ''}`}
+                      onClick={() => setSetupProvider('custom')}
+                    >
+                      Ollama/Local
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={{ width: '100%', justifyContent: 'center', marginTop: '4px' }}
-                disabled={!setupKey.trim() && setupProvider !== 'custom'}
-              >
-                Activate Excel Agent
-              </button>
+                {setupProvider === 'custom' && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="byok-base-url">
+                      Endpoint Base URL
+                    </label>
+                    <input
+                      id="byok-base-url"
+                      type="text"
+                      className="form-input"
+                      placeholder="http://localhost:11434/v1"
+                      value={setupBaseUrl}
+                      onChange={(e) => setSetupBaseUrl(e.target.value)}
+                    />
+                  </div>
+                )}
 
-            </form>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="byok-api-key">
+                    {setupProvider === 'groq'
+                      ? 'Groq API Key (starts with gsk_)'
+                      : setupProvider === 'gemini'
+                        ? 'Google Gemini Key (AIzaSy...)'
+                        : setupProvider === 'openrouter'
+                          ? 'OpenRouter Key (sk-or-...)'
+                          : setupProvider === 'openai'
+                            ? 'OpenAI Key (sk-...)'
+                            : 'API Key (Optional for Ollama)'}
+                  </label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      id="byok-api-key"
+                      type={showKeyText ? 'text' : 'password'}
+                      className="form-input"
+                      style={{ width: '100%', paddingRight: '40px' }}
+                      placeholder={
+                        setupProvider === 'groq'
+                          ? 'gsk_...'
+                          : setupProvider === 'gemini'
+                            ? 'AIzaSy...'
+                            : setupProvider === 'openrouter'
+                              ? 'sk-or-...'
+                              : setupProvider === 'openai'
+                                ? 'sk-...'
+                                : 'ollama / none'
+                      }
+                      value={setupKey}
+                      onChange={(e) => setSetupKey(e.target.value)}
+                      required={setupProvider !== 'custom'}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      aria-pressed={showKeyText}
+                      style={{
+                        position: 'absolute',
+                        right: '4px',
+                        height: '26px',
+                        padding: '0 6px',
+                      }}
+                      onClick={() => setShowKeyText(!showKeyText)}
+                    >
+                      {showKeyText ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', marginTop: '4px' }}
+                  disabled={!setupKey.trim() && setupProvider !== 'custom'}
+                >
+                  Activate Excel Agent
+                </button>
+              </form>
             </details>
 
             <div className="byok-privacy-callout">
-              <ShieldCheck size={14} /><span>Local tasks run in this browser. Preview changes, then apply. Undo stays within reach.</span>
+              <ShieldCheck size={14} />
+              <span>
+                Local tasks run in this browser. Preview changes, then apply. Undo stays within
+                reach.
+              </span>
             </div>
           </div>
         </div>
@@ -682,10 +740,15 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           })()}
 
           {/* Chat Messages */}
-          <div className="chat-messages" aria-label="Agent conversation" onScroll={(event) => {
-            const element = event.currentTarget;
-            nearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 90;
-          }}>
+          <div
+            className="chat-messages"
+            aria-label="Agent conversation"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              nearBottomRef.current =
+                element.scrollHeight - element.scrollTop - element.clientHeight < 90;
+            }}
+          >
             {messages.length === 0 ? (
               <div className="copilot-welcome-card">
                 <div className="welcome-icon-box">
@@ -693,7 +756,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 </div>
                 <h4 className="welcome-title">Big ideas. Less busywork.</h4>
                 <p className="welcome-desc">
-                  Tell me what you want to understand or change in <strong>{audit.sheetName}</strong>. I’ll help you find the next step.
+                  Tell me what you want to understand or change in{' '}
+                  <strong>{audit.sheetName}</strong>. I’ll help you find the next step.
                 </p>
                 <div className="welcome-guarantees">
                   <div className="welcome-guarantee-pill">
@@ -719,7 +783,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   <motion.div
                     key={msg.id}
                     className={`chat-bubble ${msg.sender}`}
-                     initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                    initial={reducedMotion ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.22, ease: 'easeOut' }}
                   >
@@ -938,11 +1002,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                               />
                             </div>
                           ) : (
-                            <TypewriterText
-                              text={msg.text}
-                               animate={false}
-                              speed={10}
-                            />
+                            <TypewriterText text={msg.text} animate={false} speed={10} />
                           )}
                         </div>
 
@@ -972,6 +1032,71 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                               ))}
                             </div>
                           </div>
+                        )}
+
+                        {msg.receipt && (
+                          <div className={`task-receipt is-${msg.receipt.status}`} role="status">
+                            <div className="task-receipt-heading">
+                              <CheckCircle2 size={13} />
+                              <strong>
+                                {msg.receipt.status === 'undone'
+                                  ? 'Task reverted'
+                                  : msg.receipt.status === 'failed'
+                                    ? 'Task stopped'
+                                    : 'Task completed'}
+                              </strong>
+                              <span>
+                                {new Date(
+                                  msg.receipt.completedAt ?? msg.receipt.createdAt,
+                                ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <div className="task-receipt-ops">
+                              {msg.receipt.operations.map((operation) => (
+                                <span key={operation.name}>
+                                  <b>{operation.name}</b> ·{' '}
+                                  {operation.affectedCells.toLocaleString()} cells
+                                </span>
+                              ))}
+                            </div>
+                            {msg.receipt.operations.some(
+                              (operation) => operation.warnings.length > 0,
+                            ) && (
+                              <p>
+                                {msg.receipt.operations
+                                  .flatMap((operation) => operation.warnings)
+                                  .join(' ')}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {msg.evidence && msg.evidence.length > 0 && (
+                          <details className="evidence-card" open>
+                            <summary>
+                              <ShieldCheck size={13} /> Evidence &amp; sources{' '}
+                              <span>{msg.evidence.length}</span>
+                            </summary>
+                            <div className="evidence-list">
+                              {msg.evidence.map((item) => (
+                                <div className="evidence-item" key={item.id}>
+                                  <div className="evidence-item-heading">
+                                    <strong>{item.title}</strong>
+                                    <code>{item.source}</code>
+                                  </div>
+                                  <div className="evidence-facts">
+                                    {item.facts.map((fact) => (
+                                      <span key={fact.label}>
+                                        <small>{fact.label}</small>
+                                        <b>{fact.value}</b>
+                                      </span>
+                                    ))}
+                                  </div>
+                                  {item.note && <p>{item.note}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
                         )}
 
                         {/* Multi-Step Execution Plan Card */}
@@ -1113,6 +1238,25 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           </div>
                         )}
 
+                        {msg.status === 'stale' && (
+                          <div className="checkpoint-stale-note" role="status">
+                            <p>
+                              {msg.staleReason ||
+                                'The workbook changed after this preview. This proposal cannot be applied.'}
+                            </p>
+                            {msg.sourceQuery && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={isProcessing}
+                                onClick={() => onSendMessage(msg.sourceQuery!)}
+                              >
+                                Preview again
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         {msg.errorMessage && (
                           <div style={{ color: 'var(--accent-rose)', fontSize: '12px' }}>
                             ✕ Error: {msg.errorMessage}
@@ -1148,8 +1292,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 Review this change before applying. Undo will remain available.
                               </div>
                               <div className="confirm-gate-detail">
-                                <strong>{msg.plan?.title ?? msg.proposedAction?.name}</strong> will affect{' '}
-                                <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong> cell
+                                <strong>{msg.plan?.title ?? msg.proposedAction?.name}</strong> will
+                                affect <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong>{' '}
+                                cell
                                 {msg.confirmationPrompt?.affectedCells === 1 ? '' : 's'}.
                               </div>
                               {(msg.confirmationPrompt?.reasons.length ?? 0) > 0 && (
@@ -1163,9 +1308,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             <div className="action-buttons-group">
                               <button
                                 className="btn btn-danger btn-sm"
-                                onClick={() => msg.plan
-                                  ? onApplyPlan?.(msg.id, msg.plan, true)
-                                  : onApplyAction(msg.id, msg.proposedAction!, true)}
+                                onClick={() =>
+                                  msg.plan
+                                    ? onApplyPlan?.(msg.id, msg.plan, true)
+                                    : onApplyAction(msg.id, msg.proposedAction!, true)
+                                }
                                 disabled={isProcessing}
                               >
                                 Yes, apply this change
@@ -1205,14 +1352,37 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           </div>
 
           <div className="studio-agent-shortcuts">
-            <div><span className="studio-eyebrow">A GOOD PLACE TO START</span>{onOpenWorkflows && <button type="button" className="studio-text-button" onClick={onOpenWorkflows}><Shapes size={12} />All workflows<ArrowUpRight size={12} /></button>}</div>
-            <div className="studio-shortcut-list">{quickWorkflows.map((workflow) => <button type="button" key={workflow.id} onClick={() => handleSuggestionClick(workflow.prompt)} disabled={isProcessing}>{workflow.title}</button>)}</div>
+            <div>
+              <span className="studio-eyebrow">A GOOD PLACE TO START</span>
+              {onOpenWorkflows && (
+                <button type="button" className="studio-text-button" onClick={onOpenWorkflows}>
+                  <Shapes size={12} />
+                  All workflows
+                  <ArrowUpRight size={12} />
+                </button>
+              )}
+            </div>
+            <div className="studio-shortcut-list">
+              {quickWorkflows.map((workflow) => (
+                <button
+                  type="button"
+                  key={workflow.id}
+                  onClick={() => handleSuggestionClick(workflow.prompt)}
+                  disabled={isProcessing}
+                >
+                  {workflow.title}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Suggestions Drawer */}
           {audit.suggestions.length > 0 && (
             <details className="suggestions-drawer studio-audit-suggestions">
-              <summary>Recommended for this sheet <span>{audit.suggestions.length}</span><ChevronDown size={12} /></summary>
+              <summary>
+                Recommended for this sheet <span>{audit.suggestions.length}</span>
+                <ChevronDown size={12} />
+              </summary>
               <div className="suggestions-title">
                 <svg
                   width="12"
@@ -1277,20 +1447,22 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               }}
               disabled={isProcessing}
             />
-            <div className="studio-composer-footer"><span id="studio-composer-help">Enter to send · Shift + Enter for a new line</span>
-            <button
-              type="submit"
-              className="btn btn-primary btn-sm studio-send-button"
-              aria-label="Send"
-              disabled={!inputText.trim() || isProcessing}
-            >
-              <ArrowUp size={16} />
-            </button>
-            {isProcessing && onStop && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={onStop}>
-                <Square size={12} />Stop
+            <div className="studio-composer-footer">
+              <span id="studio-composer-help">Enter to send · Shift + Enter for a new line</span>
+              <button
+                type="submit"
+                className="btn btn-primary btn-sm studio-send-button"
+                aria-label="Send"
+                disabled={!inputText.trim() || isProcessing}
+              >
+                <ArrowUp size={16} />
               </button>
-            )}
+              {isProcessing && onStop && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onStop}>
+                  <Square size={12} />
+                  Stop
+                </button>
+              )}
             </div>
           </form>
         </>

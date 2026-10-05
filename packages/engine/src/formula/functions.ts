@@ -78,7 +78,8 @@ function isNumeric(val: unknown): boolean {
   if (typeof val === 'number') return Number.isFinite(val);
   if (typeof val === 'string') {
     const text = val.trim();
-    if (!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+|\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?:[eE][-+]?\d+)?$/.test(text)) return false;
+    if (!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+|\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?:[eE][-+]?\d+)?$/.test(text))
+      return false;
     return Number.isFinite(Number(text.replace(/,/g, '')));
   }
   return false;

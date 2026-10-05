@@ -9,7 +9,7 @@ import {
   createWorkbookValueReader,
 } from '@excel-agent/engine';
 import { canonicalizeSpreadsheetQuery } from './memory.js';
-import type { ClarificationQuestion } from './types.js';
+import type { ClarificationQuestion, EvidenceItem } from './types.js';
 import { analyzeStatisticalIntent } from './statistical-intent.js';
 
 /**
@@ -142,7 +142,10 @@ export function searchCellsInSheet(sheet: Sheet, query: string): CellMatch[] {
   return matches.length > 0 ? matches : fuzzyMatches;
 }
 
-export function getColumnProfiles(sheet: Sheet, readValue?: (column: number, row: number) => CellValue): ColumnMetadata[] {
+export function getColumnProfiles(
+  sheet: Sheet,
+  readValue?: (column: number, row: number) => CellValue,
+): ColumnMetadata[] {
   const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] || [];
   const dataRows = sheet.rows.slice(1);
@@ -275,7 +278,8 @@ export function getCompactColumnProfiles(
       if (
         value instanceof Date ||
         (typeof value === 'string' &&
-        (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(value)))
+          (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value) ||
+            /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(value)))
       ) {
         dateCount += 1;
       }
@@ -879,7 +883,12 @@ export function analyzeSpreadsheetIntentAndData(
   userQuery: string,
   workbook: Workbook,
   activeSheetName: string,
-): { message: string; proposedAction?: ProposedAction; clarification?: ClarificationQuestion } {
+): {
+  message: string;
+  proposedAction?: ProposedAction;
+  clarification?: ClarificationQuestion;
+  evidence?: EvidenceItem[];
+} {
   const currentSheet =
     workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
   if (!currentSheet || currentSheet.rows.length === 0) {
@@ -893,7 +902,9 @@ export function analyzeSpreadsheetIntentAndData(
   const q = canonicalRaw.toLowerCase();
   const origQ = raw.toLowerCase();
   const readValue = createWorkbookValueReader(workbook);
-  const columns = getColumnProfiles(currentSheet, (column, row) => readValue(currentSheet.name, column, row));
+  const columns = getColumnProfiles(currentSheet, (column, row) =>
+    readValue(currentSheet.name, column, row),
+  );
   const totalRows = currentSheet.rows.length;
   const dataRowsCount = Math.max(0, totalRows - 1);
   const allColumns = columns.map((c) => c.letter);
@@ -2134,7 +2145,9 @@ export function analyzeSpreadsheetIntentAndData(
 
           const avgOrder = y.orderCount > 0 ? y.grossRevenue / y.orderCount : 0;
           const realizationRate =
-            y.grossRevenue !== 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : 'Undefined';
+            y.grossRevenue !== 0
+              ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1)
+              : 'Undefined';
           const profitBadge = `${realizationRate}% completed`;
 
           return `| **${y.year}** | ${y.orderCount} | **${y.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | ${y.completedRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${avgOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${profitBadge} |`;

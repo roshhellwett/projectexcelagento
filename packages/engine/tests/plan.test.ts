@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { applyOperation, applyOperationPlan, createCell, HistoryStack, type Workbook } from '../src/index.js';
+import {
+  applyOperation,
+  applyOperationPlan,
+  createCell,
+  HistoryStack,
+  type Workbook,
+} from '../src/index.js';
 
-const workbook = (): Workbook => ({ sheets: [{ name: 'Data', rows: [
-  [createCell('Name')], [createCell(' Ada ')], [createCell(' Ada ')],
-] }] });
+const workbook = (): Workbook => ({
+  sheets: [
+    { name: 'Data', rows: [[createCell('Name')], [createCell(' Ada ')], [createCell(' Ada ')]] },
+  ],
+});
 const trim = { operation: 'normalize_text', args: { sheet: 'Data', columns: ['A'], trim: true } };
-const dedupe = { operation: 'delete_duplicates', args: { sheet: 'Data', columns: ['A'], headerRow: 1 } };
+const dedupe = {
+  operation: 'delete_duplicates',
+  args: { sheet: 'Data', columns: ['A'], headerRow: 1 },
+};
 
 describe('atomic operation plans', () => {
   it('requires confirmation without changing workbook or history', () => {
@@ -35,11 +46,20 @@ describe('atomic operation plans', () => {
   it('preserves an existing redo branch and history budget when a later step fails', () => {
     const before = workbook();
     const history = new HistoryStack(before, { maxEntries: 1, maxRetainedCells: 1 });
-    const edited = applyOperation(before, 'normalize_text', { ...trim.args, case: 'upper' }, { history });
+    const edited = applyOperation(
+      before,
+      'normalize_text',
+      { ...trim.args, case: 'upper' },
+      { history },
+    );
     expect(edited.ok).toBe(true);
     history.undo();
     const historyBefore = history.history;
-    const result = applyOperationPlan(before, [trim, { operation: 'delete_column', args: { sheet: 'Data', column: 'ZZ' } }], { history, confirmed: true });
+    const result = applyOperationPlan(
+      before,
+      [trim, { operation: 'delete_column', args: { sheet: 'Data', column: 'ZZ' } }],
+      { history, confirmed: true },
+    );
     expect(result.ok).toBe(false);
     expect(result.workbook).toEqual(before);
     expect(history.history).toEqual(historyBefore);

@@ -310,9 +310,14 @@ export function calculateAggregate(
     return { error: `Unknown aggregate metric "${metric}".` };
   }
   const outcome = aggregateCells(cells, metric === 'avg' ? 'average' : metric);
-  const numericCount = cells.reduce((count, cell) => count + (toNumericOrNull(cell.value) === null ? 0 : 1), 0);
-  const resultValue = metric === 'count' || metric === 'count_distinct' || numericCount > 0 || metric === 'sum'
-    ? outcome.value : null;
+  const numericCount = cells.reduce(
+    (count, cell) => count + (toNumericOrNull(cell.value) === null ? 0 : 1),
+    0,
+  );
+  const resultValue =
+    metric === 'count' || metric === 'count_distinct' || numericCount > 0 || metric === 'sum'
+      ? outcome.value
+      : null;
 
   return {
     sheet: sheet.name,
@@ -369,13 +374,20 @@ export function querySheetRecords(
     }
     if (colIdx === undefined && cond.header) {
       const hLower = cond.header.trim().toLowerCase();
-      const exact = headers.flatMap((h, i) => h.trim().toLowerCase() === hLower ? [i] : []);
-      const matches = exact.length > 0 ? exact : headers.flatMap((h, i) => h.toLowerCase().includes(hLower) ? [i] : []);
-      if (!hLower || matches.length !== 1) return { error: `Header "${cond.header}" is missing or ambiguous; use a column letter.` };
+      const exact = headers.flatMap((h, i) => (h.trim().toLowerCase() === hLower ? [i] : []));
+      const matches =
+        exact.length > 0
+          ? exact
+          : headers.flatMap((h, i) => (h.toLowerCase().includes(hLower) ? [i] : []));
+      if (!hLower || matches.length !== 1)
+        return { error: `Header "${cond.header}" is missing or ambiguous; use a column letter.` };
       colIdx = matches[0];
     }
     const numVal = toNumericOrNull(cond.value);
-    if ((cond.operator === 'gt' || cond.operator === 'lt') && (colIdx === undefined || numVal === null)) {
+    if (
+      (cond.operator === 'gt' || cond.operator === 'lt') &&
+      (colIdx === undefined || numVal === null)
+    ) {
       return { error: 'Numeric comparisons require a valid column and numeric value.' };
     }
     resolvedConditions.push({

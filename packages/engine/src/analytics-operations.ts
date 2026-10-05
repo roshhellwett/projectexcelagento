@@ -13,6 +13,7 @@ import {
   validResult,
   validateColumn,
   validateSheet,
+  withFormulaStructureSafety,
 } from './operation-utils.js';
 import type {
   Cell,
@@ -319,14 +320,18 @@ export function aggregateCells(cells: Cell[], aggregation: Aggregation): Aggrega
       };
     case 'min':
       return {
-        value: numbers.length === 0 ? 0 : numbers.reduce((min, value) => Math.min(min, value), Infinity),
+        value:
+          numbers.length === 0 ? 0 : numbers.reduce((min, value) => Math.min(min, value), Infinity),
         nonNumeric,
         blank,
         warnings,
       };
     case 'max':
       return {
-        value: numbers.length === 0 ? 0 : numbers.reduce((max, value) => Math.max(max, value), -Infinity),
+        value:
+          numbers.length === 0
+            ? 0
+            : numbers.reduce((max, value) => Math.max(max, value), -Infinity),
         nonNumeric,
         blank,
         warnings,
@@ -858,7 +863,7 @@ function applyJoinSheets(workbook: Workbook, args: JoinSheetsArgs): OperationRes
   );
 }
 
-export const joinSheetsOperation: Operation<JoinSheetsArgs> = {
+export const joinSheetsOperation = withFormulaStructureSafety<JoinSheetsArgs>({
   name: 'join_sheets',
   schema: joinSheetsArgsSchema,
   targetRanges: joinTarget,
@@ -883,7 +888,7 @@ export const joinSheetsOperation: Operation<JoinSheetsArgs> = {
   invariants(before, after, args) {
     return runInvariants(before, after, { targetRanges: joinTarget(before, args) });
   },
-};
+});
 
 // ============================================================================
 // 4. FILL SERIES (fill_series)
@@ -1443,7 +1448,7 @@ function applyCategorizeColumn(workbook: Workbook, args: CategorizeColumnArgs): 
   );
 }
 
-export const categorizeColumnOperation: Operation<CategorizeColumnArgs> = {
+export const categorizeColumnOperation = withFormulaStructureSafety<CategorizeColumnArgs>({
   name: 'categorize_column',
   schema: categorizeColumnArgsSchema,
   targetRanges: categorizeTarget,
@@ -1462,7 +1467,7 @@ export const categorizeColumnOperation: Operation<CategorizeColumnArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 export const analyticsOperations: Operation<unknown>[] = [
   aggregateColumnOperation as Operation<unknown>,

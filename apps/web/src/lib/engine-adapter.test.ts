@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createCell, type Workbook } from '@excel-agent/engine';
+import { applyOperation, createCell, type Workbook } from '@excel-agent/engine';
 
 import { workbookToXlsxBuffer, xlsxToWorkbook } from './engine-adapter.js';
 import {
@@ -75,9 +75,21 @@ describe('xlsx adapter', () => {
   });
 
   it('preserves the 1904 epoch, including raw serials referenced by formulas', async () => {
-    const restored = await roundTrip({ dateSystem: '1904', sheets: [{ name: 'Dates', rows: [[
-      createCell(new Date(Date.UTC(2026, 0, 1))), createCell(44561), createCell(44561, { formula: 'B1', numberFormat: 'yyyy-mm-dd' }),
-    ]] }] });
+    const restored = await roundTrip({
+      dateSystem: '1904',
+      sheets: [
+        {
+          name: 'Dates',
+          rows: [
+            [
+              createCell(new Date(Date.UTC(2026, 0, 1))),
+              createCell(44561),
+              createCell(44561, { formula: 'B1', numberFormat: 'yyyy-mm-dd' }),
+            ],
+          ],
+        },
+      ],
+    });
     expect(restored.dateSystem).toBe('1904');
     expect(restored.sheets[0]?.rows[0]?.[0]?.value).toEqual(new Date(Date.UTC(2026, 0, 1)));
     expect(restored.sheets[0]?.rows[0]?.[1]?.value).toBe(44561);
@@ -85,7 +97,9 @@ describe('xlsx adapter', () => {
   });
 
   it('keeps formulas even when Excel has not supplied a cached result', async () => {
-    const restored = await roundTrip({ sheets: [{ name: 'Formulas', rows: [[createCell(null, { formula: 'SUM(B1:B2)' })]] }] });
+    const restored = await roundTrip({
+      sheets: [{ name: 'Formulas', rows: [[createCell(null, { formula: 'SUM(B1:B2)' })]] }],
+    });
     expect(restored.sheets[0]?.rows[0]?.[0]?.formula).toBe('SUM(B1:B2)');
   });
 
@@ -93,9 +107,117 @@ describe('xlsx adapter', () => {
     const XLSX = await import('xlsx');
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, { '!ref': 'A1', A1: { t: 'e', v: 7, f: '1/0' } }, 'Errors');
-    const { workbook } = await xlsxToWorkbook(XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer);
+    const { workbook } = await xlsxToWorkbook(
+      XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer,
+    );
     expect(workbook.sheets[0]?.rows[0]?.[0]?.value).toBe('#DIV/0!');
     expect(workbook.sheets[0]?.rows[0]?.[0]?.formula).toBe('1/0');
+  });
+
+  it('exports live formula caches after editing a dependency, including cross-sheet chains', async () => {
+    const before: Workbook = {
+      sheets: [
+        { name: 'Data', rows: [[createCell(3), createCell(6, { formula: '=A1*2' })]] },
+        { name: 'Summary', rows: [[createCell(7, { formula: "'Data'!B1+1" })]] },
+      ],
+    };
+    const edited = applyOperation(before, 'set_cells', {
+      sheet: 'Data',
+      cells: [{ row: 1, column: 'A', value: 10 }],
+    });
+    expect(edited.ok).toBe(true);
+    // The engine deliberately stores the imported cache; the writer must evaluate the current snapshot.
+    expect(edited.workbook.sheets[0]?.rows[0]?.[1]?.value).toBe(6);
+    const restored = await roundTrip(edited.workbook);
+    expect(restored.sheets[0]?.rows[0]?.[1]).toMatchObject({ value: 20, formula: 'A1*2' });
+    expect(restored.sheets[1]?.rows[0]?.[0]).toMatchObject({ value: 21, formula: "'Data'!B1+1" });
+    expect(edited.workbook.sheets[0]?.rows[0]?.[1]?.value).toBe(6);
+  });
+
+  it('exports live boolean, text, and 1904 date formula results with their formats', async () => {
+    const restored = await roundTrip({
+      dateSystem: '1904',
+      sheets: [
+        {
+          name: 'Data',
+          rows: [
+            [
+              createCell(false, { formula: '1=1' }),
+              createCell('stale', { formula: '"current"' }),
+              createCell(1, { formula: 'DATE(2026,1,1)', numberFormat: 'yyyy-mm-dd' }),
+            ],
+          ],
+        },
+      ],
+    });
+    expect(restored.sheets[0]?.rows[0]?.[0]?.value).toBe(true);
+    expect(restored.sheets[0]?.rows[0]?.[1]?.value).toBe('current');
+    expect(restored.sheets[0]?.rows[0]?.[2]).toMatchObject({
+      value: 44561,
+      formula: 'DATE(2026,1,1)',
+      numberFormat: 'yyyy-mm-dd',
+    });
+    expect(restored.dateSystem).toBe('1904');
+  });
+
+  it.each(['UNSUPPORTED(A2)', '1/0', '"#N/A"'])(
+    'never exports stale or invented error caches for %s',
+    async (formula) => {
+      const workbook: Workbook = {
+        sheets: [{ name: 'Data', rows: [[createCell(999, { formula })], [createCell(5)]] }],
+      };
+      const XLSX = await import('xlsx');
+      const bytes = await workbookToXlsxBuffer(workbook);
+      const raw = XLSX.read(bytes, { type: 'array' }).Sheets['Data']!['A1'] as {
+        f?: string;
+        v?: unknown;
+      };
+      expect(raw.f).toBe(formula);
+      expect(raw.v).toBeUndefined();
+      const { workbook: restored } = await xlsxToWorkbook(toArrayBuffer(bytes));
+      expect(restored.sheets[0]?.rows[0]?.[0]).toMatchObject({ formula, value: null });
+    },
+  );
+
+  it('writes real recalculation instructions into workbook.xml, not only an ignored API property', async () => {
+    const XLSX = await import('xlsx');
+    const bytes = await workbookToXlsxBuffer({
+      sheets: [{ name: 'Data', rows: [[createCell(999, { formula: 'A2*2' })], [createCell(5)]] }],
+    });
+    const parsed = XLSX.read(bytes, { type: 'array' });
+    expect((parsed.Workbook as unknown as { CalcPr?: unknown })?.CalcPr).toMatchObject({
+      calcMode: 'auto',
+      fullCalcOnLoad: '1',
+      forceFullCalc: '1',
+    });
+  });
+
+  it.each(['A:B', 'Data'.repeat(10), 'data'])(
+    'rejects export renaming conflicts that could break sheet-qualified formulas (%s)',
+    async (name) => {
+      const workbook: Workbook = {
+        sheets: [
+          { name: 'Data', rows: [[createCell(1)]] },
+          { name, rows: [[createCell(2)]] },
+          { name: 'Summary', rows: [[createCell(2, { formula: `'${name}'!A1` })]] },
+        ],
+      };
+      await expect(workbookToXlsxBuffer(workbook)).rejects.toThrow(/sheet.*name|renam/i);
+      expect(workbook.sheets[1]?.name).toBe(name);
+    },
+  );
+
+  it('preserves valid qualified references with spaces without renaming sheets', async () => {
+    const restored = await roundTrip({
+      sheets: [
+        { name: 'Source Data', rows: [[createCell(9)]] },
+        { name: 'Summary', rows: [[createCell(0, { formula: "'Source Data'!$A$1*2" })]] },
+      ],
+    });
+    expect(restored.sheets[1]?.rows[0]?.[0]).toMatchObject({
+      value: 18,
+      formula: "'Source Data'!$A$1*2",
+    });
   });
 
   it('writes Excel-legal, unique sheet names', async () => {

@@ -19,7 +19,8 @@ export function createWorkbookValueReader(workbook: Workbook) {
     visiting.add(key);
     try {
       const value = evaluateFormula(cell.formula, {
-        activeSheet: sheet.name, dateSystem: workbook.dateSystem,
+        activeSheet: sheet.name,
+        dateSystem: workbook.dateSystem,
         hasSheet: (name) => sheets.has(name.toLowerCase()),
         getCellValue: (name, column, row) => read(name, columnToIndex(column) ?? -1, row),
         getRangeValues: (name, startColumn, startRow, endColumn, endRow) => {

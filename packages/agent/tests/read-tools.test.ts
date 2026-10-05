@@ -98,25 +98,50 @@ describe('read tools for workbook inspection', () => {
   });
 
   it('uses engine numeric rules without rounding away small values or counting booleans', () => {
-    const wb: Workbook = { sheets: [{ name: 'Mixed', rows: [
-      [createCell('Value')], ...[0.00001, '1,200', true, '12oops', null, Infinity].map((value) => [createCell(value)]),
-    ] }] };
-    expect(calculateAggregate(wb, 'Mixed', 'A', 'sum')).toMatchObject({ value: 1200.00001, count: 2 });
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'Mixed',
+          rows: [
+            [createCell('Value')],
+            ...[0.00001, '1,200', true, '12oops', null, Infinity].map((value) => [
+              createCell(value),
+            ]),
+          ],
+        },
+      ],
+    };
+    expect(calculateAggregate(wb, 'Mixed', 'A', 'sum')).toMatchObject({
+      value: 1200.00001,
+      count: 2,
+    });
     expect(calculateAggregate(wb, 'Mixed', 'A', 'count')).toMatchObject({ value: 5 });
   });
 
   it('recognizes imported Date cells as dates in column profiles', () => {
-    const wb: Workbook = { sheets: [{ name: 'Dates', rows: [[createCell('Date')], [createCell(new Date('2026-01-01'))]] }] };
+    const wb: Workbook = {
+      sheets: [
+        { name: 'Dates', rows: [[createCell('Date')], [createCell(new Date('2026-01-01'))]] },
+      ],
+    };
     expect(profileColumn(wb, 'Dates', 'A')).toMatchObject({ inferredType: 'date' });
   });
 
   it('refuses missing or ambiguous condition columns instead of searching the entire row', () => {
-    expect(querySheetRecords(sampleWorkbook(), 'Sales', [{ header: 'Missing', value: 'Alice' }])).toHaveProperty('error');
-    expect(querySheetRecords(sampleWorkbook(), 'Sales', [{ column: 'ZZ', value: 'Alice' }])).toHaveProperty('error');
+    expect(
+      querySheetRecords(sampleWorkbook(), 'Sales', [{ header: 'Missing', value: 'Alice' }]),
+    ).toHaveProperty('error');
+    expect(
+      querySheetRecords(sampleWorkbook(), 'Sales', [{ column: 'ZZ', value: 'Alice' }]),
+    ).toHaveProperty('error');
     const wb = sampleWorkbook();
     wb.sheets[0]!.rows[0]![0] = createCell('Customer ID');
-    expect(querySheetRecords(wb, 'Sales', [{ header: 'Customer', operator: 'equals', value: 'Alice' }])).toMatchObject({ totalMatchingRows: 2 });
-    expect(querySheetRecords(wb, 'Sales', [{ header: 'Cust', value: 'Alice' }])).toHaveProperty('error');
+    expect(
+      querySheetRecords(wb, 'Sales', [{ header: 'Customer', operator: 'equals', value: 'Alice' }]),
+    ).toMatchObject({ totalMatchingRows: 2 });
+    expect(querySheetRecords(wb, 'Sales', [{ header: 'Cust', value: 'Alice' }])).toHaveProperty(
+      'error',
+    );
   });
 
   it('queries multi-condition sheet records and returns exact match count', () => {

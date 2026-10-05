@@ -19,6 +19,7 @@ import {
   validResult,
   validateColumn,
   validateSheet,
+  withFormulaStructureSafety,
 } from './operation-utils.js';
 import type {
   Cell,
@@ -212,7 +213,7 @@ function applySort(workbook: Workbook, args: SortRangeArgs): OperationResult {
   return transitionResult(before, after, operationReport(before, after, [range]));
 }
 
-export const sortRangeOperation: Operation<SortRangeArgs> = {
+export const sortRangeOperation = withFormulaStructureSafety<SortRangeArgs>({
   name: 'sort_range',
   schema: sortRangeArgsSchema,
   targetRanges: sortTarget,
@@ -234,7 +235,7 @@ export const sortRangeOperation: Operation<SortRangeArgs> = {
       rowsMultisetEqual: true,
     });
   },
-};
+});
 
 export const filterRowsArgsSchema = z
   .object({
@@ -454,7 +455,7 @@ function applyFilter(workbook: Workbook, args: FilterRowsArgs): OperationResult 
     );
   }
 
-  sheet?.rows.splice(start, rows.length, ...kept);
+  if (sheet) sheet.rows = sheet.rows.slice(0, start).concat(kept);
   const removedRows = rows.length - kept.length;
   const ranges = filterTarget(workbook, args);
   return transitionResult(
@@ -464,7 +465,7 @@ function applyFilter(workbook: Workbook, args: FilterRowsArgs): OperationResult 
   );
 }
 
-export const filterRowsOperation: Operation<FilterRowsArgs> = {
+export const filterRowsOperation = withFormulaStructureSafety<FilterRowsArgs>({
   name: 'filter_rows',
   schema: filterRowsArgsSchema,
   targetRanges: filterTarget,
@@ -484,7 +485,7 @@ export const filterRowsOperation: Operation<FilterRowsArgs> = {
       allowFormulaChanges: true,
     });
   },
-};
+});
 
 const findReplaceRangeSchema = z.object({
   startRow: z.number().int().positive(),
@@ -667,7 +668,7 @@ function applyDeleteDuplicates(workbook: Workbook, args: DeleteDuplicatesArgs): 
     }
   }
   if (args.keep === 'last') kept.reverse();
-  sheet?.rows.splice(args.headerRow, rows.length, ...kept);
+  if (sheet) sheet.rows = sheet.rows.slice(0, args.headerRow).concat(kept);
   const ranges = duplicateTarget(workbook, args);
   return transitionResult(
     before,
@@ -676,7 +677,7 @@ function applyDeleteDuplicates(workbook: Workbook, args: DeleteDuplicatesArgs): 
   );
 }
 
-export const deleteDuplicatesOperation: Operation<DeleteDuplicatesArgs> = {
+export const deleteDuplicatesOperation = withFormulaStructureSafety<DeleteDuplicatesArgs>({
   name: 'delete_duplicates',
   schema: deleteDuplicatesArgsSchema,
   targetRanges: duplicateTarget,
@@ -695,7 +696,7 @@ export const deleteDuplicatesOperation: Operation<DeleteDuplicatesArgs> = {
       allowFormulaChanges: true,
     });
   },
-};
+});
 
 export const renameColumnArgsSchema = z.object({
   sheet: z.string().trim().min(1),
@@ -805,7 +806,7 @@ function applyDeleteColumn(workbook: Workbook, args: DeleteColumnArgs): Operatio
   );
 }
 
-export const deleteColumnOperation: Operation<DeleteColumnArgs> = {
+export const deleteColumnOperation = withFormulaStructureSafety<DeleteColumnArgs>({
   name: 'delete_column',
   schema: deleteColumnArgsSchema,
   targetRanges: deleteColumnTarget,
@@ -825,7 +826,7 @@ export const deleteColumnOperation: Operation<DeleteColumnArgs> = {
       allowFormulaChanges: true,
     });
   },
-};
+});
 
 export const addColumnArgsSchema = z.object({
   sheet: z.string().trim().min(1),
@@ -878,7 +879,7 @@ function applyAddColumn(workbook: Workbook, args: AddColumnArgs): OperationResul
   );
 }
 
-export const addColumnOperation: Operation<AddColumnArgs> = {
+export const addColumnOperation = withFormulaStructureSafety<AddColumnArgs>({
   name: 'add_column',
   schema: addColumnArgsSchema,
   targetRanges: addColumnTarget,
@@ -897,7 +898,7 @@ export const addColumnOperation: Operation<AddColumnArgs> = {
       rowCountUnchanged: true,
     });
   },
-};
+});
 
 export const normalizeTextArgsSchema = z.object({
   sheet: z.string().trim().min(1),

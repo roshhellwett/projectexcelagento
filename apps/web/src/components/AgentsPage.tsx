@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { FORMULA_FUNCTIONS } from '@excel-agent/engine';
+import { getMemoryCloudStatus, orchestrator, registry } from '../lib/agent-runtime.js';
 import {
   Bot,
   Brain,
@@ -41,6 +43,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
     'all' | 'orchestration' | 'analytics' | 'safety' | 'data'
   >('all');
   const [, setCopiedPrompt] = useState<string | null>(null);
+  const cloud = getMemoryCloudStatus();
   const agents: AgentProfile[] = [
     {
       id: 'nexus',
@@ -56,7 +59,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       responsibilities: [
         'Natural Language Understanding & typo-tolerant semantic normalization',
         'Complex objective decomposition into phased Execution Plans',
-        'Dynamic sub-agent routing and parallel tool orchestration',
+        'Complexity routing into bounded analyst, planner, critic and verifier stages',
         'Proactive Clarification engine when user intent is ambiguous',
       ],
       capabilities: [
@@ -67,9 +70,9 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
         'Context Routing',
       ],
       metrics: [
-        { label: 'Intent Accuracy', value: '99.4%' },
-        { label: 'Dispatch Latency', value: '< 18ms' },
-        { label: 'Execution Clearance', value: 'Unrestricted' },
+        { label: 'Engine operations', value: String(registry.names.length) },
+        { label: 'Tool contracts', value: String(orchestrator.tools.length) },
+        { label: 'Execution', value: 'Review required' },
       ],
       samplePrompts: [
         'Clean and structure this sheet into human readable format',
@@ -87,12 +90,12 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       accentColor: '#3b82f6',
       status: 'ACTIVE',
       description:
-        'The rigorous mathematical mind. Atlas performs multi-year CAGR, variance analysis, standard deviations, financial margins, and deterministic aggregations with 0% mathematical hallucination guarantee.',
+        'The deterministic calculation layer. Column statistics, Pearson correlation, single-predictor regression, grouped summaries and supported formulas calculate against workbook values. The language model interprets results; it is not a guarantee of analytical correctness.',
       responsibilities: [
         'Deterministic calculations without LLM floating point arithmetic errors',
         'Financial analysis (Operating Margin, Net Margin, Effective Tax Rates)',
         'Statistical distribution analysis (Mean, Median, Standard Deviation, Z-Scores)',
-        'Autonomous formula synthesis for CAGR, SUMIFS, and XLOOKUP',
+        'Supported formula evaluation with explicit errors and compatibility limits',
       ],
       capabilities: [
         'Deterministic Math',
@@ -102,9 +105,9 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
         'Outlier Detection',
       ],
       metrics: [
-        { label: 'Arithmetic Error', value: '0.00%' },
-        { label: 'Numerical Precision', value: '64-bit Float' },
-        { label: 'Aggregation Speed', value: '< 4ms / 10k rows' },
+        { label: 'Numeric core', value: 'Local calculations' },
+        { label: 'Number model', value: '64-bit Float' },
+        { label: 'Live values', value: 'Supported formulas' },
       ],
       samplePrompts: [
         'Analyze the total column and let me know where it is profitable each year',
@@ -137,9 +140,9 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
         'Cell Diff Audit',
       ],
       metrics: [
-        { label: 'Data Corruption', value: '0 Incidents' },
-        { label: 'Verification Pass', value: '100%' },
-        { label: 'Invariant Checks', value: '12 Rules / Op' },
+        { label: 'Validation', value: 'Schema + domain' },
+        { label: 'Commit', value: 'Atomic plans' },
+        { label: 'Recovery', value: 'Undo / redo' },
       ],
       samplePrompts: [
         'Delete all rows where amount is negative',
@@ -151,30 +154,30 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       id: 'cortex',
       name: 'Cortex Memory Engine',
       codename: 'CORTEX-NEURAL // COLLECTIVE BRAIN',
-      role: 'Dual-Store Supabase Neural Memory & Continuous Learning',
+      role: 'Verified Action Memory & Optional Cloud Synchronization',
       clearance: 'Level 4 (Neural State & Continuity)',
       icon: <Cpu className="agent-icon" size={26} />,
       accentColor: '#8b5cf6',
-      status: 'ACTIVE',
+      status: cloud.enabled ? 'ACTIVE' : 'STANDBY',
       description:
-        'The persistent knowledge layer. Cortex synchronizes dual-store memory across local browser storage and Supabase cloud cortex, preserving learned actions, user preferences, and multi-turn session working memory.',
+        'Verified action associations are kept locally and matched against the current worksheet layout. Deployment-configured Supabase synchronization is optional; it can send queries, operation arguments and working-step context. There is no model fine-tuning.',
       responsibilities: [
         'Multi-turn conversational session context and working step tracking',
         'Continuous learning from user feedback and successful operations',
         'Supabase cloud synchronization with instant local fallback',
-        'Privacy compliance: Zero spreadsheet cell values stored on remote servers',
+        'Explicit local/cloud data boundaries; backend policies require deployment verification',
       ],
       capabilities: [
         'Supabase Sync',
         'Working Memory',
         'Cross-Turn State',
         'User Pattern Cache',
-        'Zero-Remote-Data DPDP',
+        'Schema-Pinned Replay',
       ],
       metrics: [
-        { label: 'Context Retrieval', value: '< 12ms' },
-        { label: 'Cloud Fallback', value: '100% Graceful' },
-        { label: 'Remote Cell Storage', value: '0 Bytes' },
+        { label: 'Local patterns', value: String(cloud.syncedCount) },
+        { label: 'Cloud mode', value: cloud.enabled ? 'Configured' : 'Disabled' },
+        { label: 'Learning', value: 'Verified associations' },
       ],
       samplePrompts: [
         'Do the same formatting we did on the previous column',
@@ -192,24 +195,24 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       accentColor: '#f59e0b',
       status: 'ACTIVE',
       description:
-        'The heavy machinery. Valkyrie runs in dedicated HTML5 background Web Workers, crunching 100,000+ row datasets, deduping, normalizing date formats, converting text-to-numbers, and pivoting without freezing the browser UI.',
+        'The data engineering layer. Parsing and export use background workers where available; transformations still run through the local engine on the main thread. Tall-sheet regression tests cover correctness, not a zero-lag guarantee.',
       responsibilities: [
-        'Non-blocking background Web Worker transformations on massive files',
+        'Background worker parsing and export with a shared fallback codec',
         'Multi-format date normalization (mixed US, UK, ISO-8601, Excel serials)',
-        'Deduplication across composite columns with fuzzy matching',
+        'Exact row deduplication across selected composite columns',
         'Multi-column pivots, sorting, and structured sheet restructuring',
       ],
       capabilities: [
         'Web Worker Threads',
-        '100k+ Row Zero Lag',
+        'Tall-Sheet Regressions',
         'Date Normalizer',
         'Composite Dedup',
         'Pivot Engine',
       ],
       metrics: [
-        { label: 'Throughput', value: '45,000 rows/sec' },
-        { label: 'UI Thread Freeze', value: '0.0 ms' },
-        { label: 'Worker Concurrency', value: 'Hardware Native' },
+        { label: 'Import guard', value: '50 MB / 1.5M cells' },
+        { label: 'Workers', value: 'Parse / export' },
+        { label: 'Transforms', value: 'Local main thread' },
       ],
       samplePrompts: [
         'Format dates in column C to YYYY-MM-DD',
@@ -221,15 +224,15 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       id: 'scout',
       name: 'Scout Knowledge Agent',
       codename: 'SCOUT-RESEARCH // INTELLIGENCE AGENT',
-      role: 'Autonomous Formula Synthesizer & Domain Researcher',
+      role: 'Formula Guidance & Domain Researcher',
       clearance: 'Level 4 (Formula Synthesis & Research)',
       icon: <Search className="agent-icon" size={26} />,
       accentColor: '#06b6d4',
       status: 'ACTIVE',
       description:
-        'The analytical researcher. Scout synthesizes complex nested formulas (XLOOKUP, INDEX/MATCH, dynamic arrays), cross-references financial ratios, and retrieves external domain knowledge when formulas are unfamiliar.',
+        'The research and formula-explanation layer. Scout can consult the bounded public formula knowledge path and help translate requests; generated formulas still require review and the engine supports a documented subset.',
       responsibilities: [
-        'Autonomous synthesis of complex formulas with exact syntax validation',
+        'Formula guidance with explicit review boundaries',
         'Accounting and financial ratio formula translation (CAGR, EBITDA, ROI)',
         'External domain lookups when spreadsheet definitions require clarification',
         'Excel and Google Sheets compatibility translation',
@@ -242,9 +245,9 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
         'Formula Explainer',
       ],
       metrics: [
-        { label: 'Formula Accuracy', value: '98.9%' },
-        { label: 'Function Library', value: '400+ Formulas' },
-        { label: 'Cross-App Support', value: 'Excel + Sheets' },
+        { label: 'Function catalog', value: String(Object.keys(FORMULA_FUNCTIONS).length) },
+        { label: 'Formula support', value: 'Documented subset' },
+        { label: 'Generated formulas', value: 'Review before use' },
       ],
       samplePrompts: [
         'Synthesize an XLOOKUP formula with fallback if missing',
@@ -303,15 +306,15 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       <header className="agents-hero">
         <div className="agents-hero-badge">
           <Bot size={14} />
-          <span>AUTONOMOUS MULTI-AGENT WORKFORCE</span>
+          <span>WORKBOOK INTELLIGENCE · VERIFIED EXECUTION</span>
         </div>
         <h1 className="agents-hero-title">
           Meet the Minds Behind <span className="text-emerald">ExcelAgento</span>
         </h1>
         <p className="agents-hero-subtitle">
-          Six specialized, deterministic neural agents collaborating in real time to inspect,
-          verify, calculate, transform, and learn from your spreadsheets. Fully local, zero-leakage,
-          and built for professional business rigor.
+          Six capability layers work together to inspect, plan, calculate, verify and transform.
+          These cards describe architecture, not six continuously running models. Local workflows
+          need no key; connected reasoning shares selected context with your chosen provider.
         </p>
 
         {/* Filter Pills */}
@@ -473,7 +476,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             <div className="arch-node-step">03. EXECUTE</div>
             <div className="arch-node-title">Atlas / Valkyrie</div>
             <div className="arch-node-desc">
-              Calculates deterministic mathematics and runs 100k+ row transforms inside Web Workers.
+              Calculates workbook values locally. Parsing and export use workers; transformations
+              remain on the main thread.
             </div>
           </div>
           <div className="arch-flow-arrow">→</div>
@@ -481,8 +485,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             <div className="arch-node-step">04. LEARN</div>
             <div className="arch-node-title">Cortex Engine</div>
             <div className="arch-node-desc">
-              Caches verified operation patterns and synchronizes cloud context with zero data
-              leakage.
+              Caches verified action patterns locally. Optional cloud memory sends configured
+              context and needs backend access policies.
             </div>
           </div>
         </div>

@@ -314,7 +314,7 @@ export class InMemoryMemoryStore implements MemoryStore {
     let bestScore = threshold;
     for (const record of this.records) {
       if (record.sheetName !== sheetName) continue;
-       // A record that has never succeeded is untrusted until proven.
+      // A record that has never succeeded is untrusted until proven.
       const confidence = this.score(record);
       if (record.successes < 1 || confidence <= 0) continue;
       const similarity = querySimilarity(query, record.key);
@@ -374,21 +374,29 @@ export class InMemoryMemoryStore implements MemoryStore {
     try {
       const parsed = JSON.parse(serialized) as { records?: MemoryRecord[] };
       if (Array.isArray(parsed.records)) {
-        this.records = parsed.records.filter(
-          (record): record is MemoryRecord =>
-            typeof record === 'object' &&
-            record !== null &&
-            typeof record.key === 'string' &&
-            typeof record.operation === 'string' &&
-            typeof record.id === 'string' &&
-            typeof record.rawQuery === 'string' &&
-            typeof record.sheetName === 'string' &&
-            typeof record.args === 'object' && record.args !== null && !Array.isArray(record.args) &&
-            Number.isInteger(record.successes) && record.successes >= 0 &&
-            Number.isInteger(record.failures) && record.failures >= 0 &&
-            Number.isFinite(record.createdAt) && Number.isFinite(record.lastUsedAt) &&
-            (record.schemaFingerprint === undefined || typeof record.schemaFingerprint === 'string'),
-        ).slice(-this.maxRecords);
+        this.records = parsed.records
+          .filter(
+            (record): record is MemoryRecord =>
+              typeof record === 'object' &&
+              record !== null &&
+              typeof record.key === 'string' &&
+              typeof record.operation === 'string' &&
+              typeof record.id === 'string' &&
+              typeof record.rawQuery === 'string' &&
+              typeof record.sheetName === 'string' &&
+              typeof record.args === 'object' &&
+              record.args !== null &&
+              !Array.isArray(record.args) &&
+              Number.isInteger(record.successes) &&
+              record.successes >= 0 &&
+              Number.isInteger(record.failures) &&
+              record.failures >= 0 &&
+              Number.isFinite(record.createdAt) &&
+              Number.isFinite(record.lastUsedAt) &&
+              (record.schemaFingerprint === undefined ||
+                typeof record.schemaFingerprint === 'string'),
+          )
+          .slice(-this.maxRecords);
       }
     } catch {
       // Corrupt memory is ignored rather than crashing the session.

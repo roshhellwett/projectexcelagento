@@ -50,6 +50,7 @@ export function cloneCell(cell: Cell): Cell {
 
 export function cloneWorkbook(workbook: Workbook): Workbook {
   return {
+    ...workbook,
     sheets: workbook.sheets.map((sheet) => ({
       name: sheet.name,
       rows: sheet.rows.map((row) => row.map(cloneCell)),
@@ -242,6 +243,10 @@ export function maxColumnCount(rows: Cell[][]): number {
   return rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
 }
 
+function effectiveDateSystem(workbook: Workbook): '1900' | '1904' {
+  return workbook.dateSystem ?? '1900';
+}
+
 function sameShape(left: Workbook, right: Workbook): boolean {
   return (
     left.sheets.length === right.sheets.length &&
@@ -258,7 +263,7 @@ function sameShape(left: Workbook, right: Workbook): boolean {
 }
 
 export function patchBetween(before: Workbook, after: Workbook): Patch {
-  if (!sameShape(before, after)) {
+  if (effectiveDateSystem(before) !== effectiveDateSystem(after) || !sameShape(before, after)) {
     return [snapshotPatch(before, after)];
   }
 
@@ -287,7 +292,7 @@ export function patchBetween(before: Workbook, after: Workbook): Patch {
 }
 
 export function workbookEquals(left: Workbook, right: Workbook): boolean {
-  if (!sameShape(left, right)) {
+  if (effectiveDateSystem(left) !== effectiveDateSystem(right) || !sameShape(left, right)) {
     return false;
   }
   return left.sheets.every((sheet, sheetIndex) => {

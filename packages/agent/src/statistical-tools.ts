@@ -87,13 +87,15 @@ export function analyzeColumnRelationship(
   if ('error' in y) return y;
   if (x.index === y.index) return { error: 'Choose two different columns.' };
   const read = createWorkbookValueReader(workbook);
-  const pairs = x.sheet.rows.slice(headerRow).map(
-    (_row, offset) =>
-      [
-        read(x.sheet.name, x.index, headerRow + offset + 1),
-        read(x.sheet.name, y.index, headerRow + offset + 1),
-      ] as const,
-  );
+  const pairs = x.sheet.rows
+    .slice(headerRow)
+    .map(
+      (_row, offset) =>
+        [
+          read(x.sheet.name, x.index, headerRow + offset + 1),
+          read(x.sheet.name, y.index, headerRow + offset + 1),
+        ] as const,
+    );
   return {
     sheet: x.sheet.name,
     xColumn: indexToColumn(x.index),

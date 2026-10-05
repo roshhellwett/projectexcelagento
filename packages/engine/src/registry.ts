@@ -7,7 +7,13 @@ import { advancedOperations } from './advanced-operations.js';
 import { invariantNoCellsOutsideTargetRange } from './invariants.js';
 import type { HistoryStack } from './history.js';
 import type { Operation, OperationResult, Preview, Workbook } from './types.js';
-import { applyPatch, cloneWorkbook, invertPatch, patchBetween, workbookEquals } from './workbook.js';
+import {
+  applyPatch,
+  cloneWorkbook,
+  invertPatch,
+  patchBetween,
+  workbookEquals,
+} from './workbook.js';
 
 export class OperationRegistry {
   private readonly operations = new Map<string, Operation<unknown>>();

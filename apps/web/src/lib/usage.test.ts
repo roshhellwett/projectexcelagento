@@ -87,6 +87,22 @@ describe('createUsageEntry', () => {
     expect(created.totalTokens).toBe(42);
   });
 
+  it('labels missing provider usage as unknown rather than a free model turn', () => {
+    const created = createUsageEntry({
+      query: 'q',
+      source: 'llm',
+      telemetry: {
+        provider: 'groq',
+        model: 'test',
+        latencyMs: 10,
+        ok: true,
+      },
+    });
+    expect(created.llmUsed).toBe(true);
+    expect(created.tokenUsageReported).toBe(false);
+    expect(summarizeUsage([created]).unreportedUsageRequests).toBe(1);
+  });
+
   it('records failures with their reason', () => {
     const created = createUsageEntry({
       query: 'q',

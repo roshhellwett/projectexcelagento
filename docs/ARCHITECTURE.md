@@ -32,7 +32,7 @@ packages/agent  ExcelAgentOrchestrator.decide()
    |   4. llm         BYOK provider call (retry + timeout + backoff)
    |   5. guardrail   schema -> engine.validate -> preview
    v
-AgentDecision { message, action?, guardrail?, source, trace }
+AgentDecision { message, action?, guardrail?, evidence?, source, trace }
    |
    v
 App shows a preview card; user clicks Apply
@@ -43,6 +43,18 @@ engine.applyOperation()  validate -> preview -> apply -> invariant check -> patc
    v
 orchestrator.learn()  reinforces or decays the association, then persists to localStorage
 ```
+
+### Evidence and task receipts
+
+Read tools and deterministic statistical paths can emit optional `EvidenceItem` records. Each record
+is normalized from typed workbook output, carries a human-readable source such as `Sales!B2:B101`,
+and lists exact facts and limitations. Model prose is never treated as evidence. The web workspace
+renders these records in an evidence card beside the answer.
+
+Applied operations produce a task receipt in the chat with the request, workbook generation and
+revision, operation names, affected-cell counts, warnings, and status. Undo changes the receipt to
+`undone`; failed operations produce a failed receipt. This separates proposed `Preview` data from
+completed engine `Report` data and gives users a durable, auditable outcome for each mission.
 
 ### Why the guardrail matters
 
@@ -151,18 +163,23 @@ provider and font hosts the app genuinely uses.
 - **Routing/SSR** - `@tanstack/react-router` / `@tanstack/react-start` have been removed; the
   app is a client-rendered SPA and needs no router until multi-page navigation is required.
   Reintroduce a router when deep-linkable views (e.g. `/workbooks/:id`) become a real need.
+- **Workbook recovery** - the latest successful workbook checkpoint is stored in IndexedDB,
+  without chat, keys or undo history. Replacement and edit revisions fence late agent callbacks
+  and invalidate old action/plan cards.
 - **`xlsx` loading** - the codec is now lazily imported on first upload/export, so the initial
   payload is the app + React chunks only. `loadXlsx()` in
   `apps/web/src/lib/engine-adapter.ts` is the single memoized seam to pre-warm if a future
   feature needs to parse a workbook before the user interacts.
-- **Model-layer evals** - provider adapters and the guardrail's handling of model proposals are
-  covered by recorded-payload tests. A live, opt-in contract test against each provider (behind an
-  env flag, never in CI) would additionally catch upstream schema drift.
+- **Model-layer evals** - provider adapters, native Gemini tool turns, cancellation, full-turn
+  usage accounting, and the guardrail's handling of model proposals are covered by recorded-payload
+  tests. A live, opt-in contract test against each provider (behind an env flag, never in CI) would
+  additionally catch upstream schema drift.
 - **Browser E2E** - the jsdom suite renders the real app, but not a real browser. A Playwright
   smoke test (upload, chat, apply, export) would cover paint-level regressions jsdom cannot see.
 - **Coverage thresholds** - coverage is not yet enforced in CI. Adding a floor per package would
   make untested additions fail loudly.
 - **Cloud memory** - local associations persist in `localStorage`, with verified outcome
   counts restored on startup. Optional Supabase synchronization is enabled only when both
-  build-time settings are supplied. Backend provisioning, access policies, and the backend's
-  exact CSP origin require deployment-specific verification.
+  build-time settings are supplied; queries, operation arguments, and working-step context may
+  be sent. Backend provisioning, tenant isolation, access policies, retention/deletion, and the
+  backend's exact CSP origin require deployment-specific verification.

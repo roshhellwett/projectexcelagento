@@ -2,9 +2,9 @@
 
 **The future of Excel: an intelligent, self-learning spreadsheet agent.**
 
-ExcelAgento turns hours of spreadsheet work into minutes. You chat; it plans, validates,
-and applies real Excel operations - deterministically, reversibly, and with every change
-verified against invariants before it touches your data.
+ExcelAgento turns repetitive spreadsheet work into reviewable, reversible workflows. You chat;
+it inspects the workbook, proposes real Excel operations, and applies them through a
+schema-validated engine with previews, confirmation gates, and invariant checks before data changes.
 
 A browser-based, Vercel-deployable spreadsheet copilot with BYOK (Bring Your Own Key).
 Core cleaning and statistical analysis run locally without an API key. See
@@ -20,8 +20,8 @@ Core cleaning and statistical analysis run locally without an API key. See
 | Changes are reversible             | Each operation returns a forward patch **and** an inverse patch; a snapshot-backed `HistoryStack` powers undo/redo and time travel                                                                                                               |
 | The model cannot wreck your data   | A **guardrail layer** re-validates any AI-proposed action against the engine before it is shown; unknown or invalid actions are blocked                                                                                                          |
 | Destructive changes are deliberate | `applyOperation` _refuses_ any operation whose preview declares `requiresConfirmation` until the caller passes `confirmed: true`; the chat shows a two-step gate naming the operation and affected cell count. Cancel is a signal, not a failure |
-| Plans are atomic                   | Every step is staged and verified before one history commit. Failure preserves the workbook and existing redo branch; one undo restores the whole plan                                                                                          |
-| Local by default                   | Without an AI key or cloud-memory configuration, analysis stays in the browser. Connected models receive column profiles, examples, chat context, and requested read-tool results                                                               |
+| Plans are atomic                   | Every step is staged and verified before one history commit. Failure preserves the workbook and existing redo branch; one undo restores the whole plan                                                                                           |
+| Local by default                   | Without an AI key or cloud-memory configuration, analysis stays in the browser. Connected models receive column profiles, examples, chat context, and requested read-tool results                                                                |
 | Failures are contained             | Invariant violations roll back automatically and never commit to history                                                                                                                                                                         |
 
 ## Architecture
@@ -46,7 +46,8 @@ intent -> memory -> heuristic -> llm -> guardrail -> execute -> verify -> learn
 2. **Memory** - replays previously _verified_ actions (self-learning). Unproven memories are never replayed,
    and a replay is refused when the sheet's header fingerprint has changed since it was learned.
 3. **Heuristic** - deterministic, offline planner. Works with no API key at all.
-4. **LLM (BYOK)** - optional reasoning layer (Groq, OpenRouter, Gemini) with retry, timeout, and backoff.
+4. **LLM (BYOK)** - optional reasoning layer (Groq, OpenRouter, Gemini, OpenAI, or a custom
+   OpenAI-compatible endpoint) with retry, timeout, cancellation, and bounded fallback.
 5. **Guardrail** - schema + engine validation + bounded preview. The hard wall. Never substitutes
    a different mutation behind the model's own prose.
 6. **Execute / Verify** - transactional apply with forward/inverse patch verification.
@@ -57,20 +58,20 @@ intent -> memory -> heuristic -> llm -> guardrail -> execute -> verify -> learn
 
 Simple requests stay on the fast path. When a request spans multiple kinds of work
 ("clean duplicates, then group by region, then summarize"), the orchestrator routes it to
-`packages/agent/src/multi-agent.ts`, which genuinely decomposes and parallelizes:
+`packages/agent/src/multi-agent.ts`, which decomposes a request into bounded specialist stages:
 
 ```
 Conductor -> decompose into segments
-Analyst    -> profiles every column + aggregates *in parallel* (one real Promise.all gather)
+Analyst    -> grounds the request and may use read-only workbook tools
 Planner    -> drafts a strict-JSON ExecutionPlan using only engine-cataloged operations
-Critic     -> reviews the plan against the request before anything executes
+Critic     -> reviews the plan and can trigger one bounded revision
 Verifier   -> schema.safeParse + validate + preview on *every* step, before offering it
 ```
 
 Provider failures inside the pipeline fall back to the single-agent path - the turn never
-fails silently. The resulting plan uses the same `ExecutionPlan` shape the UI already renders,
-and the UI's existing plan-execution gate (guardrail + confirmation + atomic multi-step
-apply) governs it.
+fails silently. A plan is not shown as apply-ready until the critic returns a strict,
+issue-free approval and every step passes engine verification; one bounded revision is allowed,
+after which the request is blocked. The resulting plan uses the same `ExecutionPlan` shape the UI renders.
 
 ### Full transparency: the Model & Usage page
 
@@ -81,9 +82,9 @@ workspace has actually done:
   request, whether a key is active, the endpoint host, and the key masked
   (`gsk_••••••cdef`) rather than displayed.
 - **Token usage** - requests, prompt/completion/total tokens, failures, and average latency,
-  all taken from the provider's own usage report rather than estimated. Turns served locally by
-  the deterministic engine are recorded with **zero** tokens, so the ledger doubles as proof that
-  nothing left the browser.
+  all taken from the provider's own usage report rather than estimated. When a provider omits usage,
+  the ledger shows it as **unknown**, not zero. Turns served locally by the deterministic engine
+  are recorded with **zero** tokens, and no provider request is made.
 - **Breakdown** - requests and tokens grouped by provider and by model.
 - **Recent requests** - a per-turn log showing which layer answered (`llm`, `memory`,
   `heuristic`, `fallback`), the model, token counts, latency, and status.
@@ -177,6 +178,22 @@ evaluated against the current workbook rather than stale imported caches; unsupp
 formulas and error values are excluded from numeric statistics and counted as nonnumeric.
 Grouped summaries also support median, standard deviation, and distinct counts.
 
+## Local recovery and formula safety
+
+After an upload or edit, the latest successful workbook checkpoint is stored in IndexedDB in this
+browser. On refresh, choose **Restore checkpoint** or **Discard checkpoint**. Restoration starts a
+new conversation and fresh undo history; edits after the last successful checkpoint are not
+recoverable. Clearing a checkpoint also turns checkpointing off for the current session. Export an
+`.xlsx` for a portable copy. Keys, chats, and undo history are not stored in the checkpoint.
+
+Agent proposals are bound to the workbook generation and revision. Replacing a workbook clears
+old proposals; editing or undoing makes outstanding previews stale and requires a new request.
+
+Supported formulas export current evaluated caches, not stale imported values, and exports include
+actual full-recalculation XML. Formula reference rewriting is not yet implemented: structural edits
+are blocked on formula-bearing workbooks, and export refuses sheet-name changes that could break
+formula references. Ordinary cell/value editing remains available. See release readiness for limits.
+
 ## Optional cloud memory
 
 The default deployment uses local browser memory. To configure Supabase synchronization,
@@ -194,3 +211,6 @@ from the Zod schema) and fails the build until it is documented in `packages/age
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - layers, data flow, and extension points
 - [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) - current scope, examples, and release gaps
 - [`packages/engine/README.md`](packages/engine/README.md) - engine contract details
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - contribution and spreadsheet-safety rules
+- [`SECURITY.md`](SECURITY.md) - vulnerability reporting and disclosure boundaries
+- [`LICENSE`](LICENSE) - MIT license

@@ -45,13 +45,13 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
       <header className="legal-header">
         <div className="legal-badge">
           <Shield size={14} />
-          <span>STATUTORY LEGAL COMPLIANCE • DIGITAL TECH RULES</span>
+          <span>DATA HANDLING · LOCAL AND CONNECTED MODES</span>
         </div>
         <h1 className="legal-title">Privacy Policy &amp; Data Protection Notice</h1>
         <p className="legal-effective">
-          <strong>Framework Compliance:</strong> Digital Personal Data Protection Act, 2023 (DPDP
-          Act 2023) • Information Technology Act, 2000 (Sections 43A, 72A) • IT (Intermediary
-          Guidelines and Digital Media Ethics Code) Rules, 2021 (Rule 3(2)).
+          This page describes the implemented data flows. It is not an independent security audit or
+          legal-compliance certification. Deployments and organizations must verify their own
+          provider contracts, access policies, retention settings and legal obligations.
         </p>
         <p className="legal-updated">
           Effective Date: October 2026 • Published by Zenith Open Source Projects
@@ -62,42 +62,40 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
       <div className="compliance-highlight-card">
         <div className="highlight-title">
           <Lock size={16} className="text-emerald" />
-          <span>Core Data Protection Guarantee at a Glance</span>
+          <span>Know where your data goes</span>
         </div>
         <div className="highlight-grid">
           <div className="highlight-item">
-            <span className="hl-tag">100% Local In-Browser Processing</span>
+            <span className="hl-tag">Local spreadsheet engine</span>
             <p>
-              Your spreadsheets, CSVs, customer records, financial figures, and cell values are
-              processed locally on your device via HTML5 Web Workers.{' '}
-              <strong>
-                No spreadsheet data is ever uploaded or retained on Zenith Open Source Projects
-                servers.
-              </strong>
+              Workbook parsing, local calculations and export run in your browser. Parsing/export
+              use workers where available; transformations currently run on the main thread. Local
+              mode makes no model request. Connected models and optional cloud memory are separate
+              flows described below.
             </p>
           </div>
           <div className="highlight-item">
-            <span className="hl-tag">Zero Remote Data Retention</span>
+            <span className="hl-tag">Browser-local recovery</span>
             <p>
-              Neither Zenith Open Source Projects nor ExcelAgento maintains databases of your raw
-              records, rows, formulas, or spreadsheets. Your private files remain exclusively in
-              your local browser RAM.
+              The latest successful workbook checkpoint is stored in browser IndexedDB and may
+              contain cells, formulas, dates and filename. It is not encrypted by this app. Restore
+              or discard it from the workspace; clearing it turns checkpointing off for the session.
             </p>
           </div>
           <div className="highlight-item">
             <span className="hl-tag">Private BYOK Architecture</span>
             <p>
               Inference uses your own API keys (Bring Your Own Key). Keys are stored strictly in
-              your browser's local sandbox (`localStorage`) and sent encrypted (TLS 1.3) directly to
-              your configured LLM provider.
+              your browser's origin-scoped storage (`localStorage`) and sent directly over the
+              configured connection to your configured LLM provider.
             </p>
           </div>
           <div className="highlight-item">
             <span className="hl-tag">Statutory DPDP Act 2023 Rights</span>
             <p>
-              Indian Data Principals have absolute rights of Access, Correction, Erasure, and
-              Grievance Redressal. Instant one-click erasure of all learned context is provided
-              within this application.
+              This app provides controls to clear local learned actions, usage logs and workbook
+              checkpoints separately. These controls do not delete provider records or optional
+              cloud memory; verify those deletion rights with the relevant provider or deployment.
             </p>
           </div>
         </div>
@@ -120,16 +118,9 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             platform.
           </p>
           <p>
-            Zenith Open Source Projects is committed to upholding the highest standards of data
-            privacy and security in strict conformity with the{' '}
-            <strong>Digital Personal Data Protection Act, 2023 (Act No. 22 of 2023)</strong> enacted
-            by the Parliament of India, the{' '}
-            <strong>Information Technology Act, 2000 (as amended)</strong>, and the{' '}
-            <strong>
-              Information Technology (Intermediary Guidelines and Digital Media Ethics Code) Rules,
-              2021
-            </strong>
-            .
+            The application is distributed as open-source software. Organizations should assess
+            their deployment, providers and applicable privacy laws independently; this page is a
+            product data-flow description, not a legal-compliance certification.
           </p>
         </section>
 
@@ -157,21 +148,22 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
         </section>
 
         <section className="legal-section">
-          <h2>3. Zero-Remote-Storage Guarantee for Spreadsheet Data</h2>
+          <h2>3. Workbook processing, storage and connected context</h2>
           <div className="legal-callout">
             <CheckCircle2 size={16} className="callout-icon text-emerald" />
             <div>
-              <strong>Strict Non-Ingestion Undertaking:</strong> Under no circumstance does Zenith
-              Open Source Projects collect, log, scrape, store, train on, or monetize spreadsheet
-              cells, row contents, column headers, customer names, addresses, Aadhaar/PAN
-              references, or financial numbers loaded into ExcelAgento.
+              <strong>Local does not mean nothing is shared:</strong> connected models receive your
+              prompt, recent conversation, workbook profiles and examples, plus requested read-tool
+              results that may contain actual values, formulas, headers and rows. Optional cloud
+              memory sends queries, operation arguments and working-step context to the deployment
+              backend.
             </div>
           </div>
           <p>
-            Spreadsheet files (.xlsx, .xls, .csv) are parsed directly in-memory using WebAssembly
-            and pure client-side parsers. When transformations occur (such as sorting,
-            deduplicating, date formatting, or column calculations), mutations are computed locally
-            in non-blocking HTML5 Web Worker threads.
+            Spreadsheet files (.xlsx, .xls, .csv) use a client-side JavaScript codec. The local
+            engine is separate from model inference. Optional Supabase integration is disabled
+            unless configured by the deployment; backend provisioning, isolation, deletion and
+            retention policies are not included or verified here.
           </p>
         </section>
 
@@ -184,13 +176,14 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           <ul>
             <li>
               <strong>Local Key Storage:</strong> Your API keys are stored solely in your web
-              browser's sandboxed `localStorage` (`excel_agent_settings_v1`). They are never
-              uploaded or accessible to Zenith Open Source Projects.
+              browser's origin-scoped `localStorage` (`excel_agent_settings_v2`). Any script
+              executing on that origin can access this storage; it is not an encrypted secret vault.
+              Keys are sent to the configured provider, not a shared-key proxy.
             </li>
             <li>
               <strong>Direct End-to-End Transit:</strong> When an AI request is initiated, your
-              browser connects directly over HTTPS (TLS 1.3) to the official endpoint of the
-              provider you configured (e.g. <code>api.groq.com</code>, <code>openrouter.ai</code>,{' '}
+              browser connects directly over HTTPS to the official endpoint of the provider you
+              configured (e.g. <code>api.groq.com</code>, <code>openrouter.ai</code>,{' '}
               <code>generativelanguage.googleapis.com</code>, <code>api.openai.com</code>).
             </li>
             <li>
@@ -320,8 +313,8 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           </p>
           <ul>
             <li>
-              <code>excel_agent_settings_v1</code>: Stores your chosen provider, model, and BYOK
-              credentials.
+              <code>excel_agent_settings_v2</code>: Stores your chosen provider, model, and BYOK
+              credentials in origin-scoped browser storage; it is not an encrypted secret vault.
             </li>
             <li>
               <code>excel_agent_usage_v1</code>: Local ring-buffer log of token consumption and
@@ -329,6 +322,15 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             </li>
             <li>
               <code>excel_agent_theme</code>: User interface visual mode preference (dark/light).
+            </li>
+            <li>
+              <code>excel_agent_memory_v1</code>: Verified learned queries and operation arguments
+              stored locally.
+            </li>
+            <li>
+              <code>excelagento-workspace</code>: IndexedDB holding the latest workbook checkpoint;
+              it may include cell values, formulas, dates and filename, but not keys, chats or undo
+              history.
             </li>
           </ul>
         </section>

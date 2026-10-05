@@ -5,6 +5,7 @@ import type {
   CellLocation,
   CellRange,
   CellValue,
+  Operation,
   Preview,
   Report,
   ValidationIssue,
@@ -45,6 +46,54 @@ export function validResult(warnings: ValidationIssue[] = []): ValidationResult 
 
 export function invalidResult(...errors: ValidationIssue[]): ValidationResult {
   return { valid: false, errors, warnings: [] };
+}
+
+/**
+ * Structural edits must not just move formula text: relative, absolute, range, and cross-sheet
+ * references need a full Excel-aware rewriter. Until one exists, refuse these operations for
+ * any formula-bearing workbook. This deliberately includes formulas on other sheets and
+ * unsupported reference syntax, rather than claiming safety from our subset evaluator.
+ * Value edits and formula-free structural workflows remain available.
+ */
+export function withFormulaStructureSafety<Args>(operation: Operation<Args>): Operation<Args> {
+  const errorsFor = (workbook: Workbook): ValidationIssue[] => {
+    for (const sheet of workbook.sheets) {
+      for (const [rowIndex, row] of sheet.rows.entries()) {
+        const column = row.findIndex((cell) => cell.formula !== undefined);
+        if (column < 0) continue;
+        const address = `${sheet.name}!${indexToColumn(column)}${rowIndex + 1}`;
+        return [
+          issue(
+            'formula-structural-edit',
+            `${operation.name} cannot safely move, copy, insert, or delete cells while this workbook contains formulas (${address}). ` +
+              'Formula reference rewriting, including cross-sheet references, is not supported. ' +
+              'Perform this structural change in Excel or LibreOffice, or replace the formulas with values first; ordinary value edits are still available.',
+            { sheet: sheet.name, row: rowIndex + 1, column: indexToColumn(column) },
+          ),
+        ];
+      }
+    }
+    return [];
+  };
+  return {
+    ...operation,
+    validate(workbook, args) {
+      const validation = operation.validate(workbook, args);
+      const errors = [...validation.errors, ...errorsFor(workbook)];
+      return { ...validation, valid: validation.valid && errors.length === 0, errors };
+    },
+    preview(workbook, args) {
+      const errors = errorsFor(workbook);
+      return errors.length > 0
+        ? previewForTransition(workbook, workbook, [], [], errors)
+        : operation.preview(workbook, args);
+    },
+    apply(workbook, args) {
+      const errors = errorsFor(workbook);
+      if (errors.length > 0) throw new Error(errors[0]!.message);
+      return operation.apply(workbook, args);
+    },
+  };
 }
 
 export function getSheetOrUndefined(workbook: Workbook, sheetName: string) {

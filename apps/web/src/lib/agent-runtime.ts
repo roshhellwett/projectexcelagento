@@ -4,11 +4,9 @@ import { createOperationRegistry } from '@excel-agent/engine';
 const MEMORY_KEY = 'excel_agent_memory_v1';
 
 const SUPABASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
-  '';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
 const SUPABASE_KEY =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
-  '';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
 
 function storage(): Storage | undefined {
   try {

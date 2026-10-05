@@ -21,6 +21,8 @@ export interface ProviderConfig {
 }
 
 export interface ToolCall {
+  /** Provider-specific opaque signature required to replay Gemini reasoning/tool turns. */
+  thoughtSignature?: string;
   id: string;
   type: 'function';
   function: {
@@ -183,6 +185,16 @@ export interface ClarificationQuestion {
   options: ClarificationOption[];
 }
 
+export interface EvidenceItem {
+  id: string;
+  kind: 'statistic' | 'aggregate' | 'profile' | 'inspection';
+  title: string;
+  /** Human-readable workbook provenance, never a model-invented source. */
+  source: string;
+  facts: { label: string; value: string }[];
+  note?: string;
+}
+
 /** The orchestrator's answer for one conversational turn. */
 export interface AgentDecision {
   message: string;
@@ -192,6 +204,8 @@ export interface AgentDecision {
   clarification?: ClarificationQuestion;
   guardrail?: GuardrailReport;
   insights?: string[];
+  /** Deterministic evidence collected by actual read tools or local statistical analysis. */
+  evidence?: EvidenceItem[];
   source: DecisionSource;
   trace: TraceStep[];
   activities?: AgentActivityEvent[];

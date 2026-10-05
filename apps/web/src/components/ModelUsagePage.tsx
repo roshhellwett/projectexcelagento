@@ -109,8 +109,10 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
           Model &amp; <span className="text-emerald">Usage</span>
         </h1>
         <p className="docs-subtitle usage-subtitle">
-          Every inference call this workspace has made, with real token counts reported by the
-          provider. Zero remote telemetry; all accounting is held client-side in session memory.
+          Every inference call this workspace records locally, with provider-reported token counts
+          when available. This is a local diagnostic ledger, not remote telemetry; missing usage is
+          shown as unknown and connected providers receive the context described on the Privacy
+          page.
         </p>
         <div
           className="usage-header-actions"
@@ -146,7 +148,11 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
           <StatCard
             label="Inference mode"
             value={keyConfigured ? 'BYOK model + guardrail' : 'Local deterministic engine'}
-            hint={keyConfigured ? 'Sheet profile only is sent' : 'Zero tokens, offline'}
+            hint={
+              keyConfigured
+                ? 'Prompt, profiles and requested read results may be sent'
+                : 'Zero tokens, offline'
+            }
             testId="usage-mode"
           />
         </div>
@@ -171,9 +177,9 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
             hint="Derived live from the engine registry"
           />
           <StatCard
-            label="Neural Cortex Patterns"
+            label="Verified learned patterns"
             value={`${learnedActions}`}
-            hint="Supabase Collective Intelligence • Verified cross-session learning"
+            hint="Local associations; optional cloud synchronization is deployment-configured"
             testId="usage-learned-actions"
           />
         </div>
@@ -201,7 +207,11 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
           <StatCard
             label="Total tokens"
             value={formatTokenCount(summary.totalTokens)}
-            hint="Prompt + completion, provider-reported"
+            hint={
+              summary.unreportedUsageRequests
+                ? `Reported subtotal · ${summary.unreportedUsageRequests} turn(s) have unknown usage`
+                : 'Prompt + completion, provider-reported'
+            }
             testId="usage-total-tokens"
           />
           <StatCard
@@ -322,9 +332,21 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
                     <td>{entry.source}</td>
                     <td>{entry.provider}</td>
                     <td>{entry.model}</td>
-                    <td>{formatTokenCount(entry.promptTokens)}</td>
-                    <td>{formatTokenCount(entry.completionTokens)}</td>
-                    <td>{formatTokenCount(entry.totalTokens)}</td>
+                    <td>
+                      {entry.tokenUsageReported === false
+                        ? 'Unknown'
+                        : formatTokenCount(entry.promptTokens)}
+                    </td>
+                    <td>
+                      {entry.tokenUsageReported === false
+                        ? 'Unknown'
+                        : formatTokenCount(entry.completionTokens)}
+                    </td>
+                    <td>
+                      {entry.tokenUsageReported === false
+                        ? 'Unknown'
+                        : formatTokenCount(entry.totalTokens)}
+                    </td>
                     <td>{formatLatency(entry.latencyMs)}</td>
                     <td>
                       <span
@@ -344,10 +366,12 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
       </section>
 
       <section className="usage-note">
-        <strong>Privacy:</strong> full spreadsheets never leave this browser. Only a compact column
-        profile and your prompt are sent to the provider you configured, using your own key. Token
-        counts come from the provider&apos;s own usage report; failed calls are logged with the
-        reason that was returned.
+        <strong>Data &amp; usage:</strong> local mode needs no model request. Connected models
+        receive your prompt, recent chat context, workbook profiles and examples, and requested
+        read-tool results. Optional cloud memory can also send queries and operation arguments to
+        the configured backend. Reported token totals include completed inference calls across the
+        turn; missing usage is shown as unknown, not free. Failed upstream calls may incur costs the
+        provider does not report. See the Privacy page before working with sensitive data.
       </section>
     </div>
   );

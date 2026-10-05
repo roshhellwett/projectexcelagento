@@ -13,6 +13,7 @@
  */
 export * from './analysis.js';
 export * from './context.js';
+export * from './evidence.js';
 export * from './memory.js';
 export * from './orchestrator.js';
 export * from './providers.js';

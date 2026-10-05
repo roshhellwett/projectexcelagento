@@ -22,7 +22,7 @@ import { WorkflowLibrary } from './components/WorkflowLibrary.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
 import type { CellSelection } from './lib/selection-context.js';
 import type { CellEdit } from './lib/grid-edit.js';
-import { AgentChat, type ChatMessage } from './components/AgentChat.js';
+import { AgentChat, type ChatMessage, type TaskReceipt } from './components/AgentChat.js';
 import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
 import { SettingsModal } from './components/SettingsModal.js';
@@ -53,6 +53,8 @@ import {
 
 import { askExcelAgent } from './lib/llm-service.js';
 import {
+  cloudMemoryConfig,
+  getTabSessionId,
   forgetLearnedActions,
   initCloudMemory,
   learnedActionCount,
@@ -69,13 +71,34 @@ import {
 } from './lib/usage.js';
 import {
   clearSettings,
+  defaultModelFor,
+  isDemoKey,
   loadSettings,
   saveSettings,
   type AgentSettings,
   type ProviderName,
 } from './lib/settings.js';
 
+import { useDialogA11y } from './lib/use-dialog-a11y.js';
+import {
+  workspaceRecoveryStore,
+  type CheckpointStatus,
+  type WorkspaceCheckpoint,
+  type WorkspaceRecoveryStore,
+} from './lib/workspace-recovery.js';
+
 const initialWorkbook = createSampleWorkbook();
+
+interface WorkbookReplacement {
+  workbook: Workbook;
+  fileName: string;
+  isUserUpload: boolean;
+  dateSystem: DateSystem;
+  checkpoint?: WorkspaceCheckpoint;
+  report?: ImportReport;
+}
+
+type WorkspaceDecision = { kind: 'replace'; replacement: WorkbookReplacement } | { kind: 'clear' };
 
 /** Top-level pages. The views are URL-addressable via `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
 export type WorkspaceView = 'workspace' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
@@ -104,7 +127,9 @@ function readViewFromHash(): WorkspaceView {
   }
 }
 
-export const App: React.FC = () => {
+export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
+  recoveryStore = workspaceRecoveryStore,
+}) => {
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
     initialWorkbook.sheets[0]?.name || 'Sheet1',
@@ -114,6 +139,142 @@ export const App: React.FC = () => {
   // Which epoch the loaded workbook's serials count from; a 1904 file read as 1900 would show
   // every date four years and a day early.
   const [dateSystem, setDateSystem] = useState<DateSystem>('1900');
+
+  // Generation changes on replacement; revision changes on every edit, undo and redo.
+  // Refs update synchronously so even a callback arriving before React renders is fenced out.
+  const documentGeneration = useRef(0);
+  const workbookRevision = useRef(0);
+  const [generation, setGeneration] = useState(0);
+  const unexportedRef = useRef(false);
+  const [hasUnexportedChanges, setHasUnexportedChanges] = useState(false);
+  const importRequest = useRef(0);
+  const [workspaceDecision, setWorkspaceDecision] = useState<WorkspaceDecision | null>(null);
+  const decisionRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(workspaceDecision !== null, decisionRef, () => setWorkspaceDecision(null));
+
+  const [checkpointStatus, setCheckpointStatus] = useState<CheckpointStatus>('checking');
+  const [checkpointError, setCheckpointError] = useState('');
+  const [checkpointDeleteFailed, setCheckpointDeleteFailed] = useState(false);
+  const [checkpointClearing, setCheckpointClearing] = useState(false);
+  const checkpointEpoch = useRef(0);
+  const checkpointMounted = useRef(true);
+  useEffect(() => {
+    checkpointMounted.current = true;
+    return () => {
+      checkpointMounted.current = false;
+    };
+  }, []);
+  const [recoveryCandidate, setRecoveryCandidate] = useState<WorkspaceCheckpoint | null>(null);
+  const [recoveryResolved, setRecoveryResolved] = useState(false);
+  const [checkpointEnabled, setCheckpointEnabled] = useState(true);
+  const [checkpointEligible, setCheckpointEligible] = useState(false);
+  const [hasStoredCheckpoint, setHasStoredCheckpoint] = useState(false);
+  const [lastCheckpointAt, setLastCheckpointAt] = useState<number | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  const [recoveryNotice, setRecoveryNotice] = useState(false);
+  // Also order injected storage implementations: clear must follow any already-dispatched save.
+  const checkpointQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const queueCheckpoint = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const next = checkpointQueue.current.then(task, task);
+    checkpointQueue.current = next.catch(() => undefined);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    setCheckpointStatus('checking');
+    void queueCheckpoint(() => recoveryStore.load())
+      .then((checkpoint) => {
+        if (!current) return;
+        setRecoveryCandidate(checkpoint);
+        setHasStoredCheckpoint(checkpoint !== null);
+        setLastCheckpointAt(checkpoint?.savedAt ?? null);
+        setRecoveryResolved(checkpoint === null);
+        setCheckpointError('');
+        setCheckpointStatus(checkpoint ? 'recovery' : 'idle');
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        // Never overwrite a checkpoint we could not read. The user can retry or clear it.
+        setRecoveryResolved(false);
+        setCheckpointStatus('unavailable');
+        setCheckpointError(
+          error instanceof Error ? error.message : 'Local checkpoint storage could not be read.',
+        );
+      });
+    return () => {
+      current = false;
+    };
+  }, [recoveryStore, queueCheckpoint, readAttempt]);
+
+  useEffect(() => {
+    if (!recoveryResolved || !checkpointEnabled || !checkpointEligible) return;
+    let current = true;
+    const savingGeneration = documentGeneration.current;
+    const savingRevision = workbookRevision.current;
+    const savingEpoch = checkpointEpoch.current;
+    setCheckpointStatus('saving');
+    const timer = setTimeout(() => {
+      const checkpoint: WorkspaceCheckpoint = {
+        version: 1,
+        workbook,
+        fileName,
+        activeSheetName,
+        dateSystem,
+        hasUserUploadedFile,
+        savedAt: Date.now(),
+      };
+      void queueCheckpoint(() => recoveryStore.save(checkpoint))
+        .then(() => {
+          if (!checkpointMounted.current || savingEpoch !== checkpointEpoch.current) return;
+          // A superseded save is still the last durable checkpoint if the next write fails.
+          setLastCheckpointAt(checkpoint.savedAt);
+          setHasStoredCheckpoint(true);
+          if (
+            !current ||
+            savingGeneration !== documentGeneration.current ||
+            savingRevision !== workbookRevision.current
+          )
+            return;
+          setCheckpointStatus('saved');
+          setCheckpointError('');
+        })
+        .catch((error: unknown) => {
+          if (!current) return;
+          setCheckpointStatus('unavailable');
+          setCheckpointError(
+            error instanceof Error ? error.message : 'The workbook checkpoint was not saved.',
+          );
+        });
+    }, 450);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [
+    workbook,
+    fileName,
+    activeSheetName,
+    dateSystem,
+    hasUserUploadedFile,
+    recoveryResolved,
+    checkpointEnabled,
+    checkpointEligible,
+    recoveryStore,
+    queueCheckpoint,
+    saveAttempt,
+  ]);
+
+  useEffect(() => {
+    const warnOnLeave = (event: BeforeUnloadEvent) => {
+      if (!unexportedRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnOnLeave);
+    return () => window.removeEventListener('beforeunload', warnOnLeave);
+  }, []);
 
   // Search in sheet
   const [searchQuery, setSearchQuery] = useState('');
@@ -265,6 +426,35 @@ export const App: React.FC = () => {
   // Initial Chat Messages
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const turnAbortRef = useRef<AbortController | null>(null);
+  const turnSequence = useRef(0);
+  useEffect(
+    () => () => {
+      documentGeneration.current += 1;
+      turnAbortRef.current?.abort();
+    },
+    [],
+  );
+
+  const markWorkbookEdited = useCallback(() => {
+    workbookRevision.current += 1;
+    unexportedRef.current = true;
+    setHasUnexportedChanges(true);
+    setCheckpointEligible(true);
+    setMessages((previous) =>
+      previous.map((message) =>
+        (message.proposedAction || message.plan) &&
+        (message.status === 'pending' || message.status === 'confirming')
+          ? {
+              ...message,
+              status: 'stale',
+              confirmationPrompt: undefined,
+              staleReason:
+                'The workbook changed after this preview. Preview again before applying; previous confirmation no longer applies.',
+            }
+          : message,
+      ),
+    );
+  }, []);
   const [selectionContext, setSelectionContext] = useState<CellSelection | null>(null);
   const [studioView, setStudioView] = useState<StudioView>('sheet');
   const [agentDraft, setAgentDraft] = useState<{ text: string; revision: number }>();
@@ -273,7 +463,7 @@ export const App: React.FC = () => {
     const read = createWorkbookValueReader(workbook);
     return getCompactColumnProfiles(currentSheet, 8, (column, row) => {
       const cell = currentSheet.rows[row - 1]?.[column];
-      return cell?.formula ? read(currentSheet.name, column, row) : cell?.value ?? null;
+      return cell?.formula ? read(currentSheet.name, column, row) : (cell?.value ?? null);
     });
   }, [workbook, currentSheet]);
 
@@ -300,6 +490,7 @@ export const App: React.FC = () => {
         const sheetName = typeof args.sheet === 'string' ? args.sheet : activeSheetName;
 
         if (result.ok) {
+          markWorkbookEdited();
           setWorkbook(result.workbook);
           setHistoryRevision((r) => r + 1);
 
@@ -360,7 +551,7 @@ export const App: React.FC = () => {
         setIsProcessing(false);
       }
     },
-    [workbook, historyStack, activeSheetName, pushToast],
+    [workbook, historyStack, activeSheetName, pushToast, markWorkbookEdited],
   );
 
   /**
@@ -380,29 +571,42 @@ export const App: React.FC = () => {
   const handleUndo = useCallback(() => {
     const prev = historyStack.undo();
     if (prev) {
+      markWorkbookEdited();
       setWorkbook(prev);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.receipt?.status === 'applied'
+            ? {
+                ...message,
+                receipt: { ...message.receipt, status: 'undone', completedAt: Date.now() },
+              }
+            : message,
+        ),
+      );
     }
-  }, [historyStack]);
+  }, [historyStack, markWorkbookEdited]);
 
   const handleRedo = useCallback(() => {
     const next = historyStack.redo();
     if (next) {
+      markWorkbookEdited();
       setWorkbook(next);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
     }
-  }, [historyStack]);
+  }, [historyStack, markWorkbookEdited]);
 
   const handleStepBack = useCallback(
     (position: number) => {
       const restored = historyStack.stepBack(position);
+      markWorkbookEdited();
       setWorkbook(restored);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
     },
-    [historyStack],
+    [historyStack, markWorkbookEdited],
   );
 
   const handleReset = useCallback(() => {
@@ -412,6 +616,7 @@ export const App: React.FC = () => {
   // Keyboard shortcuts (Ctrl+Z / Ctrl+Y)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('[data-dialog-open="true"]')) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -429,33 +634,126 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
-  // Load new workbook
-  const loadNewWorkbook = (
-    wb: Workbook,
-    newFileName: string,
-    isUserUpload = false,
-    system: DateSystem = '1900',
-  ) => {
+  // Replacement is a new document, never a continuation of the previous conversation.
+  const loadNewWorkbook = (replacement: WorkbookReplacement) => {
+    const {
+      workbook: wb,
+      fileName: newFileName,
+      isUserUpload,
+      dateSystem: system,
+      checkpoint,
+      report,
+    } = replacement;
+    documentGeneration.current += 1;
+    workbookRevision.current = 0;
+    importRequest.current += 1;
+    turnAbortRef.current?.abort();
+    turnAbortRef.current = null;
+    setIsProcessing(false);
+    setGeneration(documentGeneration.current);
     setWorkbook(wb);
-    setActiveSheetName(wb.sheets[0]?.name || 'Sheet1');
+    setActiveSheetName(
+      checkpoint && wb.sheets.some((sheet) => sheet.name === checkpoint.activeSheetName)
+        ? checkpoint.activeSheetName
+        : wb.sheets[0]?.name || 'Sheet1',
+    );
     setFileName(newFileName);
     setHasUserUploadedFile(isUserUpload);
     setDateSystem(system);
-    const newStack = new HistoryStack(wb, { snapshotEvery: 5 });
-    setHistoryStack(newStack);
+    setHistoryStack(new HistoryStack(wb, { snapshotEvery: 5 }));
     setHistoryRevision(0);
     setRecentChangedCells(new Set());
     setSearchQuery('');
+    setSelectionContext(null);
+    setAgentDraft(undefined);
+    setIsOpModalOpen(false);
+    setIsHistoryDrawerOpen(false);
+    setIsCommandPaletteOpen(false);
+    setWorkspaceDecision(null);
+    // A restored checkpoint has not been exported in this new session.
+    unexportedRef.current = Boolean(checkpoint);
+    setHasUnexportedChanges(Boolean(checkpoint));
+    setCheckpointEligible(true);
+    setRecoveryNotice(Boolean(checkpoint));
+    if (checkpoint) {
+      setRecoveryCandidate(null);
+      setRecoveryResolved(true);
+      setCheckpointEnabled(true);
+    }
+    setMessages([
+      {
+        id: `loaded-${documentGeneration.current}`,
+        sender: 'assistant',
+        text: `${checkpoint ? 'Restored' : 'Loaded'} **"${newFileName}"** with ${wb.sheets.length} sheet(s). New workbook context started; previous proposals and conversation are cleared.${checkpoint ? ' Undo history starts fresh from this checkpoint.' : ''}`,
+      },
+    ]);
+    if (report)
+      reportImport(
+        report,
+        newFileName,
+        wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0),
+      );
+  };
 
-    if (hasApiKey) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `loaded-${Date.now()}`,
-          sender: 'assistant',
-          text: `Loaded **"${newFileName}"** with ${wb.sheets.length} sheet(s) (${wb.sheets[0]?.rows.length ?? 0} rows). Ready to inspect, clean, sort, or transform.`,
-        },
-      ]);
+  const requestWorkbookReplacement = (replacement: WorkbookReplacement) => {
+    if (unexportedRef.current) {
+      setWorkspaceDecision({ kind: 'replace', replacement });
+    } else {
+      loadNewWorkbook(replacement);
+    }
+  };
+
+  const restoreCheckpoint = () => {
+    if (!recoveryCandidate || checkpointClearing) return;
+    requestWorkbookReplacement({
+      workbook: recoveryCandidate.workbook,
+      fileName: recoveryCandidate.fileName,
+      isUserUpload: recoveryCandidate.hasUserUploadedFile,
+      dateSystem: recoveryCandidate.dateSystem,
+      checkpoint: recoveryCandidate,
+    });
+  };
+
+  const clearCheckpoint = async () => {
+    checkpointEpoch.current += 1;
+    setWorkspaceDecision(null);
+    setCheckpointEnabled(false);
+    setCheckpointDeleteFailed(false);
+    setCheckpointClearing(true);
+    setCheckpointStatus('saving');
+    try {
+      await queueCheckpoint(() => recoveryStore.clear());
+      setRecoveryCandidate(null);
+      setRecoveryResolved(true);
+      setHasStoredCheckpoint(false);
+      setLastCheckpointAt(null);
+      setCheckpointError('');
+      setCheckpointStatus('off');
+      pushToast(
+        'info',
+        'Local workbook checkpoint deleted. Checkpoints are off for this session; export to keep your work.',
+      );
+    } catch {
+      setCheckpointDeleteFailed(true);
+      setCheckpointStatus('unavailable');
+      setCheckpointError(
+        'Could not delete the local checkpoint. Stored workbook data may remain in this browser. Retry clearing it.',
+      );
+    } finally {
+      setCheckpointClearing(false);
+    }
+  };
+
+  const retryCheckpoint = () => {
+    if (checkpointDeleteFailed) {
+      void clearCheckpoint();
+      return;
+    }
+    setCheckpointEnabled(true);
+    if (!recoveryResolved) setReadAttempt((attempt) => attempt + 1);
+    else {
+      setCheckpointEligible(true);
+      setSaveAttempt((attempt) => attempt + 1);
     }
   };
 
@@ -502,9 +800,16 @@ export const App: React.FC = () => {
       return;
     }
 
+    const request = ++importRequest.current;
+    const importingGeneration = documentGeneration.current;
+    const isCurrentImport = () =>
+      request === importRequest.current && importingGeneration === documentGeneration.current;
     const reader = new FileReader();
-    reader.onerror = () => pushToast('error', `Could not read "${file.name}".`);
+    reader.onerror = () => {
+      if (isCurrentImport()) pushToast('error', `Could not read "${file.name}".`);
+    };
     reader.onload = async (e) => {
+      if (!isCurrentImport()) return;
       const buffer = e.target?.result;
       if (!(buffer instanceof ArrayBuffer)) {
         pushToast('error', `Could not read "${file.name}".`);
@@ -512,10 +817,16 @@ export const App: React.FC = () => {
       }
       try {
         const { workbook: wb, report } = await xlsxToWorkbook(buffer);
-        const totalRows = wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
-        loadNewWorkbook(wb, file.name, true, report.dateSystem);
-        reportImport(report, file.name, totalRows);
+        if (!isCurrentImport()) return;
+        requestWorkbookReplacement({
+          workbook: wb,
+          fileName: file.name,
+          isUserUpload: true,
+          dateSystem: report.dateSystem,
+          report,
+        });
       } catch (error) {
+        if (!isCurrentImport()) return;
         pushToast(
           'error',
           error instanceof Error ? error.message : `Could not parse "${file.name}".`,
@@ -527,8 +838,17 @@ export const App: React.FC = () => {
 
   // Fixture switcher
   const handleSelectFixture = async (fixtureName: string) => {
+    const request = ++importRequest.current;
+    const importingGeneration = documentGeneration.current;
+    const isCurrentImport = () =>
+      request === importRequest.current && importingGeneration === documentGeneration.current;
     if (fixtureName === 'sample') {
-      loadNewWorkbook(createSampleWorkbook(), 'sample-orders.xlsx', false);
+      requestWorkbookReplacement({
+        workbook: createSampleWorkbook(),
+        fileName: 'sample-orders.xlsx',
+        isUserUpload: false,
+        dateSystem: '1900',
+      });
       return;
     }
 
@@ -537,18 +857,33 @@ export const App: React.FC = () => {
       if (!response.ok) throw new Error('Fixture file not found');
       const buffer = await response.arrayBuffer();
       const { workbook: wb, report } = await xlsxToWorkbook(buffer);
-      loadNewWorkbook(wb, fixtureName, true, report.dateSystem);
-      const fixtureRows = wb.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0);
-      reportImport(report, fixtureName, fixtureRows);
+      if (!isCurrentImport()) return;
+      requestWorkbookReplacement({
+        workbook: wb,
+        fileName: fixtureName,
+        isUserUpload: true,
+        dateSystem: report.dateSystem,
+        report,
+      });
     } catch (error) {
+      if (!isCurrentImport()) return;
       pushToast('error', error instanceof Error ? error.message : `Could not load ${fixtureName}`);
     }
   };
 
   // Export current workbook
   const handleExport = async () => {
+    const exportingGeneration = documentGeneration.current;
+    const exportingRevision = workbookRevision.current;
     const target = `${fileName.replace(/\.[^.]+$/, '')}-cleaned.xlsx`;
     if (await downloadWorkbookAsXlsx(workbook, target)) {
+      if (
+        exportingGeneration === documentGeneration.current &&
+        exportingRevision === workbookRevision.current
+      ) {
+        unexportedRef.current = false;
+        setHasUnexportedChanges(false);
+      }
       pushToast('success', `Exported "${target}".`);
     } else {
       pushToast('error', 'Export failed. Please try again.');
@@ -557,8 +892,10 @@ export const App: React.FC = () => {
 
   // Chat message send handler
   const handleSendMessage = async (query: string) => {
-    const userMsgId = `user-${Date.now()}`;
-    const assistMsgId = `assist-${Date.now() + 1}`;
+    const context = { generation: documentGeneration.current, revision: workbookRevision.current };
+    const turnId = ++turnSequence.current;
+    const userMsgId = `user-${context.generation}-${turnId}`;
+    const assistMsgId = `assist-${context.generation}-${turnId}`;
 
     const userMsg: ChatMessage = {
       id: userMsgId,
@@ -572,14 +909,19 @@ export const App: React.FC = () => {
       text: '',
       sourceQuery: query,
       status: 'pending',
+      workbookContext: context,
       isStreaming: true,
       activities: [],
     };
 
     setMessages((prev) => [...prev, userMsg, initialAssistMsg]);
     setIsProcessing(true);
+    turnAbortRef.current?.abort();
     const turnAbort = new AbortController();
     turnAbortRef.current = turnAbort;
+    const belongsToDocument = () =>
+      context.generation === documentGeneration.current && turnAbortRef.current === turnAbort;
+    const acceptsCallback = () => belongsToDocument() && !turnAbort.signal.aborted;
     const turnStarted = Date.now();
 
     try {
@@ -596,11 +938,13 @@ export const App: React.FC = () => {
 
       const callbacks = {
         onToken: (chunk: string) => {
+          if (!acceptsCallback()) return;
           setMessages((prev) =>
             prev.map((m) => (m.id === assistMsgId ? { ...m, text: m.text + chunk } : m)),
           );
         },
         onThinking: (thoughtChunk: string) => {
+          if (!acceptsCallback()) return;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistMsgId ? { ...m, thought: (m.thought || '') + thoughtChunk } : m,
@@ -612,6 +956,7 @@ export const App: React.FC = () => {
           completionTokens?: number;
           totalTokens?: number;
         }) => {
+          if (!acceptsCallback()) return;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistMsgId
@@ -631,6 +976,7 @@ export const App: React.FC = () => {
       };
 
       const onActivity = (activity: AgentActivityEvent) => {
+        if (!acceptsCallback()) return;
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id !== assistMsgId) return m;
@@ -651,27 +997,57 @@ export const App: React.FC = () => {
         );
       };
 
-      const agentRes = await askExcelAgent(
-        agentQuery,
-        workbook,
-        activeSheetName,
-        hasApiKey
-          ? {
-              provider: settings.provider,
-              apiKey: settings.apiKey,
-              model: settings.model,
-              baseUrl: settings.baseUrl,
-            }
-          : null,
-        hasUserUploadedFile,
-        {
-          conversationHistory,
-          callbacks,
-          onActivity,
-          signal: turnAbort.signal,
-        },
-      );
+      const config = hasApiKey
+        ? {
+            provider: settings.provider,
+            apiKey: settings.apiKey,
+            model: settings.model,
+            baseUrl: settings.baseUrl,
+          }
+        : null;
+      const options = { conversationHistory, callbacks, onActivity, signal: turnAbort.signal };
+      // The existing service scopes cloud scratchpad memory to the tab. For a connected memory
+      // deployment, scope it more tightly to this workbook generation so even a late old write
+      // cannot enter the next document's context. No shared settings/session state is rotated.
+      const agentRes = cloudMemoryConfig.enabled
+        ? await (async () => {
+            const decision = await orchestrator.decide({
+              query: agentQuery,
+              workbook,
+              sheetName: activeSheetName,
+              hasUserFile: hasUserUploadedFile,
+              sessionId: `${getTabSessionId()}:workbook:${context.generation}`,
+              config:
+                config && !isDemoKey(config.apiKey)
+                  ? { ...config, model: config.model ?? defaultModelFor(config.provider) }
+                  : null,
+              ...options,
+            });
+            return {
+              message: decision.message,
+              thought: decision.thought,
+              proposedAction: decision.action,
+              plan: decision.plan,
+              clarification: decision.clarification,
+              source: decision.source,
+              guardrail: decision.guardrail,
+              trace: decision.trace,
+              activities: decision.activities,
+              evidence: decision.evidence,
+              telemetry: decision.telemetry,
+            };
+          })()
+        : await askExcelAgent(
+            agentQuery,
+            workbook,
+            activeSheetName,
+            config,
+            hasUserUploadedFile,
+            options,
+          );
 
+      if (!acceptsCallback()) return;
+      const proposalIsStale = context.revision !== workbookRevision.current;
       const proposed = agentRes.proposedAction;
       let previewResult: Preview | undefined;
 
@@ -715,6 +1091,7 @@ export const App: React.FC = () => {
               text: agentRes.message || m.text,
               thought: agentRes.thought || m.thought,
               activities: agentRes.activities ?? m.activities,
+              evidence: agentRes.evidence ?? m.evidence,
               proposedAction: proposed,
               plan: agentRes.plan,
               clarification: agentRes.clarification,
@@ -730,13 +1107,17 @@ export const App: React.FC = () => {
                   ? { ...m.tokens, isLive: false }
                   : undefined,
               isStreaming: false,
-              status: 'pending',
+              status: proposalIsStale && (proposed || agentRes.plan) ? 'stale' : 'pending',
+              staleReason: proposalIsStale
+                ? 'The workbook changed while this response was being prepared. Preview again against the current workbook.'
+                : undefined,
             };
           }
           return m;
         }),
       );
     } catch (error) {
+      if (!belongsToDocument()) return;
       const aborted =
         turnAbort.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
       if (!aborted && hasApiKey) {
@@ -779,19 +1160,60 @@ export const App: React.FC = () => {
         pushToast('error', error instanceof Error ? error.message : 'The agent could not respond.');
       }
     } finally {
-      turnAbortRef.current = null;
-      setIsProcessing(false);
+      if (belongsToDocument()) {
+        turnAbortRef.current = null;
+        setIsProcessing(false);
+      }
     }
+  };
+
+  // Never trust a card's rendered props: recheck the live document and revision at commit time.
+  const canApplyProposal = (messageId: string, confirmed: boolean): boolean => {
+    const message = messages.find((candidate) => candidate.id === messageId);
+    const context = message?.workbookContext;
+    if (
+      !message ||
+      !context ||
+      context.generation !== documentGeneration.current ||
+      context.revision !== workbookRevision.current ||
+      (message.status !== 'pending' && message.status !== 'confirming') ||
+      (confirmed && message.status !== 'confirming')
+    ) {
+      setMessages((previous) =>
+        previous.map((candidate) =>
+          candidate.id === messageId && candidate.status !== 'applied'
+            ? {
+                ...candidate,
+                status: 'stale',
+                confirmationPrompt: undefined,
+                staleReason:
+                  'This preview belongs to an earlier workbook revision. Preview again before applying.',
+              }
+            : candidate,
+        ),
+      );
+      pushToast(
+        'warning',
+        'The workbook changed. Preview the proposal again; nothing was applied.',
+      );
+      return false;
+    }
+    return true;
   };
 
   // Apply multi-step execution plan from chat
   const handleApplyPlan = (messageId: string, plan: ExecutionPlan, confirmed = false) => {
+    if (!canApplyProposal(messageId, confirmed)) return;
     setIsProcessing(true);
     try {
       const result = applyOperationPlan(workbook, plan.steps, {
-        registry, history: historyStack, confirmed, operationName: `plan: ${plan.title}`,
+        registry,
+        history: historyStack,
+        confirmed,
+        operationName: `plan: ${plan.title}`,
       });
       if (result.ok) {
+        markWorkbookEdited();
         setWorkbook(result.workbook);
         setHistoryRevision((r) => r + 1);
         setRecentChangedCells(new Set());
@@ -803,29 +1225,88 @@ export const App: React.FC = () => {
         } else if (!result.workbook.sheets.some((s) => s.name === activeSheetName)) {
           setActiveSheetName(result.workbook.sheets[0]?.name ?? '');
         }
-        pushToast('success', `Plan "${plan.title}" executed (${plan.steps.length} steps applied). Invariants verified ✓`);
+        pushToast(
+          'success',
+          `Plan "${plan.title}" executed (${plan.steps.length} steps applied). Invariants verified ✓`,
+        );
       } else if (result.error.code !== 'confirmation-required') {
-        pushToast('error', `Plan stopped at Step ${result.failedStep + 1}: ${result.error.messages.join(', ')} Nothing was applied.`);
+        pushToast(
+          'error',
+          `Plan stopped at Step ${result.failedStep + 1}: ${result.error.messages.join(', ')} Nothing was applied.`,
+        );
       }
       const awaitingConfirmation = !result.ok && result.error.code === 'confirmation-required';
-      setMessages((prev) => prev.map((m) => m.id !== messageId ? m : {
-        ...m,
-        status: result.ok ? 'applied' : awaitingConfirmation ? 'confirming' : 'error',
-        confirmationPrompt: awaitingConfirmation ? {
-          affectedCells: result.preview?.affectedCells ?? 0,
-          reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
-        } : undefined,
-        errorMessage: !result.ok && !awaitingConfirmation ? result.error.messages.join(', ') : undefined,
-        plan: {
-          ...plan,
-          status: result.ok ? 'applied' : awaitingConfirmation ? 'pending' : 'error',
-          steps: plan.steps.map((step, index) => ({
-            ...step,
-            status: result.ok ? 'completed' : !awaitingConfirmation && index === result.failedStep ? 'error' : 'pending',
-            error: !result.ok && !awaitingConfirmation && index === result.failedStep ? result.error.messages.join(', ') : undefined,
-          })),
-        },
-      }));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id !== messageId
+            ? m
+            : {
+                ...m,
+                status: result.ok ? 'applied' : awaitingConfirmation ? 'confirming' : 'error',
+                receipt: result.ok
+                  ? ({
+                      id: `receipt-${Date.now()}`,
+                      status: 'applied',
+                      request: m.sourceQuery ?? plan.title,
+                      createdAt: Date.now(),
+                      completedAt: Date.now(),
+                      workbookContext: {
+                        generation: documentGeneration.current,
+                        revision: workbookRevision.current,
+                        fileName,
+                        sheetName: activeSheetName,
+                      },
+                      operations: result.steps.map((step, index) => ({
+                        name: plan.steps[index]?.operation ?? 'step',
+                        affectedCells: step.report.affectedCells,
+                        warnings: step.report.warnings.map((warning) => warning.message),
+                      })),
+                    } satisfies TaskReceipt)
+                  : !awaitingConfirmation
+                    ? ({
+                        id: `receipt-${Date.now()}`,
+                        status: 'failed',
+                        request: m.sourceQuery ?? plan.title,
+                        createdAt: Date.now(),
+                        completedAt: Date.now(),
+                        operations: [
+                          {
+                            name: plan.title,
+                            affectedCells: result.preview?.affectedCells ?? 0,
+                            warnings: result.error.messages,
+                          },
+                        ],
+                      } satisfies TaskReceipt)
+                    : undefined,
+                confirmationPrompt: awaitingConfirmation
+                  ? {
+                      affectedCells: result.preview?.affectedCells ?? 0,
+                      reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
+                    }
+                  : undefined,
+                errorMessage:
+                  !result.ok && !awaitingConfirmation
+                    ? result.error.messages.join(', ')
+                    : undefined,
+                plan: {
+                  ...plan,
+                  status: result.ok ? 'applied' : awaitingConfirmation ? 'pending' : 'error',
+                  steps: plan.steps.map((step, index) => ({
+                    ...step,
+                    status: result.ok
+                      ? 'completed'
+                      : !awaitingConfirmation && index === result.failedStep
+                        ? 'error'
+                        : 'pending',
+                    error:
+                      !result.ok && !awaitingConfirmation && index === result.failedStep
+                        ? result.error.messages.join(', ')
+                        : undefined,
+                  })),
+                },
+              },
+        ),
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -833,6 +1314,7 @@ export const App: React.FC = () => {
 
   // Apply proposed action from chat
   const handleApplyAction = (messageId: string, action: ProposedAction, confirmed = false) => {
+    if (!canApplyProposal(messageId, confirmed)) return;
     const sourceQuery = messages.find((message) => message.id === messageId)?.sourceQuery;
     const result = executeOperation(action.name, action.args, sourceQuery, confirmed);
     setMessages((prev) =>
@@ -849,6 +1331,26 @@ export const App: React.FC = () => {
             ...m,
             status: 'applied',
             confirmationPrompt: undefined,
+            receipt: {
+              id: `receipt-${Date.now()}`,
+              status: 'applied',
+              request: m.sourceQuery ?? action.name,
+              createdAt: Date.now(),
+              completedAt: Date.now(),
+              workbookContext: {
+                generation: documentGeneration.current,
+                revision: workbookRevision.current,
+                fileName,
+                sheetName: activeSheetName,
+              },
+              operations: [
+                {
+                  name: action.name,
+                  affectedCells: result.report.affectedCells,
+                  warnings: result.report.warnings.map((warning) => warning.message),
+                },
+              ],
+            } satisfies TaskReceipt,
             text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
           };
         }
@@ -867,6 +1369,26 @@ export const App: React.FC = () => {
         return {
           ...m,
           status: 'error',
+          receipt: {
+            id: `receipt-${Date.now()}`,
+            status: 'failed',
+            request: m.sourceQuery ?? action.name,
+            createdAt: Date.now(),
+            completedAt: Date.now(),
+            workbookContext: {
+              generation: documentGeneration.current,
+              revision: workbookRevision.current,
+              fileName,
+              sheetName: activeSheetName,
+            },
+            operations: [
+              {
+                name: action.name,
+                affectedCells: result.preview?.affectedCells ?? 0,
+                warnings: result.error.messages,
+              },
+            ],
+          } satisfies TaskReceipt,
           confirmationPrompt: undefined,
           errorMessage: result.error.messages.join(', '),
         };
@@ -906,6 +1428,22 @@ export const App: React.FC = () => {
     setRevealAgentRevision((revision) => revision + 1);
     setAgentDraft((previous) => ({ text: prompt, revision: (previous?.revision ?? 0) + 1 }));
   };
+
+  const checkpointLabel: Record<CheckpointStatus, string> = {
+    checking: 'Checking local checkpoint…',
+    idle: 'Not checkpointed yet',
+    recovery: 'Recovery available',
+    saving: 'Saving checkpoint…',
+    saved: 'Checkpoint saved locally',
+    unavailable: 'Checkpoint unavailable',
+    off: 'Checkpoints off',
+  };
+  const checkpointDetail =
+    checkpointStatus === 'saved'
+      ? 'Stored in this browser only. Export an .xlsx for a portable copy. Undo history is not checkpointed.'
+      : checkpointStatus === 'unavailable'
+        ? 'Your current edits are in memory. Export to keep them; only the last successful checkpoint can be restored.'
+        : 'Local checkpoints stay in this browser. They do not replace an exported workbook.';
 
   // Dedicated Model & Usage page (kept as a separate route-like view).
   if (view === 'usage') {
@@ -1045,166 +1583,363 @@ export const App: React.FC = () => {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="app-container workbench">
-      {/* Top Navigation */}
-      <TopNav
-        fileName={fileName}
-        activeSheetName={activeSheetName}
-        rowCount={currentSheet.rows.length}
-        colCount={maxColumnCount(currentSheet.rows)}
-        canUndo={historyStack.canUndo}
-        canRedo={historyStack.canRedo}
-        historyLength={historyStack.length}
-        historyPosition={historyStack.position}
-        searchQuery={searchQuery}
-        searchMatchCount={searchMatches.length}
-        onSearchChange={setSearchQuery}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onReset={handleReset}
-        onFileUpload={handleFileUpload}
-        onExport={handleExport}
-        onSelectFixture={handleSelectFixture}
-        onOpenOperationModal={() => setIsOpModalOpen(true)}
-        onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenUsage={() => navigate('usage')}
-        onOpenAgents={() => navigate('agents')}
-        onOpenDocs={() => navigate('docs')}
-        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-      />
+      <div className="app-container workbench">
+        {/* Top Navigation */}
+        <TopNav
+          fileName={fileName}
+          activeSheetName={activeSheetName}
+          rowCount={currentSheet.rows.length}
+          colCount={maxColumnCount(currentSheet.rows)}
+          canUndo={historyStack.canUndo}
+          canRedo={historyStack.canRedo}
+          historyLength={historyStack.length}
+          historyPosition={historyStack.position}
+          searchQuery={searchQuery}
+          searchMatchCount={searchMatches.length}
+          onSearchChange={setSearchQuery}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onReset={handleReset}
+          onFileUpload={handleFileUpload}
+          onExport={handleExport}
+          onSelectFixture={handleSelectFixture}
+          onOpenOperationModal={() => setIsOpModalOpen(true)}
+          onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenUsage={() => navigate('usage')}
+          onOpenAgents={() => navigate('agents')}
+          onOpenDocs={() => navigate('docs')}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          checkpointStatus={checkpointStatus}
+          checkpointLabel={
+            checkpointClearing ? 'Deleting checkpoint…' : checkpointLabel[checkpointStatus]
+          }
+          checkpointDetail={checkpointDetail}
+          onClearCheckpoint={
+            hasStoredCheckpoint || checkpointStatus === 'unavailable'
+              ? () => setWorkspaceDecision({ kind: 'clear' })
+              : undefined
+          }
+        />
 
-      {/* Main Workspace Body */}
-      <WorkspaceShell view={studioView} onViewChange={setStudioView} sheetName={currentSheet.name}
-        isProcessing={isProcessing} revealAgentRevision={revealAgentRevision}
-        agent={
-          <ErrorBoundary variant="panel" label="the agent chat">
-            <AgentChat
-              audit={sheetAudit}
-              messages={messages}
-              isProcessing={isProcessing}
-              hasApiKey={hasApiKey}
-              apiKeyProvider={settings.provider}
-              onSaveApiKey={handleSaveApiKey}
-              onClearApiKey={handleClearApiKey}
-              onSendMessage={handleSendMessage}
-              onApplyAction={handleApplyAction}
-              onApplyPlan={handleApplyPlan}
-              onCancelAction={handleCancelAction}
-              onUndoLast={handleUndo}
-              canUndo={historyStack.canUndo}
-              onStop={() => turnAbortRef.current?.abort()}
-              selectionContext={selectionContext}
-              onClearSelectionContext={() => setSelectionContext(null)}
-              learnedActions={learnedActions}
-              draftPrompt={agentDraft}
-              workflowProfiles={studioProfiles}
-              onOpenWorkflows={() => setStudioView('workflows')}
-            />
-          </ErrorBoundary>
-        }>
-        <div className="studio-sheet-view" hidden={studioView !== 'sheet'}>
-        {/* Spreadsheet Grid with Drop Zone */}
-        <ErrorBoundary variant="panel" label="the grid">
-          <SpreadsheetGrid
-            workbook={workbook}
-            activeSheetName={activeSheetName}
-            dateSystem={dateSystem}
-            onSelectSheet={(sheet) => setActiveSheetName(sheet)}
-            recentChangedCells={recentChangedCells}
-            searchHighlightCells={searchHighlightCells}
-            onQuickSort={handleQuickSort}
-            onFileDrop={handleFileUpload}
-            onAddSelectionContext={setSelectionContext}
-            onEditCells={handleEditCells}
-          />
-        </ErrorBoundary>
-
-        </div>
-        {studioView === 'insights' && <ErrorBoundary variant="panel" label="workbook insights"><WorkbookInsights profiles={studioProfiles} audit={sheetAudit} onRun={handleWorkflow} isProcessing={isProcessing} /></ErrorBoundary>}
-        {studioView === 'workflows' && <ErrorBoundary variant="panel" label="workflow library"><WorkflowLibrary profiles={studioProfiles} tools={orchestrator.tools} onRun={handleWorkflow} onDraft={handleDraft} isProcessing={isProcessing} /></ErrorBoundary>}
-      </WorkspaceShell>
-
-      {/* Manual Operation Modal */}
-      <OperationModal
-        isOpen={isOpModalOpen}
-        onClose={() => setIsOpModalOpen(false)}
-        workbook={workbook}
-        activeSheetName={activeSheetName}
-        onExecute={(name, args) => executeOperation(name, args)}
-      />
-
-      {/* Operation Audit History Drawer */}
-      <HistoryDrawer
-        isOpen={isHistoryDrawerOpen}
-        onClose={() => setIsHistoryDrawerOpen(false)}
-        entries={historyStack.history}
-        currentPosition={historyStack.position}
-        onStepBack={handleStepBack}
-      />
-
-      {/* Settings / BYOK Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSave={handleSettingsChange}
-        onClear={handleClearApiKey}
-      />
-
-      {/* Command Palette HUD (Cmd+K) */}
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onExecutePrompt={handleWorkflow}
-        onExport={handleExport}
-        onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        activeSheetName={activeSheetName}
-      />
-
-      {/* Workspace Footer with Zenith OS Branding and Statutory Links */}
-      <footer className="workspace-footer">
-        <div className="workspace-footer-left">
-          <a
-            href="https://zenithopensourceprojects.vercel.app/os"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="footer-brand-link"
-            title="Zenith Open Source Projects Official Hub"
+        {recoveryCandidate && (
+          <section
+            className="workspace-checkpoint-banner"
+            aria-labelledby="checkpoint-recovery-title"
           >
-            <span className="zenith-sparkle-dot" />
-            <strong>Zenith Open Source Projects</strong>
-          </a>
-          <span className="footer-sep">•</span>
-          <span className="footer-tagline">{isProcessing ? 'Agent working…' : 'All changes run through the verified engine'}</span>
-        </div>
-        <div className="workspace-footer-right">
-          <button className="footer-link-btn" onClick={() => navigate('agents')}>
-            Autonomous Agents
-          </button>
-          <span className="footer-sep">•</span>
-          <button className="footer-link-btn" onClick={() => navigate('docs')}>
-            Documentation
-          </button>
-          <span className="footer-sep">•</span>
-          <button className="footer-link-btn" onClick={() => navigate('privacy')}>
-            Privacy (DPDP 2023)
-          </button>
-          <span className="footer-sep">•</span>
-          <button className="footer-link-btn" onClick={() => navigate('terms')}>
-            Terms
-          </button>
-          <span className="footer-sep">•</span>
-          <button className="footer-link-btn" onClick={() => navigate('usage')}>
-            Token Ledger
-          </button>
-        </div>
-      </footer>
+            <div className="workspace-checkpoint-copy">
+              <span className="studio-eyebrow">LOCAL RECOVERY · THIS BROWSER ONLY</span>
+              <h2 id="checkpoint-recovery-title">Resume your last successful checkpoint</h2>
+              <p>
+                <strong>{recoveryCandidate.fileName}</strong> ·{' '}
+                {new Date(recoveryCandidate.savedAt).toLocaleString()}. Restore the saved workbook
+                with fresh undo history and a new conversation. Changes made after this checkpoint
+                are not recoverable.
+              </p>
+            </div>
+            <div className="workspace-checkpoint-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={restoreCheckpoint}
+                disabled={checkpointClearing}
+              >
+                Restore checkpoint
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setWorkspaceDecision({ kind: 'clear' })}
+                disabled={checkpointClearing}
+              >
+                Discard checkpoint
+              </button>
+            </div>
+          </section>
+        )}
+        {checkpointStatus === 'unavailable' && (
+          <section
+            className="workspace-checkpoint-banner is-warning"
+            role="alert"
+            aria-label="Checkpoint storage warning"
+          >
+            <div className="workspace-checkpoint-copy">
+              <h2>Your work is still editable, but not checkpointed</h2>
+              <p>
+                {checkpointError} Export to keep current changes.
+                {lastCheckpointAt !== null &&
+                  ` Only the last successful checkpoint (${new Date(lastCheckpointAt).toLocaleString()}) is recoverable.`}
+              </p>
+            </div>
+            <div className="workspace-checkpoint-actions">
+              <button type="button" className="btn btn-secondary" onClick={retryCheckpoint}>
+                {checkpointDeleteFailed ? 'Retry checkpoint deletion' : 'Retry local storage'}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleExport}>
+                Export workbook
+              </button>
+            </div>
+          </section>
+        )}
+        {checkpointStatus === 'off' && (
+          <section
+            className="workspace-checkpoint-banner is-compact"
+            aria-label="Local checkpoints disabled"
+          >
+            <p>
+              Local checkpoint deleted. Automatic checkpoints are off for this session. Export to
+              keep your work.
+            </p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={retryCheckpoint}>
+              Enable local checkpoints
+            </button>
+          </section>
+        )}
+        {recoveryNotice && (
+          <section className="workspace-checkpoint-banner is-compact" role="status">
+            <p>
+              Restored the last successful checkpoint. Undo history starts fresh; previous
+              conversations and proposals were not restored.
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setRecoveryNotice(false)}
+            >
+              Dismiss recovery notice
+            </button>
+          </section>
+        )}
 
-      {/* Non-blocking notifications */}
-      <ToastHost toasts={toasts} onDismiss={dismissToast} />
-    </div>
+        {/* Main Workspace Body */}
+        <WorkspaceShell
+          view={studioView}
+          onViewChange={setStudioView}
+          sheetName={currentSheet.name}
+          isProcessing={isProcessing}
+          revealAgentRevision={revealAgentRevision}
+          agent={
+            <ErrorBoundary variant="panel" label="the agent chat">
+              <AgentChat
+                key={generation}
+                audit={sheetAudit}
+                messages={messages}
+                isProcessing={isProcessing}
+                hasApiKey={hasApiKey}
+                apiKeyProvider={settings.provider}
+                onSaveApiKey={handleSaveApiKey}
+                onClearApiKey={handleClearApiKey}
+                onSendMessage={handleSendMessage}
+                onApplyAction={handleApplyAction}
+                onApplyPlan={handleApplyPlan}
+                onCancelAction={handleCancelAction}
+                onUndoLast={handleUndo}
+                canUndo={historyStack.canUndo}
+                onStop={() => {
+                  turnAbortRef.current?.abort();
+                  turnAbortRef.current = null;
+                  setIsProcessing(false);
+                  setMessages((previous) =>
+                    previous.map((message) =>
+                      message.isStreaming
+                        ? {
+                            ...message,
+                            isStreaming: false,
+                            text: message.text || 'Stopped.',
+                            status: 'error',
+                          }
+                        : message,
+                    ),
+                  );
+                }}
+                selectionContext={selectionContext}
+                onClearSelectionContext={() => setSelectionContext(null)}
+                learnedActions={learnedActions}
+                draftPrompt={agentDraft}
+                workflowProfiles={studioProfiles}
+                onOpenWorkflows={() => setStudioView('workflows')}
+              />
+            </ErrorBoundary>
+          }
+        >
+          <div className="studio-sheet-view" hidden={studioView !== 'sheet'}>
+            {/* Spreadsheet Grid with Drop Zone */}
+            <ErrorBoundary variant="panel" label="the grid">
+              <SpreadsheetGrid
+                key={generation}
+                workbook={workbook}
+                activeSheetName={activeSheetName}
+                dateSystem={dateSystem}
+                onSelectSheet={(sheet) => setActiveSheetName(sheet)}
+                recentChangedCells={recentChangedCells}
+                searchHighlightCells={searchHighlightCells}
+                onQuickSort={handleQuickSort}
+                onFileDrop={handleFileUpload}
+                onAddSelectionContext={setSelectionContext}
+                onEditCells={handleEditCells}
+              />
+            </ErrorBoundary>
+          </div>
+          {studioView === 'insights' && (
+            <ErrorBoundary variant="panel" label="workbook insights">
+              <WorkbookInsights
+                profiles={studioProfiles}
+                audit={sheetAudit}
+                onRun={handleWorkflow}
+                isProcessing={isProcessing}
+              />
+            </ErrorBoundary>
+          )}
+          {studioView === 'workflows' && (
+            <ErrorBoundary variant="panel" label="workflow library">
+              <WorkflowLibrary
+                profiles={studioProfiles}
+                tools={orchestrator.tools}
+                onRun={handleWorkflow}
+                onDraft={handleDraft}
+                isProcessing={isProcessing}
+              />
+            </ErrorBoundary>
+          )}
+        </WorkspaceShell>
+
+        {workspaceDecision && (
+          <div className="workspace-decision-overlay">
+            <div
+              ref={decisionRef}
+              className="workspace-decision-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="workspace-decision-title"
+              aria-describedby="workspace-decision-description"
+              data-dialog-open="true"
+            >
+              <span className="studio-eyebrow">YOU’RE IN CONTROL</span>
+              <h2 id="workspace-decision-title">
+                {workspaceDecision.kind === 'clear'
+                  ? 'Delete local checkpoint?'
+                  : 'Replace workbook with unexported changes?'}
+              </h2>
+              <p id="workspace-decision-description">
+                {workspaceDecision.kind === 'clear'
+                  ? 'This deletes the stored workbook from this browser and turns automatic checkpoints off for this session. Your open workbook remains editable. Export first if you need a copy.'
+                  : `“${fileName}” has changes you have not exported. Replacing it with “${workspaceDecision.replacement.fileName}” clears its undo history, conversation and proposals. A checkpoint is not an exported copy. Export first, or explicitly replace it.`}
+              </p>
+              <div className="workspace-checkpoint-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-autofocus
+                  onClick={() => setWorkspaceDecision(null)}
+                >
+                  Keep working
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={handleExport}>
+                  Export current workbook
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() =>
+                    workspaceDecision.kind === 'clear'
+                      ? void clearCheckpoint()
+                      : loadNewWorkbook(workspaceDecision.replacement)
+                  }
+                >
+                  {workspaceDecision.kind === 'clear' ? 'Delete checkpoint' : 'Replace workbook'}
+                </button>
+              </div>
+              <small>Tab to move between choices · Esc to keep working</small>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Operation Modal */}
+        <OperationModal
+          isOpen={isOpModalOpen}
+          onClose={() => setIsOpModalOpen(false)}
+          workbook={workbook}
+          activeSheetName={activeSheetName}
+          onExecute={(name, args) => executeOperation(name, args)}
+        />
+
+        {/* Operation Audit History Drawer */}
+        <HistoryDrawer
+          isOpen={isHistoryDrawerOpen}
+          onClose={() => setIsHistoryDrawerOpen(false)}
+          entries={historyStack.history}
+          currentPosition={historyStack.position}
+          onStepBack={handleStepBack}
+        />
+
+        {/* Settings / BYOK Modal */}
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        {/* Command Palette HUD (Cmd+K) */}
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onExecutePrompt={handleWorkflow}
+          onExport={handleExport}
+          onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          activeSheetName={activeSheetName}
+        />
+
+        {/* Workspace Footer with Zenith OS Branding and Statutory Links */}
+        <footer className="workspace-footer">
+          <div className="workspace-footer-left">
+            <a
+              href="https://zenithopensourceprojects.vercel.app/os"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-brand-link"
+              title="Zenith Open Source Projects Official Hub"
+            >
+              <span className="zenith-sparkle-dot" />
+              <strong>Zenith Open Source Projects</strong>
+            </a>
+            <span className="footer-sep">•</span>
+            <span className="footer-tagline">
+              {isProcessing
+                ? 'Agent working…'
+                : hasUnexportedChanges
+                  ? 'Unexported changes · Export for a portable copy'
+                  : 'All changes run through the verified engine'}
+            </span>
+          </div>
+          <div className="workspace-footer-right">
+            <button className="footer-link-btn" onClick={() => navigate('agents')}>
+              Autonomous Agents
+            </button>
+            <span className="footer-sep">•</span>
+            <button className="footer-link-btn" onClick={() => navigate('docs')}>
+              Documentation
+            </button>
+            <span className="footer-sep">•</span>
+            <button className="footer-link-btn" onClick={() => navigate('privacy')}>
+              Privacy (DPDP 2023)
+            </button>
+            <span className="footer-sep">•</span>
+            <button className="footer-link-btn" onClick={() => navigate('terms')}>
+              Terms
+            </button>
+            <span className="footer-sep">•</span>
+            <button className="footer-link-btn" onClick={() => navigate('usage')}>
+              Token Ledger
+            </button>
+          </div>
+        </footer>
+
+        {/* Non-blocking notifications */}
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
     </MotionConfig>
   );
 };

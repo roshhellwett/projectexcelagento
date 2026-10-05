@@ -1,6 +1,7 @@
 import type {
   AgentActivityEvent,
   AgentDecision,
+  EvidenceItem,
   ChatMessage,
   ExecutionPlan,
   ProposedAction,
@@ -30,6 +31,7 @@ export interface AgentResponse {
   guardrail?: AgentDecision['guardrail'];
   trace?: AgentDecision['trace'];
   activities?: AgentActivityEvent[];
+  evidence?: EvidenceItem[];
   /** Token/latency record, present only when the model layer was invoked. */
   telemetry?: AgentDecision['telemetry'];
 }
@@ -83,6 +85,7 @@ export async function askExcelAgent(
     ...(decision.guardrail ? { guardrail: decision.guardrail } : {}),
     trace: decision.trace,
     activities: decision.activities,
+    evidence: decision.evidence,
     ...(decision.telemetry ? { telemetry: decision.telemetry } : {}),
   };
 }

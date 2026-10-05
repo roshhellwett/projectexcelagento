@@ -53,9 +53,28 @@ function isTransientStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+export function throwIfCancelled(provider: ProviderName, signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new ProviderError(provider, 'Request cancelled by caller.', { retryable: false });
+  }
+}
+
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Request cancelled by caller.', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(new DOMException('Request cancelled by caller.', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -74,6 +93,7 @@ async function requestWithRetry(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    throwIfCancelled(provider, config.signal);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const onAbort = () => controller.abort();
@@ -81,6 +101,7 @@ async function requestWithRetry(
 
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
+      throwIfCancelled(provider, config.signal);
       if (!response.ok && isTransientStatus(response.status) && attempt < retries) {
         const body = await response.text().catch(() => '');
         lastError = new ProviderError(
@@ -88,18 +109,17 @@ async function requestWithRetry(
           `HTTP ${response.status}: ${body || response.statusText}`,
           { status: response.status, retryable: true },
         );
-        await sleep(250 * 2 ** attempt);
+        await sleep(250 * 2 ** attempt, config.signal);
         continue;
       }
       return response;
     } catch (error) {
       lastError = error;
-      const aborted = error instanceof DOMException && error.name === 'AbortError';
-      if (aborted && config.signal?.aborted) {
+      if (config.signal?.aborted) {
         throw new ProviderError(provider, 'Request cancelled by caller.', { retryable: false });
       }
       if (attempt < retries) {
-        await sleep(250 * 2 ** attempt);
+        await sleep(250 * 2 ** attempt, config.signal);
         continue;
       }
     } finally {
@@ -124,24 +144,37 @@ async function readWithTimeout(
   config: ProviderConfig,
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  throwIfCancelled(config.provider, config.signal);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   try {
-    return await Promise.race([
+    const result = await Promise.race([
       reader.read(),
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(() => {
-          reader.cancel().catch(() => {});
-          reject(new Error(`Stream read timed out after ${timeoutMs}ms.`));
+          reject(
+            new ProviderError(config.provider, `Stream read timed out after ${timeoutMs}ms.`, {
+              retryable: true,
+            }),
+          );
+          void reader.cancel().catch(() => {});
         }, timeoutMs);
-        config.signal?.addEventListener(
-          'abort',
-          () => reject(new DOMException('The operation was aborted.', 'AbortError')),
-          { once: true },
-        );
+        onAbort = () => {
+          reject(
+            new ProviderError(config.provider, 'Request cancelled by caller.', {
+              retryable: false,
+            }),
+          );
+          void reader.cancel().catch(() => {});
+        };
+        config.signal?.addEventListener('abort', onAbort, { once: true });
       }),
     ]);
+    throwIfCancelled(config.provider, config.signal);
+    return result;
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
+    if (onAbort) config.signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -568,9 +601,60 @@ export const customAdapter: ProviderAdapter = openAiCompatibleAdapter(
   },
 );
 
+function formatMessagesForGemini(messages: ChatMessage[]) {
+  const names = new Map<string, string>();
+  const contents: { role: 'model' | 'user'; parts: Record<string, unknown>[] }[] = [];
+  let previousWasTool = false;
+  for (const message of messages) {
+    if (message.role === 'system') continue;
+    if (message.role === 'tool') {
+      const name = message.name || names.get(message.tool_call_id ?? '');
+      if (!name) throw new ProviderError('gemini', 'Tool result is missing its function name.');
+      let output: unknown = message.content;
+      try {
+        output = JSON.parse(message.content);
+      } catch {
+        /* Keep the untrusted-data wrapper intact. */
+      }
+      const part = { functionResponse: { name, response: { output } } };
+      if (previousWasTool) contents[contents.length - 1]!.parts.push(part);
+      else contents.push({ role: 'user', parts: [part] });
+      previousWasTool = true;
+      continue;
+    }
+    const parts: Record<string, unknown>[] = [];
+    if (message.content) parts.push({ text: message.content });
+    for (const call of message.tool_calls ?? []) {
+      let args: unknown;
+      try {
+        args = JSON.parse(call.function.arguments || '{}');
+      } catch {
+        throw new ProviderError('gemini', 'Function-call arguments are not valid JSON.');
+      }
+      names.set(call.id, call.function.name);
+      parts.push({
+        functionCall: { name: call.function.name, args },
+        ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
+      });
+    }
+    contents.push({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: parts.length ? parts : [{ text: '' }],
+    });
+    previousWasTool = false;
+  }
+  return contents;
+}
+
 type GeminiShape = {
   candidates?: {
-    content?: { parts?: { text?: string; functionCall?: { name?: string; args?: unknown } }[] };
+    content?: {
+      parts?: {
+        text?: string;
+        thoughtSignature?: string;
+        functionCall?: { name?: string; args?: unknown };
+      }[];
+    };
   }[];
   usageMetadata?: {
     promptTokenCount?: number;
@@ -588,12 +672,7 @@ export const geminiAdapter: ProviderAdapter = {
       .filter((message) => message.role === 'system')
       .map((message) => message.content)
       .join('\n\n');
-    const contents = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => ({
-        role: message.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: message.content }],
-      }));
+    const contents = formatMessagesForGemini(messages);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const geminiTools =
@@ -644,6 +723,7 @@ export const geminiAdapter: ProviderAdapter = {
           id: `gemini-call-${toolCalls.length}`,
           type: 'function',
           function: { name: fc.name, arguments: JSON.stringify(fc.args ?? {}) },
+          ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
         });
       }
     }

@@ -44,7 +44,9 @@ describe('Tab Session Isolation', () => {
   });
 
   it('keeps a stable in-memory session when storage access is denied', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
     expect(getTabSessionId()).toBe(getTabSessionId());
   });
 });

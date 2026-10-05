@@ -17,6 +17,8 @@ export interface UsageEntry {
   model: string;
   source: DecisionSource;
   llmUsed: boolean;
+  /** False means the provider did not report complete turn usage; numeric zeros are placeholders. */
+  tokenUsageReported?: boolean;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -37,6 +39,7 @@ export interface UsageSummary {
   requests: number;
   llmRequests: number;
   localRequests: number;
+  unreportedUsageRequests: number;
   failures: number;
   promptTokens: number;
   completionTokens: number;
@@ -169,6 +172,9 @@ export function createUsageEntry(input: {
     model: telemetry.model,
     source: input.source,
     llmUsed: true,
+    tokenUsageReported:
+      telemetry.totalTokens !== undefined ||
+      (telemetry.promptTokens !== undefined && telemetry.completionTokens !== undefined),
     promptTokens,
     completionTokens,
     totalTokens: telemetry.totalTokens ?? promptTokens + completionTokens,
@@ -226,6 +232,9 @@ export function summarizeUsage(entries: UsageEntry[]): UsageSummary {
     requests: entries.length,
     llmRequests,
     localRequests: entries.length - llmRequests,
+    unreportedUsageRequests: entries.filter(
+      (entry) => entry.llmUsed && entry.tokenUsageReported === false,
+    ).length,
     failures,
     promptTokens,
     completionTokens,
