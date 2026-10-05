@@ -391,5 +391,136 @@ describe('privacy and token discipline', () => {
     expect(decision.message).toContain("You're completely right");
     expect(decision.message).not.toContain('clean_to_new_sheet');
   });
+
+  it('triggers data population workflow when user asks in Hindi/Hinglish ("data daal isme") on empty structured table', async () => {
+    let capturedBody: any;
+    stubFetch(async (_url, init) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(
+        JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content:
+                  'I analyzed the source records and structured the leads into Worksheet_Structured.',
+                tool_calls: [
+                  {
+                    id: 'call-append-1',
+                    type: 'function',
+                    function: {
+                      name: 'append_rows',
+                      arguments: JSON.stringify({
+                        sheet: 'Worksheet_Structured',
+                        rows: [
+                          [1, 'Zenith Realty', 'Kolkata', 'Real Estate', '+91 9876543210', 'info@zenith.com', 'zenith.com', 'High', 'Active', 'Lead generation system'],
+                        ],
+                      }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 600, completion_tokens: 80, total_tokens: 680 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const multiSheetWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('zenith_leads.py - Kolkata lead pipeline')],
+            [createCell('Company: Zenith Realty, Kolkata, Phone: +91 9876543210')],
+            [createCell('Email: info@zenith.com, Website: zenith.com')],
+          ],
+        },
+        {
+          name: 'Worksheet_Structured',
+          rows: [
+            [
+              createCell('#'),
+              createCell('Company'),
+              createCell('Area'),
+              createCell('Business Type'),
+              createCell('Phone'),
+              createCell('Email'),
+              createCell('Website'),
+            ],
+          ],
+        },
+      ],
+    };
+
+    const decision = await orchestrator().decide({
+      query: 'data daal isme',
+      workbook: multiSheetWorkbook,
+      sheetName: 'Worksheet_Structured',
+      config: LIVE_CONFIG,
+    });
+
+    // Check system prompt included Data Population directive
+    const systemMsg = capturedBody.messages.find((m: any) =>
+      typeof m.content === 'string' && m.content.includes('Data Population & Extraction Directive'),
+    );
+    expect(systemMsg).toBeDefined();
+    expect(systemMsg.content).toContain('Source Sheet: "Worksheet"');
+    expect(systemMsg.content).toContain('Destination Sheet: "Worksheet_Structured"');
+
+    // Model action is append_rows
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('append_rows');
+    expect(decision.action?.args.sheet).toBe('Worksheet_Structured');
+    expect(decision.message).not.toContain('I analyzed Worksheet_Structured (0 rows)');
+  });
+
+  it('never outputs the robotic heuristic prompt recommendations when model responds', async () => {
+    stubFetch(async () =>
+      new Response(
+        JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: 'I have inspected your sheet and I am ready to process your query.',
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 300, completion_tokens: 20, total_tokens: 320 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const emptySheetWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet_Structured',
+          rows: [[createCell('#'), createCell('Company')]],
+        },
+      ],
+    };
+
+    const decision = await orchestrator().decide({
+      query: 'now fill the data',
+      workbook: emptySheetWorkbook,
+      sheetName: 'Worksheet_Structured',
+      config: LIVE_CONFIG,
+    });
+
+    expect(decision.message).not.toContain('Tell me what transformation or analysis you would like to run');
+    expect(decision.message).toContain('I have inspected your sheet');
+  });
 });
+
 

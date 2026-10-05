@@ -542,19 +542,38 @@ export class ExcelAgentOrchestrator {
         });
       }
 
-      // Detect migration / population intent between sheets
+      // Detect migration / population intent between sheets (English, Hindi, Hinglish)
       const isMigrationOrPopulation =
-        /\b(?:add\s+(?:all\s+)?data\s+here|migrate\s+(?:the\s+)?data|populate\s+(?:the\s+)?(?:data|sheet|table)|transfer\s+(?:the\s+)?data|put\s+(?:the\s+)?data\s+here|transfer\s+it|move\s+the\s+data|fill\s+this\s+sheet)\b/i.test(
+        /\b(?:fill\s+(?:the\s+|this\s+|all\s+)?(?:data|sheet|table)|now\s+fill|data\s+daal|isme\s+data|data\s+bharo|data\s+add\s+karo|add\s+(?:all\s+)?data|migrate\s+(?:the\s+)?data|populate\s+(?:the\s+)?(?:data|sheet|table)|transfer\s+(?:the\s+)?data|put\s+(?:the\s+)?data|move\s+(?:the\s+)?data|load\s+(?:the\s+)?data|extract\s+(?:the\s+)?data)\b/i.test(
           input.query.trim(),
         ) ||
-        (/\btransfer\b/i.test(input.query) && /\b(?:to|into)\b/i.test(input.query));
+        /\b(?:data\s+daal|data\s+bharo|isme\s+daal|fill\s+(?:the\s+)?data)\b/i.test(
+          input.query.trim(),
+        ) ||
+        (/\btransfer\b/i.test(input.query) && /\b(?:to|into)\b/i.test(input.query)) ||
+        (sheet &&
+          sheet.rows.length <= 3 &&
+          /\b(?:fill|load|populate|insert|add|extract|daal|bharo)\b/i.test(input.query));
 
       if (isMigrationOrPopulation && input.workbook.sheets.length > 1) {
-        let sourceSheetCandidate = input.workbook.sheets.find(
-          (s) => s.name !== sheetName && s.rows.length > 3,
-        );
-        let destSheetCandidate = sheet;
+        let sourceSheetCandidate: Sheet | undefined;
+        let destSheetCandidate: Sheet | undefined;
 
+        // If active sheet has few or no data rows (<= 3 rows), it is the destination!
+        if (sheet && sheet.rows.length <= 3) {
+          destSheetCandidate = sheet;
+          sourceSheetCandidate = input.workbook.sheets.find(
+            (s) => s.name !== sheet.name && s.rows.length > 3,
+          );
+        } else if (sheet && sheet.rows.length > 3) {
+          // Active sheet has data; destination is another sheet with structured headers
+          destSheetCandidate = input.workbook.sheets.find(
+            (s) => s.name !== sheet.name && s.rows.length <= 3,
+          );
+          sourceSheetCandidate = sheet;
+        }
+
+        // If user specifically named a sheet in their query, prioritize that
         for (const s of input.workbook.sheets) {
           const normName = s.name.toLowerCase().replace(/[_\s]+/g, ' ');
           const normQ = input.query.toLowerCase().replace(/[_\s]+/g, ' ');
@@ -571,14 +590,15 @@ export class ExcelAgentOrchestrator {
             .filter(Boolean);
           messages.push({
             role: 'system',
-            content: `Data Migration Directive:
+            content: `Data Population & Extraction Directive:
 The user is requesting: "${input.query}".
 - Source Sheet: "${sourceSheetCandidate.name}" (${sourceSheetCandidate.rows.length} rows)
 - Destination Sheet: "${destSheetCandidate.name}" (${destSheetCandidate.rows.length} rows, target headers: [${destHeaders.join(', ')}])
-Execute this workflow:
+
+You MUST execute this workflow:
 1. Inspect the source sheet records via read_cell_range (e.g. read the top data rows or unparsed text).
-2. Extract the structured records that align with the destination headers.
-3. Call append_rows with { sheet: "${destSheetCandidate.name}", rows: [...] } to populate the destination sheet. Do NOT refuse or state that the source sheet contains code or unformatted text; extract the records and insert them into the destination.`,
+2. Extract the structured records that align with the destination headers: [${destHeaders.join(', ')}].
+3. Call append_rows with { sheet: "${destSheetCandidate.name}", rows: [...] } to populate the destination sheet with the structured rows. Do NOT refuse or state that the source sheet contains code or unformatted text; extract the records and insert them into the destination.`,
           });
         }
       }
@@ -1053,7 +1073,7 @@ Execute this workflow:
     // Guardrail verification for single action
     const candidates: ProposedAction[] = [];
     const isCritiqueOrFeedback =
-      /\b(?:copy\s*pasted?|duplicate\s*sheet|why\s+did\s+you|wrong|error|mistake|nothing|broken|undo|revert|why\s+llms?|not\s+thinking|not\s+understanding)\b/i.test(
+      /\b(?:copy\s*pasted?|duplicate\s*sheet|why\s+did\s+you|wrong|error|mistake|nothing|broken|undo|revert|why\s+llms?|not\s+thinking|not\s+understanding|soch\s+nhi|kuch\s+bhi|turant\s+answer|kya\s+faida|already\s+feed|galat|bekar|nahi\s+hua)\b/i.test(
         input.query,
       );
     const isSheetOrFilterQuery =
@@ -1157,7 +1177,14 @@ Execute this workflow:
 
     // Conversational fallback
     trace.push({ layer: 'guardrail', summary: 'Informational answer; no mutation proposed.' });
-    const finalMsg = llmMessage?.trim() || heuristic.message;
+    const finalMsg =
+      llmMessage?.trim() ||
+      llmThought?.trim() ||
+      (modelResponded
+        ? (sheet
+            ? `I have analyzed **${sheet.name}** for your request ("${input.query}"). Please let me know what specific data operation, transformation, or calculation you would like to run.`
+            : `How can I help you with your spreadsheet?`)
+        : heuristic.message);
     this.saveWorkingStep(input, 'turn_completed', {
       source: llmMessage ? 'llm' : 'heuristic',
       message: finalMsg,

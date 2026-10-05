@@ -206,8 +206,18 @@ type OpenAICompatibleShape = {
   choices?: {
     message?: {
       content?: string;
+      reasoning?: string;
       reasoning_content?: string;
       thought?: string;
+      thinking?: string;
+      tool_calls?: OpenAIToolCallShape[];
+    };
+    delta?: {
+      content?: string;
+      reasoning?: string;
+      reasoning_content?: string;
+      thought?: string;
+      thinking?: string;
       tool_calls?: OpenAIToolCallShape[];
     };
   }[];
@@ -243,7 +253,7 @@ export function extractThoughtAndCleanContent(
   content = content.replace(/<\/?think>/gi, '').trim();
 
   return {
-    content,
+    content: content || thought || '',
     thought: thought || undefined,
   };
 }
@@ -298,9 +308,6 @@ function openAiCompatibleAdapter(
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
       }
-      if (name === 'openrouter') {
-        requestBody.include_reasoning = true;
-      }
 
       const response = await requestWithRetry(
         name,
@@ -322,7 +329,12 @@ function openAiCompatibleAdapter(
 
       const messageObj = data.choices?.[0]?.message;
       const rawContent = messageObj?.content ?? '';
-      const rawThought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+      const rawThought =
+        messageObj?.reasoning ??
+        messageObj?.reasoning_content ??
+        messageObj?.thought ??
+        messageObj?.thinking ??
+        undefined;
       const cleaned = extractThoughtAndCleanContent(rawContent, rawThought);
 
       const toolCalls: ToolCall[] | undefined = messageObj?.tool_calls?.map((tc, idx) => ({
@@ -368,9 +380,6 @@ function openAiCompatibleAdapter(
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
       }
-      if (name === 'openrouter') {
-        requestBody.include_reasoning = true;
-      }
 
       const response = await requestWithRetry(
         name,
@@ -393,8 +402,16 @@ function openAiCompatibleAdapter(
       if (!contentType.includes('text/event-stream') && contentType.includes('application/json')) {
         const data = await readJson<OpenAICompatibleShape>(name, response);
         const messageObj = data.choices?.[0]?.message;
-        const content = messageObj?.content ?? '';
-        const thought = messageObj?.reasoning_content ?? messageObj?.thought ?? undefined;
+        const rawContent = messageObj?.content ?? '';
+        const rawThought =
+          messageObj?.reasoning ??
+          messageObj?.reasoning_content ??
+          messageObj?.thought ??
+          messageObj?.thinking ??
+          undefined;
+        const cleaned = extractThoughtAndCleanContent(rawContent, rawThought);
+        const content = cleaned.content || cleaned.thought || '';
+        const thought = cleaned.thought;
         if (content) callbacks.onToken?.(content);
         if (thought) callbacks.onThinking?.(thought);
 
@@ -472,8 +489,10 @@ function openAiCompatibleAdapter(
                 choices?: {
                   delta?: {
                     content?: string;
+                    reasoning?: string;
                     reasoning_content?: string;
                     thought?: string;
+                    thinking?: string;
                     tool_calls?: {
                       index?: number;
                       id?: string;
@@ -505,7 +524,11 @@ function openAiCompatibleAdapter(
                   callbacks.onToken?.(delta.content);
                   chunkChars += delta.content.length;
                 }
-                const thoughtToken = delta.reasoning_content ?? delta.thought;
+                const thoughtToken =
+                  delta.reasoning ??
+                  delta.reasoning_content ??
+                  delta.thought ??
+                  delta.thinking;
                 if (thoughtToken) {
                   fullThought += thoughtToken;
                   callbacks.onThinking?.(thoughtToken);
@@ -561,7 +584,7 @@ function openAiCompatibleAdapter(
       const cleaned = extractThoughtAndCleanContent(fullContent, fullThought);
 
       return {
-        content: cleaned.content,
+        content: cleaned.content || cleaned.thought || '',
         thought: cleaned.thought,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         provider: name,

@@ -145,6 +145,13 @@ Rules:
       * Understand that running \`clean_to_new_sheet\` on raw source code only trims code lines without turning them into a structured database.
       * Call \`read_cell_range\` to inspect the script and understand what data entities it describes.
       * Formulate a structured table schema with proper columns (e.g. via \`create_sheet\` with columns like \`Business Name\`, \`Phone\`, \`Website\`, \`Category\`, \`Status\`), or engage in dialogue with the user to confirm how they want the data extracted.
+14. Populating Structured Destination Sheets from Raw/Source Sheets:
+    - If the active sheet has headers but 0 or few data rows (e.g. "Worksheet_Structured" with headers [# , Company, Area, Business Type, Phone, Email, Website...]), and another worksheet in the workbook map contains raw records, text, or a script (e.g. "Worksheet" with 540 rows):
+      * When the user asks to "fill the data", "data daal isme", "data bharo", "populate", "add data", or start working:
+      * Inspect the source worksheet using \`read_cell_range\` (e.g., read rows 1 to 50 of the source sheet).
+      * Extract the entities, contacts, companies, or records matching the active destination headers.
+      * Call \`append_rows\` with \`{ sheet: "<destination_sheet>", rows: [...] }\` to populate the structured table.
+      * Never say "I analyzed 0 rows, tell me what transformation you want". You have the tools to read the source data and populate the table immediately!
 
 Available operations:
 ${describeTools(catalog)}`;
