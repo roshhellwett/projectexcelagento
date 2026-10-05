@@ -35,6 +35,7 @@ import {
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
 import { MarkdownText } from './MarkdownText.js';
+import { LiveThinkingProgressBar } from './LiveThinkingProgressBar.js';
 
 export interface TaskReceipt {
   id: string;
@@ -86,7 +87,7 @@ interface AgentChatProps {
   isProcessing: boolean;
   hasApiKey: boolean;
   apiKeyProvider: ProviderName;
-  onSaveApiKey: (provider: ProviderName, key: string, baseUrl?: string) => void;
+  onSaveApiKey: (provider: ProviderName, key: string, baseUrl?: string, model?: string) => void;
   onClearApiKey: () => void;
   onSendMessage: (query: string) => void;
   onApplyAction: (messageId: string, action: ProposedAction, confirmed?: boolean) => void;
@@ -151,8 +152,16 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   // BYOK setup state
   const [setupKey, setSetupKey] = useState('');
+  const [setupModel, setSetupModel] = useState('anthropic/claude-3.5-sonnet');
   const [showKeyText, setShowKeyText] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
+
+  const latestAssistantMsg = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.sender === 'assistant') return messages[i];
+    }
+    return undefined;
+  }, [messages]);
 
   React.useEffect(() => {
     if (!draftPrompt) return;
@@ -181,6 +190,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     onSaveApiKey(
       'openrouter',
       setupKey.trim() || 'local-no-key',
+      undefined,
+      setupModel.trim() || 'anthropic/claude-3.5-sonnet',
     );
   };
 
@@ -376,10 +387,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <b>03</b> Make it happen
               </span>
             </div>
-            <details className="studio-provider-details">
+            <details className="studio-provider-details" open>
               <summary>
                 <KeyRound size={14} />
-                Connect an AI provider<span>Optional</span>
+                Connect OpenRouter AI<span>Required for Agents</span>
               </summary>
               <form onSubmit={handleActivateKey} className="byok-gate-form">
                 <div className="form-group">
@@ -443,13 +454,53 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </div>
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label" htmlFor="byok-model">
+                    OpenRouter Model
+                  </label>
+                  <input
+                    id="byok-model"
+                    type="text"
+                    className="form-input"
+                    style={{ width: '100%' }}
+                    placeholder="anthropic/claude-3.5-sonnet, deepseek/deepseek-chat..."
+                    value={setupModel}
+                    onChange={(e) => setSetupModel(e.target.value)}
+                  />
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '4px',
+                      marginTop: '6px',
+                    }}
+                  >
+                    {[
+                      'anthropic/claude-3.5-sonnet',
+                      'deepseek/deepseek-chat',
+                      'google/gemini-2.0-flash-001',
+                    ].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        style={{ fontSize: '10px', padding: '1px 5px' }}
+                        onClick={() => setSetupModel(m)}
+                      >
+                        {m.split('/')[1]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', marginTop: '4px' }}
+                  style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
                   disabled={!setupKey.trim()}
                 >
-                  Activate Excel Agent
+                  <Sparkles size={14} />
+                  Connect & Unlock Workspace
                 </button>
               </form>
             </details>
@@ -1292,6 +1343,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Live Thinking Progress Bar */}
+          {isProcessing && (
+            <LiveThinkingProgressBar
+              isProcessing={isProcessing}
+              onStop={onStop}
+              latestActivity={
+                latestAssistantMsg?.activities && latestAssistantMsg.activities.length > 0
+                  ? latestAssistantMsg.activities[latestAssistantMsg.activities.length - 1]
+                  : undefined
+              }
+              tokens={latestAssistantMsg?.tokens}
+              thoughtText={latestAssistantMsg ? getThinkingText(latestAssistantMsg) : undefined}
+            />
+          )}
+
           <div className="studio-agent-shortcuts">
             <div>
               <span className="studio-eyebrow">A GOOD PLACE TO START</span>
@@ -1309,50 +1375,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   type="button"
                   key={workflow.id}
                   onClick={() => handleSuggestionClick(workflow.prompt)}
-                  disabled={isProcessing}
+                  disabled={isProcessing || (!hasApiKey && !offlineMode)}
                 >
                   {workflow.title}
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Suggestions Drawer */}
-          {audit.suggestions.length > 0 && (
-            <details className="suggestions-drawer studio-audit-suggestions">
-              <summary>
-                Recommended for this sheet <span>{audit.suggestions.length}</span>
-                <ChevronDown size={12} />
-              </summary>
-              <div className="suggestions-title">
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                </svg>
-                Suggested Actions for {audit.sheetName}
-              </div>
-              <div className="chips-container">
-                {audit.suggestions.map((s, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className="suggestion-chip"
-                    onClick={() => handleSuggestionClick(s.prompt)}
-                    title={s.prompt}
-                  >
-                    <Sparkles size={12} className="suggestion-chip-icon" />
-                    <span className="suggestion-chip-text">{s.prompt}</span>
-                  </button>
-                ))}
-              </div>
-            </details>
-          )}
 
           {/* Chat Input Bar */}
           <form className="chat-input-bar" onSubmit={handleSubmit}>
@@ -1377,7 +1406,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               className="chat-input"
               aria-label="Ask ExcelAgento"
               aria-describedby="studio-composer-help"
-              placeholder="Ask ExcelAgento to explore, clean, or transform…"
+              placeholder={
+                !hasApiKey && !offlineMode
+                  ? 'Connect OpenRouter API Key & Model above to begin…'
+                  : 'Ask ExcelAgento to explore, clean, or transform…'
+              }
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(event) => {
@@ -1386,7 +1419,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   handleSubmit(event);
                 }
               }}
-              disabled={isProcessing}
+              disabled={isProcessing || (!hasApiKey && !offlineMode)}
             />
             <div className="studio-composer-footer">
               <span id="studio-composer-help">Enter to send · Shift + Enter for a new line</span>
@@ -1394,7 +1427,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 type="submit"
                 className="btn btn-primary btn-sm studio-send-button"
                 aria-label="Send"
-                disabled={!inputText.trim() || isProcessing}
+                disabled={!inputText.trim() || isProcessing || (!hasApiKey && !offlineMode)}
               >
                 <ArrowUp size={16} />
               </button>

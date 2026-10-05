@@ -35,6 +35,8 @@ import { MissionControlPage } from './components/MissionControlPage.js';
 import { AnalystBriefing } from './components/AnalystBriefing.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
+import { KeyRound, Sparkles } from 'lucide-react';
+import { generateWorkbookStudy } from './lib/workbook-study.js';
 
 import {
   createSampleWorkbook,
@@ -73,6 +75,7 @@ import {
 import {
   clearSettings,
   defaultModelFor,
+  DEFAULT_OPENROUTER_MODEL,
   isDemoKey,
   loadSettings,
   saveSettings,
@@ -349,8 +352,18 @@ export const App: React.FC<{
     pushToast('info', 'Usage history cleared.');
   };
 
-  const handleSaveApiKey = (provider: ProviderName, key: string, baseUrl?: string) => {
-    const next: AgentSettings = { provider, apiKey: key, baseUrl };
+  const handleSaveApiKey = (
+    provider: ProviderName,
+    key: string,
+    baseUrl?: string,
+    model?: string,
+  ) => {
+    const next: AgentSettings = {
+      provider,
+      apiKey: key,
+      baseUrl,
+      model: model?.trim() || settings.model || DEFAULT_OPENROUTER_MODEL,
+    };
     setSettings(next);
     saveSettings(next);
 
@@ -360,13 +373,13 @@ export const App: React.FC<{
       {
         id: `unlocked-${Date.now()}`,
         sender: 'assistant',
-        text: `Welcome to **ExcelAgento**.\n\nUpload an Excel or CSV file to begin, or select a sample fixture from the navigation bar.\n\nOnce loaded you can ask for transformations, date formatting, deduplication, sorting, filtering, and deterministic calculations.`,
+        text: `Welcome to **ExcelAgento**.\n\nOpenRouter workspace unlocked (Model: \`${next.model}\`).\n\nUpload an Excel or CSV file to begin, or select a sample fixture from the navigation bar.\n\nOnce loaded you can ask for transformations, date formatting, deduplication, sorting, filtering, and deterministic calculations.`,
       },
     ]);
   };
 
   const handleClearApiKey = () => {
-    setSettings({ provider: settings.provider, apiKey: '' });
+    setSettings({ provider: settings.provider, apiKey: '', model: '' });
     clearSettings();
   };
 
@@ -806,11 +819,15 @@ export const App: React.FC<{
       setRecoveryResolved(true);
       setCheckpointEnabled(true);
     }
+    const initialStudyText = isUserUpload
+      ? generateWorkbookStudy(wb, newFileName)
+      : `${checkpoint ? 'Restored' : 'Loaded'} **"${newFileName}"** with ${wb.sheets.length} sheet(s). New workbook context started; previous proposals and conversation are cleared.${checkpoint ? ' Undo history starts fresh from this checkpoint.' : ''}`;
+
     setMessages([
       {
         id: `loaded-${documentGeneration.current}`,
         sender: 'assistant',
-        text: `${checkpoint ? 'Restored' : 'Loaded'} **"${newFileName}"** with ${wb.sheets.length} sheet(s). New workbook context started; previous proposals and conversation are cleared.${checkpoint ? ' Undo history starts fresh from this checkpoint.' : ''}`,
+        text: initialStudyText,
       },
     ]);
     if (report)
@@ -2016,7 +2033,7 @@ export const App: React.FC<{
   // Durable mission control: prepared tasks and applied receipts survive navigation and refresh.
   if (view === 'missions') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Mission Control">
           <MissionControlPage
             missions={missions}
@@ -2045,7 +2062,7 @@ export const App: React.FC<{
   // Dedicated Model & Usage page (kept as a separate route-like view).
   if (view === 'usage') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Model & Usage">
           <ModelUsagePage
             settings={settings}
@@ -2083,7 +2100,7 @@ export const App: React.FC<{
   // Dedicated Autonomous Multi-Agent Workforce Showcase
   if (view === 'agents') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Agents Showcase">
           <AgentsPage
             onBack={() => navigate('workspace')}
@@ -2110,7 +2127,7 @@ export const App: React.FC<{
   // Dedicated Privacy Policy & DPDP Act 2023 Statutory Notice
   if (view === 'privacy') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Privacy Policy">
           <PrivacyPolicyPage
             onBack={() => navigate('workspace')}
@@ -2136,7 +2153,7 @@ export const App: React.FC<{
   // Dedicated Terms of Service & Open Source Governance
   if (view === 'terms') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Terms of Service">
           <TermsPage onBack={() => navigate('workspace')} />
         </ErrorBoundary>
@@ -2157,7 +2174,7 @@ export const App: React.FC<{
   // Dedicated Developer Architecture & Documentation
   if (view === 'docs') {
     return (
-      <div className="app-container">
+      <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Documentation">
           <DocsPage
             onBack={() => navigate('workspace')}
@@ -2183,6 +2200,7 @@ export const App: React.FC<{
       <div className="app-container workbench">
         {/* Top Navigation */}
         <TopNav
+          hasApiKey={hasApiKey}
           fileName={fileName}
           activeSheetName={activeSheetName}
           rowCount={currentSheet.rows.length}
@@ -2346,6 +2364,22 @@ export const App: React.FC<{
           }
         >
           <div className="studio-sheet-view" hidden={studioView !== 'sheet'}>
+            {!hasApiKey && (
+              <div className="workspace-locked-overlay" role="region" aria-label="Setup required">
+                <div className="workspace-locked-modal">
+                  <div className="workspace-locked-icon">
+                    <KeyRound size={28} />
+                  </div>
+                  <h3 className="workspace-locked-title">API Key & Model Setup Required</h3>
+                  <p className="workspace-locked-desc">
+                    To interact with Excel spreadsheets, run agent swarms, and perform AI operations, please enter your OpenRouter API key and model in the sidebar.
+                  </p>
+                  <div className="workspace-locked-badge">
+                    <Sparkles size={14} /> OpenRouter Multi-Model Engine
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Spreadsheet Grid with Drop Zone */}
             <ErrorBoundary variant="panel" label="the grid">
               <SpreadsheetGrid

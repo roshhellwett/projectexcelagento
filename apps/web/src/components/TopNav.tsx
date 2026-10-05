@@ -70,6 +70,7 @@ interface TopNavProps {
   checkpointLabel?: string;
   checkpointDetail?: string;
   onClearCheckpoint?: () => void;
+  hasApiKey?: boolean;
 }
 
 const FIXTURES = [

@@ -172,7 +172,6 @@ body {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  overflow: hidden;
   position: relative;
   background-color: var(--bg-canvas);
   background-image:
@@ -180,6 +179,21 @@ body {
     linear-gradient(to bottom, rgba(16, 185, 129, 0.05) 1px, transparent 1px);
   background-size: 32px 32px;
   background-position: center center;
+}
+
+.app-container.workbench {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-container:not(.workbench),
+.app-container.app-page-scroll {
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 :root[data-theme='dark'] .app-container {
@@ -191,7 +205,7 @@ body {
 /* Ambient Distributed Green Glow Canvas - Spread across the whole page */
 .app-container::before {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
   background:
     radial-gradient(ellipse 55% 45% at 18% 18%, rgba(16, 185, 129, 0.16), transparent 60%),
@@ -5477,3 +5491,269 @@ input:focus-visible,
 .chip-icon-glow {
   color: var(--brand-emerald);
 }
+
+/* ==========================================================================
+   Live Thinking Progress Bar Component (Copilot Chat)
+   ========================================================================== */
+.live-thinking-progress-card {
+  margin: 10px 14px 10px;
+  padding: 11px 14px 10px;
+  background: var(--bg-surface-glass-elevated, rgba(16, 24, 39, 0.88));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28), 0 0 12px rgba(16, 185, 129, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  position: relative;
+  overflow: hidden;
+  animation: fadeInProgress 0.25s ease-out;
+}
+
+@keyframes fadeInProgress {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.live-thinking-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.live-thinking-progress-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.live-thinking-pulse-ring {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.live-thinking-pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.4);
+  animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.live-thinking-pulse-inner {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  60%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+.live-thinking-icon {
+  color: #34d399;
+  flex-shrink: 0;
+}
+
+.live-thinking-phase-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-main, #e2e8f0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-thinking-timer-badge {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.live-thinking-progress-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.live-thinking-token-pill {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.btn-stop-thinking-sm {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  color: #fb7185;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-stop-thinking-sm:hover {
+  background: rgba(244, 63, 94, 0.24);
+  border-color: rgba(244, 63, 94, 0.55);
+  color: #fff;
+  transform: scale(1.02);
+}
+
+.live-thinking-progress-track {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.live-thinking-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #10b981 0%, #06b6d4 50%, #3b82f6 100%);
+  position: relative;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.live-thinking-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 100%
+  );
+  animation: thinking-shimmer 1.8s infinite linear;
+}
+
+@keyframes thinking-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.live-thinking-progress-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-dim, #94a3b8);
+}
+
+.live-thinking-detail-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-thinking-pct {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim, #94a3b8);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Workspace Locked State (When API Key is not configured)
+   ========================================================================== */
+.workspace-locked-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(10, 15, 26, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.workspace-locked-modal {
+  max-width: 440px;
+  width: 100%;
+  background: var(--bg-surface-glass-elevated, rgba(17, 24, 39, 0.95));
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-lg, 14px);
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(16, 185, 129, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-locked-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.workspace-locked-modal h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main, #f8fafc);
+  margin: 0;
+}
+
+.workspace-locked-modal p {
+  font-size: 13px;
+  color: var(--text-dim, #94a3b8);
+  line-height: 1.55;
+  margin: 0 0 12px;
+}
+

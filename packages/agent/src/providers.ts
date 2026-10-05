@@ -203,6 +203,7 @@ type OpenAIToolCallShape = {
 };
 
 type OpenAICompatibleShape = {
+  error?: { message?: string; code?: number | string };
   choices?: {
     message?: {
       content?: string;
@@ -326,6 +327,14 @@ function openAiCompatibleAdapter(
 
       if (!response.ok) throw await readError(name, response);
       const data = await readJson<OpenAICompatibleShape>(name, response);
+
+      if (data.error) {
+        throw new ProviderError(
+          name,
+          data.error.message || `Provider error: ${JSON.stringify(data.error)}`,
+          { retryable: false },
+        );
+      }
 
       const messageObj = data.choices?.[0]?.message;
       const rawContent = messageObj?.content ?? '';
@@ -485,6 +494,7 @@ function openAiCompatibleAdapter(
 
             try {
               const parsed = JSON.parse(payload) as {
+                error?: { message?: string; code?: number | string };
                 model?: string;
                 choices?: {
                   delta?: {
@@ -506,6 +516,12 @@ function openAiCompatibleAdapter(
                   total_tokens?: number;
                 };
               };
+
+              if (parsed.error) {
+                const errMsg =
+                  parsed.error.message || `Provider stream error: ${JSON.stringify(parsed.error)}`;
+                throw new ProviderError(name, errMsg, { retryable: false });
+              }
 
               if (parsed.model) reportedModel = parsed.model;
               if (parsed.usage) {
@@ -557,7 +573,8 @@ function openAiCompatibleAdapter(
                   }
                 }
               }
-            } catch {
+            } catch (e) {
+              if (e instanceof ProviderError) throw e;
               // Ignore non-json sse chunks
             }
           }
@@ -582,6 +599,18 @@ function openAiCompatibleAdapter(
       }
 
       const cleaned = extractThoughtAndCleanContent(fullContent, fullThought);
+
+      if (
+        cleaned.content.trim().length === 0 &&
+        (!cleaned.thought || cleaned.thought.trim().length === 0) &&
+        toolCalls.length === 0
+      ) {
+        throw new ProviderError(
+          name,
+          `The model (${reportedModel || model}) completed with 0 tokens. This usually indicates a rate limit on free endpoints, an empty generation, or context overflow on OpenRouter. Try switching model in Settings.`,
+          { retryable: false },
+        );
+      }
 
       return {
         content: cleaned.content || cleaned.thought || '',

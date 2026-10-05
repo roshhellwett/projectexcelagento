@@ -524,12 +524,18 @@ export class ExcelAgentOrchestrator {
       }
 
       if (input.conversationHistory && input.conversationHistory.length > 0) {
-        const recentHistory = input.conversationHistory.slice(-30);
+        // Cap to the last 10 messages and truncate individual messages to prevent context window explosion
+        const recentHistory = input.conversationHistory.slice(-10);
         for (const historyItem of recentHistory) {
           if (historyItem.role !== 'system') {
+            const rawContent = historyItem.content || '';
+            const truncatedContent =
+              rawContent.length > 2000
+                ? rawContent.slice(0, 2000) + '... [truncated for context efficiency]'
+                : rawContent;
             messages.push({
               role: historyItem.role,
-              content: historyItem.content,
+              content: truncatedContent,
             });
           }
         }
@@ -601,6 +607,25 @@ You MUST execute this workflow:
 3. Call append_rows with { sheet: "${destSheetCandidate.name}", rows: [...] } to populate the destination sheet with the structured rows. Do NOT refuse or state that the source sheet contains code or unformatted text; extract the records and insert them into the destination.`,
           });
         }
+      }
+
+      // Detect multi-sheet consolidation intent (English, Hindi, Hinglish)
+      const isMultiSheetConsolidation =
+        /\b(?:multiple\s+sheets?|one\s+sheet|single\s+sheet|combine\s+sheets?|merge\s+sheets?|all\s+sheets?\s+(?:in|into)\s+one|consolidate\s+(?:all\s+)?sheets?|ek\s+sheet|sari\s+sheets?\s+ek|saari\s+sheet|sab\s+ek\s+sheet)\b/i.test(
+          input.query.trim(),
+        );
+
+      if (isMultiSheetConsolidation && input.workbook.sheets.length > 1) {
+        messages.push({
+          role: 'system',
+          content: `Multi-Sheet Consolidation Directive:
+The user is requesting: "${input.query}".
+The workbook currently contains ${input.workbook.sheets.length} sheets: [${input.workbook.sheets.map((s) => `"${s.name}" (${s.rows.length} rows)`).join(', ')}].
+The user wants to combine/consolidate these multiple sheets into ONE single consolidated sheet.
+You MUST:
+1. Propose create_sheet for a consolidated sheet or propose a multi-step execution plan using propose_plan with concrete steps (e.g. create_sheet, append_rows, etc.).
+2. Do NOT say "I have analyzed sheet X, please let me know what to do" and do NOT give a generic conversational reply. Propose the concrete plan or operation immediately!`,
+        });
       }
 
       messages.push({
@@ -967,7 +992,10 @@ You MUST execute this workflow:
         } else if (finalResponseContent && !llmMessage) {
           llmMessage = finalResponseContent;
         }
-        modelResponded = true;
+        const hasSubstantiveOutput = Boolean(
+          finalResponseContent?.trim() || llmAction || llmPlan || llmThought?.trim(),
+        );
+        modelResponded = hasSubstantiveOutput;
 
         telemetry = {
           provider: response.provider,
@@ -1182,7 +1210,7 @@ You MUST execute this workflow:
       llmThought?.trim() ||
       (modelResponded
         ? (sheet
-            ? `I have analyzed **${sheet.name}** for your request ("${input.query}"). Please let me know what specific data operation, transformation, or calculation you would like to run.`
+            ? `I examined **${sheet.name}** for your request ("${input.query}"). No automated modifications were verified. You can ask me to combine sheets, clean data, add formulas, or extract specific rows.`
             : `How can I help you with your spreadsheet?`)
         : heuristic.message);
     this.saveWorkingStep(input, 'turn_completed', {
@@ -1297,13 +1325,52 @@ You MUST execute this workflow:
   ): ExecutionPlan | undefined {
     const q = query.toLowerCase();
     const isCompositeOutcome =
-      /\b(?:sales\s+report|prepare|reconcil|discrepanc|summariz|by\s+region|clean)\b/i.test(q) &&
-      isComplexRequest(query);
+      /\b(?:sales\s+report|prepare|reconcil|discrepanc|summariz|by\s+region|clean|multiple\s+sheets?|one\s+sheet|single\s+sheet|combine\s+sheets?|merge\s+sheets?|consolidate|ek\s+sheet|sari\s+sheet)\b/i.test(
+        q,
+      ) && isComplexRequest(query);
 
     if (!isCompositeOutcome) return undefined;
 
     const sheets = workbook.sheets;
     if (sheets.length === 0) return undefined;
+
+    // Multi-sheet consolidation synthesis
+    const isConsolidation =
+      /\b(?:multiple\s+sheets?|one\s+sheet|single\s+sheet|combine\s+sheets?|merge\s+sheets?|all\s+sheets?\s+(?:in|into)\s+one|consolidate|ek\s+sheet|sari\s+sheet|saari\s+sheet)\b/i.test(
+        q,
+      ) && sheets.length > 1;
+
+    if (isConsolidation) {
+      const targetSheetName = 'Consolidated_Data';
+      const steps: Array<{ operation: string; args: Record<string, unknown>; description: string }> =
+        [];
+      if (!sheets.some((s) => s.name === targetSheetName)) {
+        steps.push({
+          operation: 'create_sheet',
+          args: { sheet: targetSheetName },
+          description: `Create new unified sheet: "${targetSheetName}"`,
+        });
+      }
+      for (const s of sheets) {
+        if (s.rows.length > 0 && s.name !== targetSheetName) {
+          const rowsToAppend = s.rows.map((row) => row.map((cell) => cell?.value ?? null));
+          if (rowsToAppend.length > 0) {
+            steps.push({
+              operation: 'append_rows',
+              args: { sheet: targetSheetName, rows: rowsToAppend.slice(0, 100) },
+              description: `Append records from "${s.name}" (${rowsToAppend.length} rows) into "${targetSheetName}"`,
+            });
+          }
+        }
+      }
+      if (steps.length > 0) {
+        return this.buildExecutionPlan(workbook, activeSheetName, {
+          title: 'Consolidate Multiple Sheets into Single Sheet',
+          description: `Consolidation deliverable: merge records across ${sheets.length} sheets into a unified sheet "${targetSheetName}".`,
+          steps,
+        });
+      }
+    }
 
     const ordersSheet =
       sheets.find((s) => /order|sale|transact/i.test(s.name)) ??

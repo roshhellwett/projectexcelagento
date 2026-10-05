@@ -152,6 +152,15 @@ Rules:
       * Extract the entities, contacts, companies, or records matching the active destination headers.
       * Call \`append_rows\` with \`{ sheet: "<destination_sheet>", rows: [...] }\` to populate the structured table.
       * Never say "I analyzed 0 rows, tell me what transformation you want". You have the tools to read the source data and populate the table immediately!
+15. Consolidating Multiple Sheets / Single Sheet Directives:
+    - If the user asks "there are multiple sheets generated make it in one sheet", "combine all sheets into one", "merge all sheets", "make it in one sheet", "ek sheet mei karo", or similar:
+      * The user does NOT want multiple fragmented reference sheets; they want the data combined into ONE master/unified sheet!
+      * Inspect the sheets using read tools (e.g. \`read_cell_range\` on each sheet).
+      * Create an execution plan via \`create_execution_plan\`:
+        1) Create or designate a master sheet (e.g. "Consolidated_Data" or the main target sheet) via \`create_sheet\`.
+        2) Extract and append all the records from each reference/generated sheet into this master sheet via \`append_rows\`.
+        3) Optionally delete the redundant fragmented sheets via \`delete_sheet\`.
+      * Never say "I have analyzed sheet X, please tell me what to do" - execute the consolidation plan directly!
 
 Available operations:
 ${describeTools(catalog)}`;
