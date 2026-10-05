@@ -101,7 +101,9 @@ describe('self-learning memory', () => {
     // "remov dupli" vs "remove duplicate"
     expect(querySimilarity('remov dupli', 'remove duplicate')).toBeGreaterThanOrEqual(0.6);
     // "sorrt amunt decs" vs "sort amount descending"
-    expect(querySimilarity('sorrt amunt decs', 'sort amount descending')).toBeGreaterThanOrEqual(0.6);
+    expect(querySimilarity('sorrt amunt decs', 'sort amount descending')).toBeGreaterThanOrEqual(
+      0.6,
+    );
     // "mak date formt" vs "format dates"
     expect(querySimilarity('mak date formt', 'make date format')).toBeGreaterThanOrEqual(0.6);
   });

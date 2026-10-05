@@ -95,8 +95,8 @@ pnpm dev          # http://localhost:5173
 ```
 
 Then either **pick a sample fixture** in the nav bar, **drag an .xlsx/.csv** onto the grid,
-or paste a BYOK key to unlock the conversational agent. The deterministic planner works
-with no key at all.
+or choose **Try the local agent** to start immediately. The deterministic planner works
+without an API key; connect a provider for broader conversational reasoning.
 
 ## Quality gates
 

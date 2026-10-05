@@ -305,6 +305,7 @@ export class ExcelAgentOrchestrator {
       agent: string,
       summary: string,
       detail?: unknown,
+      tokens?: AgentActivityEvent['tokens'],
     ) => void,
   ): Promise<AgentDecision> {
     const isConversationalFollowup =
@@ -313,14 +314,20 @@ export class ExcelAgentOrchestrator {
       );
 
     let effectiveQuery = input.query;
-    if (isConversationalFollowup && input.conversationHistory && input.conversationHistory.length > 0) {
+    if (
+      isConversationalFollowup &&
+      input.conversationHistory &&
+      input.conversationHistory.length > 0
+    ) {
       for (let i = input.conversationHistory.length - 1; i >= 0; i--) {
         const h = input.conversationHistory[i];
         if (
           h &&
           h.role === 'user' &&
           h.content.trim().length > 3 &&
-          !/^(?:do\s+it|run\s+it|proceed|yes|ok|\?|give\s+me\s+(?:the\s+)?data|show\s+me)$/i.test(h.content.trim())
+          !/^(?:do\s+it|run\s+it|proceed|yes|ok|\?|give\s+me\s+(?:the\s+)?data|show\s+me)$/i.test(
+            h.content.trim(),
+          )
         ) {
           effectiveQuery = h.content;
           break;
@@ -340,7 +347,11 @@ export class ExcelAgentOrchestrator {
     });
 
     if (heuristic.clarification) {
-      emitActivity('status', 'Conductor', 'Proactively asking clarification questions to avoid errors.');
+      emitActivity(
+        'status',
+        'Conductor',
+        'Proactively asking clarification questions to avoid errors.',
+      );
       return {
         message: heuristic.message,
         clarification: heuristic.clarification,
@@ -408,7 +419,7 @@ export class ExcelAgentOrchestrator {
       );
 
       const messages: ChatMessage[] = [
-        { role: 'system', content: buildSystemPrompt(sheet, this.catalog) },
+        { role: 'system', content: buildSystemPrompt(sheet, this.catalog, input.workbook) },
       ];
 
       if (this.memory?.getWorkingMemory && input.sessionId) {
@@ -592,7 +603,8 @@ export class ExcelAgentOrchestrator {
                 fnArgs,
                 { promptTokens: approxPromptTokens, totalTokens: approxPromptTokens },
               );
-              const argsSummary = Object.keys(fnArgs).length > 0 ? ` (${JSON.stringify(fnArgs)})` : '';
+              const argsSummary =
+                Object.keys(fnArgs).length > 0 ? ` (${JSON.stringify(fnArgs)})` : '';
               input.callbacks?.onThinking?.(
                 `\n[Data Scientist] Reading sheet data via "${fnName}"${argsSummary}...\n`,
               );
@@ -600,17 +612,29 @@ export class ExcelAgentOrchestrator {
                 promptTokens: approxPromptTokens,
                 totalTokens: approxPromptTokens,
               });
-              const toolOutput = await this.executeReadTool(input.workbook, sheetName, fnName, fnArgs);
+              const toolOutput = await this.executeReadTool(
+                input.workbook,
+                sheetName,
+                fnName,
+                fnArgs,
+              );
               let observationText = '';
               if (typeof toolOutput === 'object' && toolOutput !== null) {
                 if (Array.isArray(toolOutput)) {
                   observationText = `Retrieved ${toolOutput.length} record(s).`;
-                } else if ('aggregates' in toolOutput && typeof (toolOutput as any).aggregates === 'object') {
-                  observationText = `Computed aggregates: ${JSON.stringify((toolOutput as any).aggregates)}`;
-                } else if ('values' in toolOutput && Array.isArray((toolOutput as any).values)) {
-                  observationText = `Extracted ${(toolOutput as any).values.length} cell value(s).`;
                 } else {
-                  observationText = `Inspected schema with keys: ${Object.keys(toolOutput).slice(0, 5).join(', ')}.`;
+                  const outputRecord = toolOutput as Record<string, unknown>;
+                  if (
+                    'aggregates' in outputRecord &&
+                    typeof outputRecord.aggregates === 'object' &&
+                    outputRecord.aggregates !== null
+                  ) {
+                    observationText = `Computed aggregates: ${JSON.stringify(outputRecord.aggregates)}`;
+                  } else if ('values' in outputRecord && Array.isArray(outputRecord.values)) {
+                    observationText = `Extracted ${outputRecord.values.length} cell value(s).`;
+                  } else {
+                    observationText = `Inspected schema with keys: ${Object.keys(outputRecord).slice(0, 5).join(', ')}.`;
+                  }
                 }
               } else {
                 observationText = String(toolOutput).slice(0, 120);
@@ -702,7 +726,10 @@ export class ExcelAgentOrchestrator {
           if (!executedReadTools) break;
 
           let followUp: ProviderResponse | undefined;
-          for (const fallbackModel of [usedModel, ...candidateModels.filter((m) => m !== usedModel)]) {
+          for (const fallbackModel of [
+            usedModel,
+            ...candidateModels.filter((m) => m !== usedModel),
+          ]) {
             try {
               if (input.callbacks && typeof input.callbacks.onToken === 'function') {
                 followUp = await completeStream(
@@ -772,7 +799,10 @@ export class ExcelAgentOrchestrator {
                 'Please proceed immediately without pausing: deliver your complete analytical findings, exact numbers, probabilities, calculations, and final answer directly to the user right now.',
             });
 
-            for (const fallbackModel of [usedModel, ...candidateModels.filter((m) => m !== usedModel)]) {
+            for (const fallbackModel of [
+              usedModel,
+              ...candidateModels.filter((m) => m !== usedModel),
+            ]) {
               try {
                 let continuation: ProviderResponse;
                 if (input.callbacks && typeof input.callbacks.onToken === 'function') {
@@ -931,7 +961,11 @@ export class ExcelAgentOrchestrator {
       });
       if (guardrail.passed) {
         // Prevent useless 0-affected-cell mutations from being proposed to the user
-        if (guardrail.preview && guardrail.preview.affectedCells === 0 && candidate.category !== 'filter') {
+        if (
+          guardrail.preview &&
+          guardrail.preview.affectedCells === 0 &&
+          candidate.category !== 'filter'
+        ) {
           emitActivity(
             'status',
             'Guardrail',
@@ -949,7 +983,7 @@ export class ExcelAgentOrchestrator {
         });
         const defaultActionMsg = `I've prepared the **${candidate.name}** operation for **${sheetName}**: ${candidate.explanation}. Click **Apply Changes** to proceed.`;
         return {
-          message: isLlmCandidate ? (llmMessage?.trim() || defaultActionMsg) : heuristic.message,
+          message: isLlmCandidate ? llmMessage?.trim() || defaultActionMsg : heuristic.message,
           thought: isLlmCandidate ? llmThought : undefined,
           action: candidate,
           guardrail,

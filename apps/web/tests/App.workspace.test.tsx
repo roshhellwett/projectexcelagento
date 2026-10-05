@@ -34,21 +34,27 @@ describe('workspace shell', () => {
     expect(metaPillText(container)).toContain('sample-orders.xlsx');
     expect(metaPillText(container)).toContain('11 rows');
     expect(screen.getAllByText('Order ID').length).toBeGreaterThan(0);
-    expect(screen.getByRole('heading', { name: 'Activate Excel Agent' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Launch with Demo Mode/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Get started with ExcelAgento' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Try the local agent/i })).toBeInTheDocument();
   });
 
   it('unlocks demo mode, greets the user, and stores the preference', async () => {
     const user = userEvent.setup();
     const { container } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: /Launch with Demo Mode/i }));
+    await user.click(screen.getByRole('button', { name: /Try the local agent/i }));
 
     expect(await screen.findByPlaceholderText(/Ask ExcelAgento/i)).toBeInTheDocument();
-    expect(screen.getByText('GROQ ACTIVE')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Activate Excel Agent' })).not.toBeInTheDocument();
-    expect(localStorage.getItem('excel_agent_settings_v2')).toContain('demo-local-mode');
-    await waitFor(() => expect(container.textContent).toContain('Welcome'), { timeout: 5000 });
+    expect(screen.getByText('LOCAL ENGINE · NO KEY')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Get started with ExcelAgento' }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem('excel_agent_settings_v2')).toBeNull();
+    await waitFor(() => expect(container.textContent).toContain('local agent is ready'), {
+      timeout: 5000,
+    });
   });
 
   it('opens the command palette with Ctrl+K', async () => {
@@ -148,19 +154,20 @@ describe('deterministic actions from chat', () => {
     expect(stored).not.toContain('delete_duplicates');
   });
 
-  it('never touches the network during a demo-mode turn', async () => {
+  it('runs a no-key local turn without contacting an AI provider', async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('the network must not be used in demo mode');
     });
     vi.stubGlobal('fetch', fetchSpy);
-    enterDemoMode();
     const user = userEvent.setup();
     renderApp();
 
+    await user.click(screen.getByRole('button', { name: /Try the local agent/i }));
     await askAgent(user, 'remove duplicate rows');
     await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
 
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(localStorage.getItem('excel_agent_settings_v2')).toBeNull();
     vi.unstubAllGlobals();
   });
 });
@@ -247,7 +254,9 @@ describe('BYOK settings modal', () => {
 
     await user.click(screen.getByRole('button', { name: /Change Key/i }));
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Activate Excel Agent' })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('heading', { name: 'Get started with ExcelAgento' }),
+      ).toBeInTheDocument(),
     );
     // Clearing removes the stored configuration entirely, it does not leave a key behind.
     expect(localStorage.getItem('excel_agent_settings_v2')).toBeNull();

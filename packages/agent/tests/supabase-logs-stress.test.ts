@@ -286,8 +286,20 @@ describe('Supabase Logs - Real-world Agent Stress Testing', () => {
         {
           name: 'Raw_Dump',
           rows: [
-            [{ value: 'id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user', type: 'string' }],
-            [{ value: '3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET timeout=\'58s\';",postgres,null,[],null', type: 'string' }],
+            [
+              {
+                value:
+                  'id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user',
+                type: 'string',
+              },
+            ],
+            [
+              {
+                value:
+                  '3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET timeout=\'58s\';",postgres,null,[],null',
+                type: 'string',
+              },
+            ],
           ],
         },
       ],

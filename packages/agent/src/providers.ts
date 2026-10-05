@@ -200,8 +200,8 @@ export function extractThoughtAndCleanContent(
   }
 
   // Extract |<|minimax|>| or |<|...|>| tags
-  if (/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/.test(content)) {
-    const parts = content.split(/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/);
+  if (/\|<\|[a-zA-Z0-9_-]+\|>\|/.test(content)) {
+    const parts = content.split(/\|<\|[a-zA-Z0-9_-]+\|>\|/);
     const reasoningText = parts
       .filter((p) => p.trim().length > 0)
       .join('\n')
@@ -223,7 +223,7 @@ function formatMessagesForOpenAI(messages: ChatMessage[]) {
     let cleanContent = m.content;
     if (typeof cleanContent === 'string') {
       cleanContent = cleanContent
-        .replace(/\|\<\|[a-zA-Z0-9_\-]+\|\>\|/g, '')
+        .replace(/\|<\|[a-zA-Z0-9_-]+\|>\|/g, '')
         .replace(/<think>[\s\S]*?<\/think>/g, '')
         .replace(/<\/?think>/g, '')
         .trim();

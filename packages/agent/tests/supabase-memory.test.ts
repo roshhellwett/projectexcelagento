@@ -95,23 +95,24 @@ describe('SupabaseMemoryStore', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify([
-            {
-              id: 'cloud-1',
-              raw_query: 'delete column B',
-              normalized_query: 'delete column b',
-              schema_fingerprint: 'customer\u0001notes\u0001price', // different fingerprint
-              operation: 'delete_column',
-              args: { column: 'B' },
-              success_count: 5,
-              failure_count: 0,
-              confidence: 1.0,
-            },
-          ]),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([
+              {
+                id: 'cloud-1',
+                raw_query: 'delete column B',
+                normalized_query: 'delete column b',
+                schema_fingerprint: 'customer\u0001notes\u0001price', // different fingerprint
+                operation: 'delete_column',
+                args: { column: 'B' },
+                success_count: 5,
+                failure_count: 0,
+                confidence: 1.0,
+              },
+            ]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
       ),
     );
 
@@ -172,7 +173,12 @@ describe('SupabaseMemoryStore', () => {
       }),
     );
 
-    const saved = await store.saveWorkingMemory('session-123', 'analysis', { candidateCol: 'D' }, 120);
+    const saved = await store.saveWorkingMemory(
+      'session-123',
+      'analysis',
+      { candidateCol: 'D' },
+      120,
+    );
     expect(saved).toBe(true);
 
     const entries = await store.getWorkingMemory('session-123');
@@ -195,7 +201,7 @@ describe('SupabaseMemoryStore', () => {
       apiKey: 'test-key',
     });
 
-    const rpcCalls: Array<{ url: string; body: any }> = [];
+    const rpcCalls: Array<{ url: string; body: unknown }> = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

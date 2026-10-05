@@ -63,11 +63,7 @@ export function levenshteinDistance(s1: string, s2: string): number {
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
-      d[i]![j] = Math.min(
-        d[i - 1]![j]! + 1,
-        d[i]![j - 1]! + 1,
-        d[i - 1]![j - 1]! + cost,
-      );
+      d[i]![j] = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + cost);
     }
   }
 
@@ -183,7 +179,8 @@ export function isTokenMatch(a: string, b: string): boolean {
   if (canB.length >= 4 && canA.startsWith(canB)) return true;
 
   // Levenshtein distance: 1 edit for len >= 4, 2 edits for len >= 6
-  const maxDist = Math.min(canA.length, canB.length) >= 6 ? 2 : Math.min(canA.length, canB.length) >= 4 ? 1 : 0;
+  const maxDist =
+    Math.min(canA.length, canB.length) >= 6 ? 2 : Math.min(canA.length, canB.length) >= 4 ? 1 : 0;
   if (maxDist > 0 && Math.abs(canA.length - canB.length) <= maxDist) {
     return levenshteinDistance(canA, canB) <= maxDist;
   }

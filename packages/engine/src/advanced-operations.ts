@@ -1279,10 +1279,7 @@ function validateFilterToNewSheet(
   return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
 }
 
-function applyFilterToNewSheet(
-  workbook: Workbook,
-  args: FilterToNewSheetArgs,
-): OperationResult {
+function applyFilterToNewSheet(workbook: Workbook, args: FilterToNewSheetArgs): OperationResult {
   const before = cloneWorkbook(workbook);
   const after = cloneWorkbook(workbook);
   const source = getSheet(after, args.sheet);

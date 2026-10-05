@@ -34,8 +34,8 @@ function readMemory(): string | undefined {
 export const registry = createOperationRegistry();
 
 const isTestMode =
-  (typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || Boolean(process.env?.VITEST))) ||
-  (typeof import.meta !== 'undefined' && (import.meta.env?.MODE === 'test' || Boolean(import.meta.env?.VITEST)));
+  typeof import.meta !== 'undefined' &&
+  (import.meta.env?.MODE === 'test' || Boolean(import.meta.env?.VITEST));
 
 export const memory = new SupabaseMemoryStore({
   url: SUPABASE_URL,
@@ -50,17 +50,34 @@ const localCache = readMemory();
 if (localCache) {
   try {
     // If local memory serialized JSON exists, seed the in-memory cache
-    const parsed = JSON.parse(localCache) as { records?: any[] };
-    if (Array.isArray(parsed.records)) {
-      for (const rec of parsed.records) {
-        if (rec && typeof rec === 'object') {
-          memory.remember(rec);
-        }
+    const parsed: unknown = JSON.parse(localCache);
+    const records =
+      typeof parsed === 'object' && parsed !== null && 'records' in parsed
+        ? parsed.records
+        : undefined;
+    if (Array.isArray(records)) {
+      for (const rec of records) {
+        if (!isMemorySeed(rec)) continue;
+        memory.remember(rec);
       }
     }
   } catch {
     // Ignore corrupt local cache
   }
+}
+
+function isMemorySeed(value: unknown): value is Parameters<typeof memory.remember>[0] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.key === 'string' &&
+    typeof record.rawQuery === 'string' &&
+    typeof record.operation === 'string' &&
+    typeof record.sheetName === 'string' &&
+    typeof record.args === 'object' &&
+    record.args !== null &&
+    !Array.isArray(record.args)
+  );
 }
 
 export const orchestrator = createOrchestrator({ registry, memory });

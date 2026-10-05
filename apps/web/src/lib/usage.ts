@@ -83,6 +83,7 @@ export function loadUsageLog(): UsageEntry[] {
     const raw = store.getItem(USAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
     return parsed
       .filter(isUsageEntry)
       .map((e) => ({

@@ -226,13 +226,27 @@ describe('advanced operations', () => {
 
     it('splits a single-column raw CSV blob into 12 columns without invariant target range errors', () => {
       const before = workbook([
-        row('id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user'),
-        row('3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET statement_timeout=\'58s\';\nCREATE FUNCTION test();",postgres,null,[],null'),
+        row(
+          'id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user',
+        ),
+        row(
+          '3b00b1d9-2f49-473e-a690-3644b73f33f1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET statement_timeout=\'58s\';\nCREATE FUNCTION test();",postgres,null,[],null',
+        ),
       ]);
 
       const columnNames = [
-        'id', 'date', 'method', 'pathname', 'status', 'timestamp',
-        'level', 'event_message', 'log_type', 'log_count', 'logs', 'auth_user',
+        'id',
+        'date',
+        'method',
+        'pathname',
+        'status',
+        'timestamp',
+        'level',
+        'event_message',
+        'log_type',
+        'log_count',
+        'logs',
+        'auth_user',
       ];
 
       const args = splitColumnOperation.schema.parse({
@@ -464,12 +478,7 @@ describe('advanced operations', () => {
         sheets: [
           {
             name: 'Data',
-            rows: [
-              row('ID', 'Status'),
-              row(1, 'Active'),
-              row(2, 'Inactive'),
-              row(3, 'Active'),
-            ],
+            rows: [row('ID', 'Status'), row(1, 'Active'), row(2, 'Inactive'), row(3, 'Active')],
           },
         ],
       };

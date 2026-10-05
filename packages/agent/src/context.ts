@@ -1,6 +1,6 @@
-import { maxColumnCount, type Sheet } from '@excel-agent/engine';
+import { indexToColumn, maxColumnCount, type Sheet, type Workbook } from '@excel-agent/engine';
 
-import { getColumnProfiles } from './analysis.js';
+import { getCompactColumnProfiles } from './analysis.js';
 import { describeTools, type ToolDescriptor } from './tools.js';
 
 /**
@@ -33,20 +33,17 @@ export function sanitizeUntrusted(value: unknown, maxLength = 120): string {
 export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
   const rowCount = sheet.rows.length;
   const colCount = maxColumnCount(sheet.rows);
-  const profiles = getColumnProfiles(sheet);
+  const profiles = getCompactColumnProfiles(sheet);
+  const visibleProfiles = profiles.slice(0, 256);
 
-  const columns = profiles.map((profile) => ({
+  const columns = visibleProfiles.map((profile) => ({
     col: profile.letter,
     name: sanitizeUntrusted(profile.rawName, 60),
     type: profile.isNumeric ? 'numeric' : profile.isDate ? 'date' : 'text',
     nonBlank: profile.nonBlankCount,
-    distinct: profile.distinct.size,
-    // Samples are drawn from a first-seen set, so they are real cell contents and are
-    // sanitized like any other untrusted text. Low cardinality columns expose more distinct values
-    // so the agent can accurately resolve semantic values (e.g. "IN (Added to Stock)").
-    samples: Array.from(profile.distinct.keys())
-      .slice(0, profile.distinct.size <= 8 ? 6 : 3)
-      .map((value) => sanitizeUntrusted(value)),
+    distinct: profile.distinctCount,
+    distinctIsLowerBound: profile.distinctCountIsLowerBound,
+    samples: profile.samples.map((value) => sanitizeUntrusted(value)),
     ...(profile.isNumeric && profile.sum !== undefined
       ? {
           sum: Math.round(profile.sum * 100) / 100,
@@ -57,9 +54,10 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
       : {}),
   }));
 
+  const sampleProfiles = visibleProfiles.slice(0, 32);
   const sampleRows = sheet.rows.slice(0, sampleSize).map((row, rowIndex) => {
     const record: Record<string, unknown> = { _row: rowIndex + 1 };
-    profiles.forEach((profile, columnIndex) => {
+    sampleProfiles.forEach((profile, columnIndex) => {
       const value = row[columnIndex]?.value;
       record[`${profile.letter}_${sanitizeUntrusted(profile.rawName, 40)}`] =
         typeof value === 'number' || typeof value === 'boolean' ? value : sanitizeUntrusted(value);
@@ -72,15 +70,35 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 3): string {
     rows: rowCount,
     cols: colCount,
     columns,
+    omittedColumns: Math.max(0, colCount - visibleProfiles.length),
+    sampleColumns: sampleProfiles.length,
     sampleRows,
   });
 }
 
-export function buildSystemPrompt(sheet: Sheet, catalog: ToolDescriptor[]): string {
+function buildWorkbookMap(workbook: Workbook): string {
+  return workbook.sheets
+    .map((sheet) => {
+      const headers = (sheet.rows[0] ?? [])
+        .slice(0, 16)
+        .map((cell, index) => sanitizeUntrusted(cell?.value || indexToColumn(index), 36));
+      const columnCount = maxColumnCount(sheet.rows);
+      const omitted = Math.max(0, columnCount - headers.length);
+      return `- ${sanitizeUntrusted(sheet.name, 60)}: ${sheet.rows.length} rows × ${columnCount} columns; headers: ${headers.join(', ')}${omitted ? ` (+${omitted} more; available through read tools)` : ''}`;
+    })
+    .join('\n');
+}
+
+export function buildSystemPrompt(
+  sheet: Sheet,
+  catalog: ToolDescriptor[],
+  workbook?: Workbook,
+): string {
   return `You are ExcelAgento, a senior data analyst and spreadsheet copilot.
 
 Active worksheet:
 ${buildSheetContext(sheet)}
+${workbook ? `\nWorkbook map (all worksheets):\n${buildWorkbookMap(workbook)}` : ''}
 
 Rules:
 1. Understand any plain language phrasing, including English, Hindi, Hinglish, business slang, or shorthand. Users describe outcomes ("clean this", "totals at the bottom", "carve out high value", "standardize dates"), never API names.
@@ -104,7 +122,7 @@ Rules:
 6. When the user asks for a change, call the matching operation tool with its arguments. For multi-step workflows, call \`create_execution_plan\`.
 7. When the user asks to filter, extract, copy, or isolate data into a new or separate sheet, call \`filter_to_new_sheet\`. NEVER call \`aggregate_column\` for filter or extract requests.
 8. To find which column matches a filter value (such as "IN data"), check column sample values and distinct items to identify the column letter (e.g. Column D with values like "IN (Added to Stock)").
-9. Column letters must match the worksheet. Use the sheet name "${sanitizeUntrusted(sheet.name, 60)}".
+9. Column letters must match the named worksheet. The workbook map lists every sheet; use the active sheet "${sanitizeUntrusted(sheet.name, 60)}" only when the request does not name another sheet. For cross-sheet work, verify the target headers and data with read tools before planning.
 10. If the user is only asking a question, asking for a count, or clarifying what task was given, and no sheet mutation was requested: reply in prose with no tool call. NEVER propose mutation tools like \`aggregate_column\` or \`insert_formula_column\` for informational questions.
 11. Numerical and Value Replacements:
     - To change, clamp, or set negative numbers to 0 (or another value), call \`edit_cells\` with \`{ sheet, edits: [{ row, column, value: 0 }, ...] }\`. NEVER call \`find_replace\` with literal words like "negative" or "all negative amount".

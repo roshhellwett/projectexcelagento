@@ -13,7 +13,6 @@ import {
   BarChart2,
   RotateCcw,
   Settings,
-  Sparkles,
   FileSpreadsheet,
   Bot,
   BookOpen,

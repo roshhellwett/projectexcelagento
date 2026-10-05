@@ -1,22 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import React from 'react';
 import { AgentChat, type ChatMessage } from '../src/components/AgentChat.js';
 import type { SheetAudit } from '../src/lib/agent-helper.js';
 
 describe('Live Thinking Button and Panel', () => {
   const dummyAudit: SheetAudit = {
     sheetName: 'Sheet1',
-    rowCount: 10,
-    columnCount: 5,
-    emptyCellCount: 0,
-    numericColumns: ['Revenue'],
-    dateColumns: [],
-    textColumns: ['Product'],
-    hasMergedCells: false,
+    totalRows: 10,
+    totalCols: 5,
+    headers: ['Product', 'Revenue'],
+    findings: [],
     suggestions: [],
-    anomalies: [],
   };
 
   beforeEach(() => {
@@ -38,7 +33,8 @@ describe('Live Thinking Button and Panel', () => {
             timestamp: Date.now(),
           },
         ],
-        thought: 'Conductor: Analyzing user query and checking invariants...\nAll invariants passed.',
+        thought:
+          'Conductor: Analyzing user query and checking invariants...\nAll invariants passed.',
       },
     ];
 
@@ -105,7 +101,8 @@ describe('Live Thinking Button and Panel', () => {
   });
 
   it('expands the thinking panel when the button is clicked and displays written text', async () => {
-    const thoughtText = 'Conductor: Formulating deterministic operation plan.\nSentinel: Verification passed.';
+    const thoughtText =
+      'Conductor: Formulating deterministic operation plan.\nSentinel: Verification passed.';
     const messages: ChatMessage[] = [
       {
         id: 'msg-1',
@@ -150,7 +147,9 @@ describe('Live Thinking Button and Panel', () => {
     // Panel is now visible
     const panel = container.querySelector('.live-thinking-panel');
     expect(panel).not.toBeNull();
-    expect(screen.getByText(/Conductor: Formulating deterministic operation plan/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Conductor: Formulating deterministic operation plan/i),
+    ).toBeInTheDocument();
 
     // Click again to collapse
     fireEvent.click(screen.getByRole('button', { name: /Hide Thinking/i }));
@@ -245,7 +244,9 @@ describe('Live Thinking Button and Panel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Thinking Process/i }));
 
     expect(container.querySelector('.live-thinking-panel')).not.toBeNull();
-    expect(screen.getByText(/\[Conductor\] Decomposed request into 2 segments/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/\[Conductor\] Decomposed request into 2 segments/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\[Scientist\] Profiled 5 columns and 100 rows/i)).toBeInTheDocument();
   });
 

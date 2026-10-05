@@ -365,9 +365,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
                   }}
                 />
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                  Supabase Neural Cortex
-                </span>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Supabase Neural Cortex</span>
               </div>
               <span
                 style={{

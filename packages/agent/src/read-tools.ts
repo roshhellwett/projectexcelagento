@@ -407,7 +407,9 @@ export function querySheetRecords(
       } else {
         // Search across all cells in the row if column not specified
         cellValStr = row
-          .map((c) => (c?.value !== null && c?.value !== undefined ? String(c.value).toLowerCase() : ''))
+          .map((c) =>
+            c?.value !== null && c?.value !== undefined ? String(c.value).toLowerCase() : '',
+          )
           .join(' ');
       }
 
@@ -453,7 +455,10 @@ export function querySheetRecords(
   }
 
   const condDesc = conditions
-    .map((c) => `${c.column ? `Column ${c.column}` : c.header || 'Row'} ${c.operator ?? 'contains'} "${c.value}"`)
+    .map(
+      (c) =>
+        `${c.column ? `Column ${c.column}` : c.header || 'Row'} ${c.operator ?? 'contains'} "${c.value}"`,
+    )
     .join(' AND ');
 
   return {

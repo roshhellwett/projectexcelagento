@@ -266,7 +266,12 @@ export function detectDelimiter(text: string): string | null {
       const tabCount = (firstNonEmpty.match(/\t/g) || []).length;
       const semiCount = (firstNonEmpty.match(/;/g) || []).length;
       const pipeCount = (firstNonEmpty.match(/\|/g) || []).length;
-      if (commaCount >= 1 && commaCount >= tabCount && commaCount >= semiCount && commaCount >= pipeCount) {
+      if (
+        commaCount >= 1 &&
+        commaCount >= tabCount &&
+        commaCount >= semiCount &&
+        commaCount >= pipeCount
+      ) {
         best = ',';
       } else if (tabCount >= 1 && tabCount >= semiCount && tabCount >= pipeCount) {
         best = '\t';
@@ -292,7 +297,12 @@ export function parseCsvField(raw: string, delimiter: string): CellValue {
   let text = raw.trim();
   if (text === '' || text.toLowerCase() === 'null') return null;
   // Strip redundant surrounding quotes if the field is wrapped in literal quotes from exports like """..."""
-  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"') && !text.slice(1, -1).includes('"')) {
+  if (
+    text.length >= 2 &&
+    text.startsWith('"') &&
+    text.endsWith('"') &&
+    !text.slice(1, -1).includes('"')
+  ) {
     text = text.slice(1, -1).trim();
     if (text === '' || text.toLowerCase() === 'null') return null;
   }

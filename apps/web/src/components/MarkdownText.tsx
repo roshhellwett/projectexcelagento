@@ -55,7 +55,7 @@ function parseAlignments(delimiterLine: string): ('left' | 'center' | 'right')[]
 }
 
 function normalizeMarkdownText(raw: string): string[] {
-  let preprocessed = raw
+  const preprocessed = raw
     .replace(/\|\s*\|\s*---/g, '|\n|---')
     .replace(/\|\s*\|\s*/g, '|\n|')
     .replace(/\|\s*(\r?\n)+\s*\|/g, '|\n|')
@@ -86,11 +86,7 @@ function parseBlocks(text: string): Block[] {
     }
 
     // Markdown Table detection
-    if (
-      line.includes('|') &&
-      i + 1 < lines.length &&
-      isDelimiterRow(lines[i + 1] ?? '')
-    ) {
+    if (line.includes('|') && i + 1 < lines.length && isDelimiterRow(lines[i + 1] ?? '')) {
       const headers = extractCells(line);
       const alignments = parseAlignments(lines[i + 1] ?? '');
       i += 2;
@@ -161,7 +157,8 @@ function parseBlocks(text: string): Block[] {
 const BlockView: React.FC<{ block: Block }> = ({ block }) => {
   switch (block.type) {
     case 'heading': {
-      const Tag = block.level === 1 ? 'h3' : block.level === 2 ? 'h4' : block.level === 3 ? 'h5' : 'h6';
+      const Tag =
+        block.level === 1 ? 'h3' : block.level === 2 ? 'h4' : block.level === 3 ? 'h5' : 'h6';
       return <Tag className="md-heading">{renderInline(block.text)}</Tag>;
     }
     case 'code':
@@ -189,10 +186,7 @@ const BlockView: React.FC<{ block: Block }> = ({ block }) => {
             <thead>
               <tr>
                 {block.headers.map((hdr, hIdx) => (
-                  <th
-                    key={hIdx}
-                    style={{ textAlign: block.alignments[hIdx] ?? 'left' }}
-                  >
+                  <th key={hIdx} style={{ textAlign: block.alignments[hIdx] ?? 'left' }}>
                     {renderInline(hdr)}
                   </th>
                 ))}
@@ -202,10 +196,7 @@ const BlockView: React.FC<{ block: Block }> = ({ block }) => {
               {block.rows.map((row, rIdx) => (
                 <tr key={rIdx}>
                   {row.map((cell, cIdx) => (
-                    <td
-                      key={cIdx}
-                      style={{ textAlign: block.alignments[cIdx] ?? 'left' }}
-                    >
+                    <td key={cIdx} style={{ textAlign: block.alignments[cIdx] ?? 'left' }}>
                       {renderInline(cell)}
                     </td>
                   ))}

@@ -191,9 +191,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           }
         >
           {filtered.length === 0 ? (
-            <div className="command-empty">
-              No commands matching &quot;{search}&quot;
-            </div>
+            <div className="command-empty">No commands matching &quot;{search}&quot;</div>
           ) : (
             filtered.map((item, index) => {
               const isSelected = index === selectedIndex;
@@ -221,23 +219,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 >
                   <div className="command-item-left">
                     <div className="command-item-header">
-                      <span className={`command-badge ${badgeClass}`}>
-                        {item.category}
-                      </span>
-                      <span className="command-item-title">
-                        {item.title}
-                      </span>
+                      <span className={`command-badge ${badgeClass}`}>{item.category}</span>
+                      <span className="command-item-title">{item.title}</span>
                     </div>
-                    <span className="command-item-subtitle">
-                      {item.subtitle}
-                    </span>
+                    <span className="command-item-subtitle">{item.subtitle}</span>
                   </div>
 
-                  {item.shortcut && (
-                    <span className="command-shortcut">
-                      {item.shortcut}
-                    </span>
-                  )}
+                  {item.shortcut && <span className="command-shortcut">{item.shortcut}</span>}
                 </div>
               );
             })

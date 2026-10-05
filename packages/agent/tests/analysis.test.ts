@@ -8,6 +8,7 @@ import {
   buildSheetContext,
   buildSystemPrompt,
   resolveColumn,
+  getCompactColumnProfiles,
   getColumnProfiles,
 } from '../src/index.js';
 
@@ -216,6 +217,16 @@ describe('sheet-scale column counting', () => {
     expect(profile?.nonBlankCount).toBe(200_000);
   });
 
+  it('builds bounded prompt profiles without retaining high-cardinality values', () => {
+    const [profile] = getCompactColumnProfiles(tallSheet(200_000));
+
+    expect(profile?.isNumeric).toBe(true);
+    expect(profile?.samples).toHaveLength(8);
+    expect(profile?.distinctCount).toBe(65);
+    expect(profile?.distinctCountIsLowerBound).toBe(true);
+    expect(profile?.sum).toBe(20_000_100_000);
+  });
+
   it('audits and builds the agent context for a 200k-row sheet', () => {
     const sheet = tallSheet(200_000);
 
@@ -239,7 +250,11 @@ describe('negative values replacement', () => {
         },
       ],
     };
-    const res = analyzeSpreadsheetIntentAndData('change all negative amount to 0', wb, 'COCA COLA CO');
+    const res = analyzeSpreadsheetIntentAndData(
+      'change all negative amount to 0',
+      wb,
+      'COCA COLA CO',
+    );
     expect(res.proposedAction?.name).toBe('edit_cells');
     expect(res.proposedAction?.args.edits).toEqual([
       { row: 2, column: 'B', value: 0 },
@@ -255,15 +270,43 @@ describe('financial profit and loss probability', () => {
         {
           name: 'COCA COLA CO',
           rows: [
-            [createCell(''), createCell(''), createCell('FY 09'), createCell('FY 10'), createCell('FY 11')],
-            [createCell(''), createCell('Gross Profit'), createCell(19902), createCell(22426), createCell(28327)],
-            [createCell(''), createCell('Operating Income'), createCell(8231), createCell(8413), createCell(10173)],
-            [createCell(''), createCell('Net Income Attributable to Shareowners'), createCell(6824), createCell(11787), createCell(8584)],
+            [
+              createCell(''),
+              createCell(''),
+              createCell('FY 09'),
+              createCell('FY 10'),
+              createCell('FY 11'),
+            ],
+            [
+              createCell(''),
+              createCell('Gross Profit'),
+              createCell(19902),
+              createCell(22426),
+              createCell(28327),
+            ],
+            [
+              createCell(''),
+              createCell('Operating Income'),
+              createCell(8231),
+              createCell(8413),
+              createCell(10173),
+            ],
+            [
+              createCell(''),
+              createCell('Net Income Attributable to Shareowners'),
+              createCell(6824),
+              createCell(11787),
+              createCell(8584),
+            ],
           ],
         },
       ],
     };
-    const res = analyzeSpreadsheetIntentAndData('find the probability of profit and loss', wb, 'COCA COLA CO');
+    const res = analyzeSpreadsheetIntentAndData(
+      'find the probability of profit and loss',
+      wb,
+      'COCA COLA CO',
+    );
     expect(res.proposedAction).toBeUndefined();
     expect(res.message).toContain('Probability of Profit');
     expect(res.message).toContain('100.0%');
@@ -336,7 +379,9 @@ describe('row horizontal aggregation analysis', () => {
     );
     expect(res.proposedAction).toBeUndefined();
     expect(res.message).toContain('Row 21');
-    expect(res.message).toContain('NET INCOME ATTRIBUTABLE TO SHAREOWNERS OF THE COCA-COLA COMPANY');
+    expect(res.message).toContain(
+      'NET INCOME ATTRIBUTABLE TO SHAREOWNERS OF THE COCA-COLA COMPANY',
+    );
     expect(res.message).toContain('73,456');
     expect(res.message).toContain('7,345.60');
     expect(res.message).toContain("FY '09");
@@ -380,8 +425,11 @@ describe('row horizontal aggregation analysis', () => {
     expect(vlookupRes.message).toContain('XLOOKUP');
     expect(vlookupRes.message).toContain('VLOOKUP');
 
-    const stdevRes = analyzeSpreadsheetIntentAndData('formula for standard deviation', workbook(), SHEET);
+    const stdevRes = analyzeSpreadsheetIntentAndData(
+      'formula for standard deviation',
+      workbook(),
+      SHEET,
+    );
     expect(stdevRes.message).toContain('STDEV.S');
   });
 });
-

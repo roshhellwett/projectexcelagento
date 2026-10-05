@@ -1,5 +1,10 @@
 import type { Workbook } from '@excel-agent/engine';
-import { InMemoryMemoryStore, normalizeQuery, querySimilarity, sheetFingerprint } from './memory.js';
+import {
+  InMemoryMemoryStore,
+  normalizeQuery,
+  querySimilarity,
+  sheetFingerprint,
+} from './memory.js';
 import type { MemoryRecord, MemoryStore } from './types.js';
 
 export interface SupabaseMemoryConfig {
@@ -103,7 +108,13 @@ export class SupabaseMemoryStore implements MemoryStore {
     const fingerprint = record.schemaFingerprint || 'unknown';
 
     if (norm && fingerprint !== 'unknown') {
-      void this.syncRememberToCloud(record.rawQuery || record.key, norm, fingerprint, record.operation, record.args);
+      void this.syncRememberToCloud(
+        record.rawQuery || record.key,
+        norm,
+        fingerprint,
+        record.operation,
+        record.args,
+      );
     }
 
     return local;

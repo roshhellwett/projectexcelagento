@@ -10,11 +10,8 @@ import {
   ExternalLink,
   Sparkles,
   CheckCircle2,
-  Lock,
   Cpu,
   Terminal,
-  Activity,
-  Layers,
   ArrowRight,
 } from 'lucide-react';
 
@@ -40,9 +37,10 @@ interface AgentsPageProps {
 }
 
 export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }) => {
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'orchestration' | 'analytics' | 'safety' | 'data'>('all');
-  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
-
+  const [selectedFilter, setSelectedFilter] = useState<
+    'all' | 'orchestration' | 'analytics' | 'safety' | 'data'
+  >('all');
+  const [, setCopiedPrompt] = useState<string | null>(null);
   const agents: AgentProfile[] = [
     {
       id: 'nexus',
@@ -354,7 +352,11 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       {/* Agents Grid */}
       <div className="agents-grid">
         {filteredAgents.map((agent) => (
-          <div key={agent.id} className="agent-card" style={{ borderColor: `${agent.accentColor}33` }}>
+          <div
+            key={agent.id}
+            className="agent-card"
+            style={{ borderColor: `${agent.accentColor}33` }}
+          >
             {/* Header */}
             <div className="agent-card-header">
               <div
@@ -453,7 +455,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             <div className="arch-node-step">01. INGEST</div>
             <div className="arch-node-title">Nexus Conductor</div>
             <div className="arch-node-desc">
-              Normalizes typo-ridden English, retrieves cross-turn working memory, generates execution plan.
+              Normalizes typo-ridden English, retrieves cross-turn working memory, generates
+              execution plan.
             </div>
           </div>
           <div className="arch-flow-arrow">→</div>
@@ -461,7 +464,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             <div className="arch-node-step">02. VERIFY</div>
             <div className="arch-node-title">Aegis Guardrail</div>
             <div className="arch-node-desc">
-              Checks schema constraints, prevents destructive data wipes, creates dry-run diff preview.
+              Checks schema constraints, prevents destructive data wipes, creates dry-run diff
+              preview.
             </div>
           </div>
           <div className="arch-flow-arrow">→</div>
@@ -477,7 +481,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             <div className="arch-node-step">04. LEARN</div>
             <div className="arch-node-title">Cortex Engine</div>
             <div className="arch-node-desc">
-              Caches verified operation patterns and synchronizes cloud context with zero data leakage.
+              Caches verified operation patterns and synchronizes cloud context with zero data
+              leakage.
             </div>
           </div>
         </div>

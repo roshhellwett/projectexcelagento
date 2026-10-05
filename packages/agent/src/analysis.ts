@@ -62,6 +62,21 @@ export interface ColumnMetadata {
   distinct: Map<string, number>;
 }
 
+export interface CompactColumnProfile {
+  letter: string;
+  rawName: string;
+  isNumeric: boolean;
+  isDate: boolean;
+  nonBlankCount: number;
+  distinctCount: number;
+  distinctCountIsLowerBound: boolean;
+  samples: unknown[];
+  sum?: number;
+  avg?: number;
+  min?: number;
+  max?: number;
+}
+
 export function isFuzzyMatch(word: string, target: string): boolean {
   if (word.length < 3 || target.length < 3) return word === target;
   if (Math.abs(word.length - target.length) > 2) return false;
@@ -200,6 +215,88 @@ export function getColumnProfiles(sheet: Sheet): ColumnMetadata[] {
   return columns;
 }
 
+/**
+ * Build prompt-sized column profiles without retaining every cell value. Exact read tools remain
+ * responsible for exact cardinality and row answers; this scan keeps only bounded examples and
+ * streaming numeric statistics so large workbooks do not duplicate their contents in memory.
+ */
+export function getCompactColumnProfiles(sheet: Sheet, sampleLimit = 8): CompactColumnProfile[] {
+  const totalCols = maxColumnCount(sheet.rows);
+  const headerRow = sheet.rows[0] ?? [];
+  const MAX_DISTINCT_VALUES = 64;
+
+  return Array.from({ length: totalCols }, (_, columnIndex) => {
+    const rawHeader = headerRow[columnIndex]?.value;
+    const rawName =
+      rawHeader !== null && rawHeader !== undefined && String(rawHeader).trim() !== ''
+        ? String(rawHeader).trim()
+        : `Column ${indexToColumn(columnIndex)}`;
+    const seen = new Set<string>();
+    const samples: unknown[] = [];
+    let distinctCountIsLowerBound = false;
+    let nonBlankCount = 0;
+    let numericCount = 0;
+    let dateCount = 0;
+    let sum = 0;
+    let min = Infinity;
+    let max = -Infinity;
+
+    for (let rowIndex = 1; rowIndex < sheet.rows.length; rowIndex += 1) {
+      const row = sheet.rows[rowIndex] ?? [];
+      const value = row[columnIndex]?.value;
+      if (value === null || value === undefined || String(value).trim() === '') continue;
+      nonBlankCount += 1;
+
+      const text = value instanceof Date ? value.toISOString() : String(value);
+      if (seen.has(text)) {
+        // The exact frequency is unnecessary for prompt context.
+      } else if (seen.size < MAX_DISTINCT_VALUES) {
+        seen.add(text);
+        if (samples.length < sampleLimit) samples.push(value);
+      } else {
+        distinctCountIsLowerBound = true;
+      }
+
+      const numericText = text.replace(/,/g, '');
+      const numericValue = typeof value === 'number' ? value : Number(numericText);
+      if (numericText !== '' && Number.isFinite(numericValue)) {
+        numericCount += 1;
+        sum += numericValue;
+        min = Math.min(min, numericValue);
+        max = Math.max(max, numericValue);
+      }
+
+      if (
+        typeof value === 'string' &&
+        (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(value))
+      ) {
+        dateCount += 1;
+      }
+    }
+
+    const isNumeric = numericCount > 0 && numericCount >= nonBlankCount * 0.7;
+    const isDate = dateCount > 0 && dateCount >= nonBlankCount * 0.6;
+    return {
+      letter: indexToColumn(columnIndex),
+      rawName,
+      isNumeric,
+      isDate,
+      nonBlankCount,
+      distinctCount: seen.size + (distinctCountIsLowerBound ? 1 : 0),
+      distinctCountIsLowerBound,
+      samples,
+      ...(isNumeric
+        ? {
+            sum,
+            avg: sum / numericCount,
+            min,
+            max,
+          }
+        : {}),
+    };
+  });
+}
+
 const CONCEPT_SYNONYMS: Record<string, string[]> = {
   stock: ['stock', 'available', 'inventory', 'balance', 'godown', 'store', 'stocks', 'curr_stock'],
   quantity: [
@@ -295,9 +392,7 @@ export function resolveColumn(query: string, columns: ColumnMetadata[]): ColumnM
   }
 
   // 3. Token containment (excluding action words)
-  const queryTokens = q
-    .split(/[\s,._/?!+-]+/)
-    .filter((t) => t.length > 2 && !ACTION_WORDS.has(t));
+  const queryTokens = q.split(/[\s,._/?!+-]+/).filter((t) => t.length > 2 && !ACTION_WORDS.has(t));
   for (const token of queryTokens) {
     for (const col of columns) {
       if (col.cleanName.includes(token)) {
@@ -336,7 +431,10 @@ function cleanHeaderDisplay(header: string, colLetter?: string): string {
   const trimmed = header.trim();
   if (!trimmed) return colLetter ? `Column ${colLetter}` : 'Column';
   if (trimmed.includes(',')) {
-    const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean);
+    const parts = trimmed
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
     if (parts.length > 2) {
       return `${parts[0]}… (${parts.length} fields)`;
     }
@@ -481,8 +579,12 @@ export function auditSheet(sheet: Sheet): SheetAudit {
         },
       });
     } else if (mixedCaseCount >= 2 && dateLikeCount === 0) {
-      const isNameLike = /name|customer|client|author|user|person|contact|title|city|country/i.test(colHeader);
-      const actionText = isNameLike ? `Capitalize names in ${displayHeader} to Title Case` : `Format ${displayHeader} to Title Case`;
+      const isNameLike = /name|customer|client|author|user|person|contact|title|city|country/i.test(
+        colHeader,
+      );
+      const actionText = isNameLike
+        ? `Capitalize names in ${displayHeader} to Title Case`
+        : `Format ${displayHeader} to Title Case`;
       suggestions.push({
         prompt: actionText,
         action: {
@@ -567,7 +669,12 @@ export function findFilterCandidateInSheet(
       }
       for (const [distinctVal] of col.distinct) {
         if (distinctVal && q.includes(distinctVal.toLowerCase())) {
-          return { column: col, value: distinctVal, operator: 'contains', matchedToken: distinctVal };
+          return {
+            column: col,
+            value: distinctVal,
+            operator: 'contains',
+            matchedToken: distinctVal,
+          };
         }
       }
     }
@@ -575,15 +682,23 @@ export function findFilterCandidateInSheet(
 
   // 2. Transaction status shorthand check: e.g. "IN data", "OUT data", "IN rows", "filter IN", "filter OUT"
   const hasInStatus =
-    /\b(?:the\s+)?in\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
-    /\b(?:filter|extract|separate|isolate|pull(?:\s+out)?)\b[\s\S]{0,50}?\bin\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
+    /\b(?:the\s+)?in\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(
+      query,
+    ) ||
+    /\b(?:filter|extract|separate|isolate|pull(?:\s+out)?)\b[\s\S]{0,50}?\bin\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(
+      query,
+    ) ||
     /\bin\s+(?:operation|action|status)\b/i.test(query);
 
   const hasOutStatus =
     !hasInStatus &&
-    (/\b(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query) ||
+    (/\b(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(
+      query,
+    ) ||
       /\bout\s+(?:operation|action|status)\b/i.test(query) ||
-      /\b(?:filter|extract|separate|isolate)\s+(?:for\s+)?(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(query));
+      /\b(?:filter|extract|separate|isolate)\s+(?:for\s+)?(?:the\s+)?out\s+(?:data|records?|rows?|transactions?|items?|stock|operations?|action)\b/i.test(
+        query,
+      ));
 
   if (hasInStatus) {
     for (const col of columns) {
@@ -598,7 +713,10 @@ export function findFilterCandidateInSheet(
   if (hasOutStatus) {
     for (const col of columns) {
       for (const [dVal] of col.distinct) {
-        if (/^OUT\b|\(OUT\)|\bOUT\s*\(|^OUT\s+/i.test(dVal) || dVal.toUpperCase().startsWith('OUT')) {
+        if (
+          /^OUT\b|\(OUT\)|\bOUT\s*\(|^OUT\s+/i.test(dVal) ||
+          dVal.toUpperCase().startsWith('OUT')
+        ) {
           return { column: col, value: 'OUT', operator: 'contains', matchedToken: 'OUT' };
         }
       }
@@ -716,7 +834,7 @@ export function findFilterCandidateInSheet(
     'count',
   ]);
 
-  const rawTokens = query.split(/[\s,._/?!+;:"'()\[\]{}]+/).filter((t) => t.length >= 2);
+  const rawTokens = query.split(/[\s,._/?!+;:"'()\x5B\]{}]+/).filter((t) => t.length >= 2);
   for (const token of rawTokens) {
     const lowerToken = token.toLowerCase();
     if (stopWords.has(lowerToken)) continue;
@@ -830,13 +948,16 @@ export function analyzeSpreadsheetIntentAndData(
   const isSuperhumanAutopilot =
     /\b(?:autopilot|chamatkar|magic|toofani|surprise\s+me|blow\s+my\s+mind|executive\s+summary|kpi\s+dashboard|deep\s+analysis|full\s+analysis|executive\s+briefing|intelligent\s+overview|analyze\s+everything|auto\s+clean|clean\s+everything|make\s+it\s+professional)\b/i.test(
       raw,
-    ) ||
-    /^(?:autopilot|magic|chamatkar|kpi|executive|briefing)\b/i.test(q);
+    ) || /^(?:autopilot|magic|chamatkar|kpi|executive|briefing)\b/i.test(q);
 
   if (isSuperhumanAutopilot) {
     // 1. Raw Delimited Text in Single Column Detection (e.g. unpacked CSV in Column A)
     const headerCellVal = String(currentSheet.rows[0]?.[0]?.value ?? '');
-    if (columns.length === 1 && headerCellVal.includes(',') && headerCellVal.split(',').length >= 3) {
+    if (
+      columns.length === 1 &&
+      headerCellVal.includes(',') &&
+      headerCellVal.split(',').length >= 3
+    ) {
       const detectedHeaders = headerCellVal
         .split(',')
         .map((h) => h.trim().replace(/^["']+|["']+$/g, ''))
@@ -864,7 +985,8 @@ export function analyzeSpreadsheetIntentAndData(
     for (const c of columns) {
       populatedCells += c.nonBlankCount;
     }
-    const completeness = totalCells > 0 ? Math.min(100, Math.round((populatedCells / totalCells) * 100)) : 100;
+    const completeness =
+      totalCells > 0 ? Math.min(100, Math.round((populatedCells / totalCells) * 100)) : 100;
 
     // 3. Duplicate Analysis
     const seen = new Set<string>();
@@ -889,7 +1011,14 @@ export function analyzeSpreadsheetIntentAndData(
         let errs = 0;
         for (let r = 1; r < currentSheet.rows.length; r++) {
           const v = String(currentSheet.rows[r]?.[c.index]?.value ?? '').toLowerCase();
-          if (v === 'error' || v === 'fail' || v === 'failed' || v === '500' || v === '428c9' || v === '57p01') {
+          if (
+            v === 'error' ||
+            v === 'fail' ||
+            v === 'failed' ||
+            v === '500' ||
+            v === '428c9' ||
+            v === '57p01'
+          ) {
             errs++;
           }
         }
@@ -921,9 +1050,11 @@ export function analyzeSpreadsheetIntentAndData(
 
     // 7. Data Health Score Calculation
     let healthScore = 100;
-    if (dupCount > 0) healthScore -= Math.min(25, Math.round((dupCount / Math.max(1, dataRowsCount)) * 50));
+    if (dupCount > 0)
+      healthScore -= Math.min(25, Math.round((dupCount / Math.max(1, dataRowsCount)) * 50));
     if (completeness < 95) healthScore -= Math.round((95 - completeness) * 0.5);
-    if (errorCount > 0) healthScore -= Math.min(15, Math.round((errorCount / Math.max(1, dataRowsCount)) * 30));
+    if (errorCount > 0)
+      healthScore -= Math.min(15, Math.round((errorCount / Math.max(1, dataRowsCount)) * 30));
     healthScore = Math.max(40, Math.min(100, healthScore));
 
     const healthRating =
@@ -934,9 +1065,10 @@ export function analyzeSpreadsheetIntentAndData(
           : '⚠️ Action Recommended';
 
     // 8. Determine highest-leverage proposed action
-    const isPurelyInformational = /^(?:can you|could you|please\s+(?:give|show|tell)|give me|what is|tell me|show me|explain|describe)\b/i.test(
-      raw,
-    );
+    const isPurelyInformational =
+      /^(?:can you|could you|please\s+(?:give|show|tell)|give me|what is|tell me|show me|explain|describe)\b/i.test(
+        raw,
+      );
 
     let proposedAction: ProposedAction | undefined;
     if (!isPurelyInformational) {
@@ -1039,8 +1171,9 @@ export function analyzeSpreadsheetIntentAndData(
     };
   }
 
-  const isDeleteRowOrDedupe =
-    /\b(?:row|rows|duplicate|duplicates|dedup|dup|blank|empty)\b/i.test(raw);
+  const isDeleteRowOrDedupe = /\b(?:row|rows|duplicate|duplicates|dedup|dup|blank|empty)\b/i.test(
+    raw,
+  );
 
   const deleteColMatch =
     !isDeleteRowOrDedupe &&
@@ -1063,7 +1196,10 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   // Cross-questioning for bare "delete column" / "remove column"
-  if (/^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(q) || /^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(origQ)) {
+  if (
+    /^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(q) ||
+    /^(?:delete|remove|drop)\s+(?:the\s+)?(?:column|col)\s*$/i.test(origQ)
+  ) {
     if (columns.length > 0) {
       return {
         message: `Which column would you like to delete from **${currentSheet.name}**?\n\n*Deleting a column is permanent, so please confirm the exact column below:*`,
@@ -1147,11 +1283,17 @@ export function analyzeSpreadsheetIntentAndData(
         const row = currentSheet.rows[r];
         const cell = row?.[colIdx];
         const cellVal = cell?.value;
-        const strVal = String(cellVal ?? '').trim().toLowerCase();
+        const strVal = String(cellVal ?? '')
+          .trim()
+          .toLowerCase();
         const numVal =
           typeof cellVal === 'number'
             ? cellVal
-            : Number(String(cellVal ?? '').replace(/,/g, '').trim());
+            : Number(
+                String(cellVal ?? '')
+                  .replace(/,/g, '')
+                  .trim(),
+              );
         let isMatch = false;
 
         if (candidate.operator === 'contains') {
@@ -1183,7 +1325,11 @@ export function analyzeSpreadsheetIntentAndData(
       const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]?([^'"]+)['"]?/i);
       const targetSheetName =
         namedMatch?.[1]?.trim() ||
-        `${String(candidate.value).replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'Filtered'}_Data`;
+        `${
+          String(candidate.value)
+            .replace(/[^a-zA-Z0-9_-]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'Filtered'
+        }_Data`;
 
       if (count > 0) {
         return {
@@ -1486,7 +1632,9 @@ export function analyzeSpreadsheetIntentAndData(
     const seen = new Set<string>();
     let dupCount = 0;
     for (let r = 1; r < currentSheet.rows.length; r++) {
-      const key = colIndices.map((idx) => String(currentSheet.rows[r]?.[idx]?.value ?? '')).join('|~|');
+      const key = colIndices
+        .map((idx) => String(currentSheet.rows[r]?.[idx]?.value ?? ''))
+        .join('|~|');
       if (seen.has(key)) dupCount++;
       else seen.add(key);
     }
@@ -1520,7 +1668,8 @@ export function analyzeSpreadsheetIntentAndData(
     q.includes('lowercase') ||
     q.includes('capitalize') ||
     q.includes('caps') ||
-    (q.includes('clean') && (q.includes('column') || q.includes('col') || q.includes('text') || q.includes('name')))
+    (q.includes('clean') &&
+      (q.includes('column') || q.includes('col') || q.includes('text') || q.includes('name')))
   ) {
     let caseOption: 'none' | 'lower' | 'upper' | 'title' = 'none';
     if (q.includes('title') || q.includes('capitalize')) caseOption = 'title';
@@ -1542,7 +1691,8 @@ export function analyzeSpreadsheetIntentAndData(
           sheet: currentSheet.name,
           columns: [targetCol.letter],
           trim: true,
-          collapseWhitespace: q.includes('collapse') || q.includes('extra space') || q.includes('squash'),
+          collapseWhitespace:
+            q.includes('collapse') || q.includes('extra space') || q.includes('squash'),
           case: caseOption,
           headerRow: 1,
         },
@@ -1558,7 +1708,11 @@ export function analyzeSpreadsheetIntentAndData(
     const dateColumns = columns.filter((c) => c.isDate || c.cleanName.includes('date'));
     const resolvedFromQuery = resolveColumn(q, columns);
 
-    if (dateColumns.length > 1 && !explicitCol && (!resolvedFromQuery || !dateColumns.includes(resolvedFromQuery))) {
+    if (
+      dateColumns.length > 1 &&
+      !explicitCol &&
+      (!resolvedFromQuery || !dateColumns.includes(resolvedFromQuery))
+    ) {
       return {
         message: `I found **${dateColumns.length} date columns** in **${currentSheet.name}**. Which column would you like to standardize?`,
         clarification: {
@@ -1603,8 +1757,12 @@ export function analyzeSpreadsheetIntentAndData(
 
   // 3.5. EXCEL FORMULA & ANALYTICAL KNOWLEDGE SYNTHESIS
   const isFormulaQuery =
-    /\b(?:formula|function|equation|how\s+to\s+calculate|how\s+do\s+i\s+calculate|formula\s+for|calculate\s+formula)\b/i.test(q) ||
-    /\b(?:cagr|vlookup|xlookup|hlookup|stdev|standard\s+deviation|compound\s+interest|profit\s+margin|gross\s+margin)\b/i.test(q);
+    /\b(?:formula|function|equation|how\s+to\s+calculate|how\s+do\s+i\s+calculate|formula\s+for|calculate\s+formula)\b/i.test(
+      q,
+    ) ||
+    /\b(?:cagr|vlookup|xlookup|hlookup|stdev|standard\s+deviation|compound\s+interest|profit\s+margin|gross\s+margin)\b/i.test(
+      q,
+    );
 
   if (isFormulaQuery) {
     if (q.includes('cagr') || q.includes('compound annual growth')) {
@@ -1638,8 +1796,14 @@ export function analyzeSpreadsheetIntentAndData(
 
     if (q.includes('margin') || q.includes('profit')) {
       const numCols = columns.filter((c) => c.isNumeric);
-      const revCol = columns.find((c) => /rev|sale|price/i.test(c.cleanName))?.letter || numCols[0]?.letter || 'B';
-      const costCol = columns.find((c) => /cost|cogs|expense/i.test(c.cleanName))?.letter || numCols[1]?.letter || 'C';
+      const revCol =
+        columns.find((c) => /rev|sale|price/i.test(c.cleanName))?.letter ||
+        numCols[0]?.letter ||
+        'B';
+      const costCol =
+        columns.find((c) => /cost|cogs|expense/i.test(c.cleanName))?.letter ||
+        numCols[1]?.letter ||
+        'C';
       return {
         message: `### 💼 Profit Margin Formula in Excel\n\n• **Gross Profit ($):**\n\`\`\`excel\n=${revCol}2 - ${costCol}2\n\`\`\`\n• **Gross Profit Margin (%):**\n\`\`\`excel\n=(${revCol}2 - ${costCol}2) / ${revCol}2\n\`\`\`\n\n*Mapped to Revenue in column \`${revCol}\` and Cost in column \`${costCol}\` on ${currentSheet.name}. Format the margin cell as a Percentage.*`,
       };
@@ -1826,8 +1990,21 @@ export function analyzeSpreadsheetIntentAndData(
   // Triggered by: "Analyze the total column and let me know where it is profitable each year"
   // or questions about profitability per year / annual performance / breakdown by year
   if (
-    (q.includes('profitable') || q.includes('profit') || q.includes('annual') || q.includes('each year') || q.includes('by year') || q.includes('per year') || q.includes('yearly')) &&
-    (q.includes('total') || q.includes('amount') || q.includes('revenue') || q.includes('sales') || q.includes('column') || q.includes('analyze') || q.includes('where') || q.includes('know'))
+    (q.includes('profitable') ||
+      q.includes('profit') ||
+      q.includes('annual') ||
+      q.includes('each year') ||
+      q.includes('by year') ||
+      q.includes('per year') ||
+      q.includes('yearly')) &&
+    (q.includes('total') ||
+      q.includes('amount') ||
+      q.includes('revenue') ||
+      q.includes('sales') ||
+      q.includes('column') ||
+      q.includes('analyze') ||
+      q.includes('where') ||
+      q.includes('know'))
   ) {
     const amountCol =
       resolveColumn(q, columns) ||
@@ -1835,11 +2012,11 @@ export function analyzeSpreadsheetIntentAndData(
       columns.find((c) => c.isNumeric);
 
     const dateCol =
-      columns.find((c) => /order\s*date|date|transaction\s*date|created|timestamp|period|year/i.test(c.rawName)) ||
-      columns.find((c) => c.isDate);
+      columns.find((c) =>
+        /order\s*date|date|transaction\s*date|created|timestamp|period|year/i.test(c.rawName),
+      ) || columns.find((c) => c.isDate);
 
-    const statusCol =
-      columns.find((c) => /status|state|outcome|fulfillment/i.test(c.rawName));
+    const statusCol = columns.find((c) => /status|state|outcome|fulfillment/i.test(c.rawName));
 
     if (amountCol && (amountCol.numericValues.length > 0 || currentSheet.rows.length > 1)) {
       const yearStats = new Map<
@@ -1857,13 +2034,13 @@ export function analyzeSpreadsheetIntentAndData(
         }
       >();
 
-      const amountColIdx = columnToIndex(amountCol.letter);
-      const dateColIdx = dateCol ? columnToIndex(dateCol.letter) : -1;
-      const statusColIdx = statusCol ? columnToIndex(statusCol.letter) : -1;
+      const amountColIdx = columnToIndex(amountCol.letter) ?? -1;
+      const dateColIdx = dateCol ? (columnToIndex(dateCol.letter) ?? -1) : -1;
+      const statusColIdx = statusCol ? (columnToIndex(statusCol.letter) ?? -1) : -1;
       const regionCol = columns.find((c) => /region|country|area|territory/i.test(c.rawName));
-      const regionColIdx = regionCol ? columnToIndex(regionCol.letter) : -1;
+      const regionColIdx = regionCol ? (columnToIndex(regionCol.letter) ?? -1) : -1;
       const idCol = columns.find((c) => /order\s*id|id|code|reference/i.test(c.rawName));
-      const idColIdx = idCol ? columnToIndex(idCol.letter) : -1;
+      const idColIdx = idCol ? (columnToIndex(idCol.letter) ?? -1) : -1;
 
       for (let r = 1; r < currentSheet.rows.length; r++) {
         const row = currentSheet.rows[r];
@@ -1872,7 +2049,10 @@ export function analyzeSpreadsheetIntentAndData(
         const rawAmount = row[amountColIdx]?.value;
         if (rawAmount === null || rawAmount === undefined || rawAmount === '') continue;
 
-        const num = typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''));
+        const num =
+          typeof rawAmount === 'number'
+            ? rawAmount
+            : parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''));
         if (isNaN(num)) continue;
 
         let year = '2026';
@@ -1884,7 +2064,12 @@ export function analyzeSpreadsheetIntentAndData(
           }
         }
 
-        const rawStatus = statusColIdx >= 0 ? String(row[statusColIdx]?.value ?? '').trim().toLowerCase() : '';
+        const rawStatus =
+          statusColIdx >= 0
+            ? String(row[statusColIdx]?.value ?? '')
+                .trim()
+                .toLowerCase()
+            : '';
         const region = regionColIdx >= 0 ? String(row[regionColIdx]?.value ?? '').trim() : '';
         const idVal = idColIdx >= 0 ? String(row[idColIdx]?.value ?? '').trim() : `Row ${r + 1}`;
 
@@ -1904,9 +2089,17 @@ export function analyzeSpreadsheetIntentAndData(
         const entry = yearStats.get(year)!;
         entry.orderCount++;
         entry.grossRevenue += num;
-        if (rawStatus.includes('complete') || rawStatus.includes('delivered') || rawStatus.includes('success')) {
+        if (
+          rawStatus.includes('complete') ||
+          rawStatus.includes('delivered') ||
+          rawStatus.includes('success')
+        ) {
           entry.completedRevenue += num;
-        } else if (rawStatus.includes('cancel') || rawStatus.includes('refund') || rawStatus.includes('failed')) {
+        } else if (
+          rawStatus.includes('cancel') ||
+          rawStatus.includes('refund') ||
+          rawStatus.includes('failed')
+        ) {
           entry.cancelledRevenue += num;
         } else {
           entry.pendingRevenue += num;
@@ -1920,7 +2113,9 @@ export function analyzeSpreadsheetIntentAndData(
       }
 
       if (yearStats.size > 0) {
-        const yearsSorted = Array.from(yearStats.values()).sort((a, b) => a.year.localeCompare(b.year));
+        const yearsSorted = Array.from(yearStats.values()).sort((a, b) =>
+          a.year.localeCompare(b.year),
+        );
         let grandTotalGross = 0;
         let grandTotalCompleted = 0;
         let grandTotalPending = 0;
@@ -1933,8 +2128,10 @@ export function analyzeSpreadsheetIntentAndData(
           grandTotalOrders += y.orderCount;
 
           const avgOrder = y.orderCount > 0 ? y.grossRevenue / y.orderCount : 0;
-          const realizationRate = y.grossRevenue > 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : '100.0';
-          const isProfitable = y.completedRevenue > 0 || (y.grossRevenue > 0 && y.cancelledRevenue === 0);
+          const realizationRate =
+            y.grossRevenue > 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : '100.0';
+          const isProfitable =
+            y.completedRevenue > 0 || (y.grossRevenue > 0 && y.cancelledRevenue === 0);
           const profitBadge = isProfitable
             ? `🟢 **Profitable** (${realizationRate}% realized)`
             : `🔴 **At Risk / Loss**`;
@@ -1943,7 +2140,10 @@ export function analyzeSpreadsheetIntentAndData(
         });
 
         const overallAvg = grandTotalOrders > 0 ? grandTotalGross / grandTotalOrders : 0;
-        const totalRealization = grandTotalGross > 0 ? ((grandTotalCompleted / grandTotalGross) * 100).toFixed(1) : '100.0';
+        const totalRealization =
+          grandTotalGross > 0
+            ? ((grandTotalCompleted / grandTotalGross) * 100).toFixed(1)
+            : '100.0';
         const topYear = [...yearsSorted].sort((a, b) => b.grossRevenue - a.grossRevenue)[0];
 
         return {
@@ -2136,14 +2336,21 @@ export function analyzeSpreadsheetIntentAndData(
 
         colsToAnalyze.forEach((col) => {
           const rawVal = rowCells[col.colIndex]?.value;
-          const num = typeof rawVal === 'number' ? rawVal : parseFloat(String(rawVal ?? '').replace(/,/g, ''));
+          const num =
+            typeof rawVal === 'number'
+              ? rawVal
+              : parseFloat(String(rawVal ?? '').replace(/,/g, ''));
           if (!isNaN(num)) {
             if (num >= 0) {
               profitCount++;
-              periodsBreakdown.push(`• **${col.label}**: **+$${num.toLocaleString()}M** (Profitable)`);
+              periodsBreakdown.push(
+                `• **${col.label}**: **+$${num.toLocaleString()}M** (Profitable)`,
+              );
             } else {
               lossCount++;
-              periodsBreakdown.push(`• **${col.label}**: **-$${Math.abs(num).toLocaleString()}M** (Net Loss)`);
+              periodsBreakdown.push(
+                `• **${col.label}**: **-$${Math.abs(num).toLocaleString()}M** (Net Loss)`,
+              );
             }
           }
         });
@@ -2164,7 +2371,7 @@ export function analyzeSpreadsheetIntentAndData(
   // 7. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
   // Check if query contains a number or specific value
   const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
-  let operatorGuess: string =
+  let operatorGuess: FilterCandidate['operator'] =
     q.includes('greater') ||
     q.includes('more than') ||
     q.includes('above') ||
@@ -2203,7 +2410,7 @@ export function analyzeSpreadsheetIntentAndData(
     if (candidate) {
       targetColForFilter = candidate.column;
       targetValue = candidate.value;
-      if (candidate.operator) operatorGuess = candidate.operator as any;
+      if (candidate.operator) operatorGuess = candidate.operator;
     }
   }
 
@@ -2242,55 +2449,55 @@ export function analyzeSpreadsheetIntentAndData(
         isMatch = !isNaN(numVal) && numVal < targetValue;
       }
 
-        if (isMatch) {
-          matchingRowIndices.push(r + 1); // 1-indexed for display
-          if (sampleMatches.length < 5) {
-            // Build a quick summary of this row
-            const details: string[] = [];
-            for (let c = 0; c < Math.min(6, columns.length); c++) {
-              if (
-                c !== targetColForFilter.index &&
-                row?.[c]?.value !== null &&
-                row?.[c]?.value !== undefined
-              ) {
-                const hName = columns[c]?.rawName || `Col ${indexToColumn(c)}`;
-                details.push(`${hName}: \`${row[c]?.value}\``);
-              }
+      if (isMatch) {
+        matchingRowIndices.push(r + 1); // 1-indexed for display
+        if (sampleMatches.length < 5) {
+          // Build a quick summary of this row
+          const details: string[] = [];
+          for (let c = 0; c < Math.min(6, columns.length); c++) {
+            if (
+              c !== targetColForFilter.index &&
+              row?.[c]?.value !== null &&
+              row?.[c]?.value !== undefined
+            ) {
+              const hName = columns[c]?.rawName || `Col ${indexToColumn(c)}`;
+              details.push(`${hName}: \`${row[c]?.value}\``);
             }
-            sampleMatches.push(`• **Row ${r + 1}:** ${details.slice(0, 3).join(' | ')}`);
           }
+          sampleMatches.push(`• **Row ${r + 1}:** ${details.slice(0, 3).join(' | ')}`);
         }
       }
-
-      const count = matchingRowIndices.length;
-      if (count > 0) {
-        return {
-          message: `I analyzed all **${dataRowsCount} rows** in **${currentSheet.name}**.\n\nFound **${count} matching record(s)** where **${targetColForFilter.rawName}** is **${targetValue}**:\n\n${sampleMatches.join('\n')}${count > 5 ? `\n• *...and ${count - 5} more rows (${matchingRowIndices.slice(5).join(', ')})*` : ''}\n\nI've prepared a **filter operation** to isolate these ${count} rows on your grid. Review the preview card below and click **Apply Changes** to filter the view!`,
-          proposedAction: {
-            name: 'filter_rows',
-            args: {
-              sheet: currentSheet.name,
-              column: targetColForFilter.letter,
-              operator:
-                operatorGuess === 'equals' &&
-                typeof targetValue === 'string' &&
-                !targetColForFilter.distinct.has(String(targetValue))
-                  ? 'contains'
-                  : operatorGuess,
-              value: targetValue,
-              headerRow: 1,
-            },
-            explanation: `Filter rows where ${targetColForFilter.rawName} (${targetColForFilter.letter}) ${operatorGuess} "${targetValue}" (${count} matching rows).`,
-            category: 'filter',
-          },
-        };
-      } else {
-        const samples = Array.from(targetColForFilter.distinct.keys()).slice(0, 5);
-        return {
-          message: `I searched column **${targetColForFilter.rawName}** (Column ${targetColForFilter.letter}) across all **${dataRowsCount} rows**, but found **0 records** matching **"${targetValue}"**.\n\nExisting sample values in this column are: ${samples.map((s) => `\`${s}\``).join(', ')}.`,
-        };
-      }
     }
+
+    const count = matchingRowIndices.length;
+    if (count > 0) {
+      return {
+        message: `I analyzed all **${dataRowsCount} rows** in **${currentSheet.name}**.\n\nFound **${count} matching record(s)** where **${targetColForFilter.rawName}** is **${targetValue}**:\n\n${sampleMatches.join('\n')}${count > 5 ? `\n• *...and ${count - 5} more rows (${matchingRowIndices.slice(5).join(', ')})*` : ''}\n\nI've prepared a **filter operation** to isolate these ${count} rows on your grid. Review the preview card below and click **Apply Changes** to filter the view!`,
+        proposedAction: {
+          name: 'filter_rows',
+          args: {
+            sheet: currentSheet.name,
+            column: targetColForFilter.letter,
+            operator:
+              operatorGuess === 'equals' &&
+              typeof targetValue === 'string' &&
+              !targetColForFilter.distinct.has(String(targetValue))
+                ? 'contains'
+                : operatorGuess,
+            value: targetValue,
+            headerRow: 1,
+          },
+          explanation: `Filter rows where ${targetColForFilter.rawName} (${targetColForFilter.letter}) ${operatorGuess} "${targetValue}" (${count} matching rows).`,
+          category: 'filter',
+        },
+      };
+    } else {
+      const samples = Array.from(targetColForFilter.distinct.keys()).slice(0, 5);
+      return {
+        message: `I searched column **${targetColForFilter.rawName}** (Column ${targetColForFilter.letter}) across all **${dataRowsCount} rows**, but found **0 records** matching **"${targetValue}"**.\n\nExisting sample values in this column are: ${samples.map((s) => `\`${s}\``).join(', ')}.`,
+      };
+    }
+  }
 
   // 8. MISSING DATA & AUDITING
   if (
@@ -2341,8 +2548,6 @@ export function analyzeSpreadsheetIntentAndData(
       message: `**Worksheet Overview: "${currentSheet.name}"**\n\n• **Total Records:** ${dataRowsCount} data rows\n• **Total Columns:** ${columns.length} columns\n• **Worksheets in Workbook:** ${workbook.sheets.map((s) => s.name).join(', ')}\n\n**Column Profiles:**\n${colSummary.join('\n')}${columns.length > 8 ? `\n• *...and ${columns.length - 8} more columns*` : ''}\n\nWhat would you like me to do? You can ask to filter rows, calculate sums/averages, remove duplicates, sort, or standardize dates.`,
     };
   }
-
-
 
   // 10. FALLBACK SMART REASONING: Search sheet cells
   const searchMatches = searchCellsInSheet(currentSheet, userQuery);

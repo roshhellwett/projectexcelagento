@@ -118,7 +118,9 @@ describe('editing cells in the workspace', () => {
 
     // 1,420.5 became 9, not a string: the sheet can still total the column.
     expect(cell('B2')).toHaveTextContent('9');
-    expect(screen.getByRole('heading', { name: 'Activate Excel Agent' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Get started with ExcelAgento' }),
+    ).toBeInTheDocument();
   });
 });
 

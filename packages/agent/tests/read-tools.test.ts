@@ -123,4 +123,3 @@ describe('read tools for workbook inspection', () => {
     expect(cagrRes.results[0]?.snippet).toContain('Ending_Value');
   });
 });
-

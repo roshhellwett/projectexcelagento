@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { createOperationRegistry, createCell, type Workbook } from '@excel-agent/engine';
 import { ExcelAgentOrchestrator } from '../src/orchestrator.js';
-import { isComplexRequest } from '../src/multi-agent.js';
+import { gatherGroundedFacts, isComplexRequest } from '../src/multi-agent.js';
 
 describe('multi-agent complexity routing', () => {
   it('stays on the fast path for simple single-verb requests', () => {
@@ -19,6 +19,50 @@ describe('multi-agent complexity routing', () => {
   it('routes analytical requests', () => {
     expect(isComplexRequest('compare north and south regional sales')).toBe(true);
     expect(isComplexRequest('group orders by region and sum the totals')).toBe(true);
+  });
+});
+
+describe('multi-agent large worksheet grounding', () => {
+  it('profiles tall worksheets without spreading every row into a function call', async () => {
+    const rows = Array.from({ length: 130_000 }, (_, index) => [
+      createCell(index === 0 ? 'ID' : index),
+    ]);
+    const workbook: Workbook = { sheets: [{ name: 'Tall', rows }] };
+
+    await expect(gatherGroundedFacts(workbook, 'Tall')).resolves.toMatchObject({
+      columns: [{ name: 'ID', nonBlank: 129_999 }],
+    });
+  });
+
+  it('grounds named columns beyond Z and data from non-active worksheets', async () => {
+    const sales = sampleWorkbook().sheets[0]!;
+    const archiveHeaders = Array.from({ length: 29 }, (_, index) =>
+      createCell(index === 28 ? 'Region' : `Field ${index + 1}`),
+    );
+    const workbook: Workbook = {
+      sheets: [
+        sales,
+        {
+          name: 'Archive',
+          rows: [
+            archiveHeaders,
+            Array.from({ length: 29 }, (_, index) => createCell(index === 28 ? 'West' : index)),
+          ],
+        },
+      ],
+    };
+
+    const facts = await gatherGroundedFacts(
+      workbook,
+      'Sales',
+      'summarize Region from Archive column AC alongside Revenue from Sales',
+    );
+
+    expect(facts.columns).toContainEqual(
+      expect.objectContaining({ sheet: 'Archive', letter: 'AC', name: 'Region' }),
+    );
+    expect(facts.overview).toContain('Archive');
+    expect(facts.overview).toContain('Sales');
   });
 });
 
@@ -185,4 +229,3 @@ describe('runMultiAgentTurn', () => {
     expect(result.message).not.toContain('I could not produce a safe execution plan');
   });
 });
-

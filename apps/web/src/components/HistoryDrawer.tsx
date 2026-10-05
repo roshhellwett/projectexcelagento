@@ -71,9 +71,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
         <div className={`history-item ${currentPosition === 0 ? 'active' : ''}`}>
           <div className="history-item-row">
             <span className="history-item-title">0. Initial State</span>
-            {currentPosition === 0 && (
-              <span className="history-current-tag">● Current</span>
-            )}
+            {currentPosition === 0 && <span className="history-current-tag">● Current</span>}
           </div>
           <p className="history-item-desc">Original loaded workbook</p>
           {currentPosition !== 0 && (
@@ -95,9 +93,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             <div key={idx} className={`history-item ${isCurrent ? 'active' : ''}`}>
               <div className="history-item-row">
                 <span className="op-badge">{entry.operationName}</span>
-                {isCurrent && (
-                  <span className="history-current-tag">● Current</span>
-                )}
+                {isCurrent && <span className="history-current-tag">● Current</span>}
               </div>
 
               <div className="history-item-meta">

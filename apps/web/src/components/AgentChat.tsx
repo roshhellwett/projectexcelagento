@@ -13,8 +13,6 @@ import {
   RotateCcw,
   Check,
   KeyRound,
-  Eye,
-  EyeOff,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -110,6 +108,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const [setupKey, setSetupKey] = useState('');
   const [setupBaseUrl, setSetupBaseUrl] = useState('');
   const [showKeyText, setShowKeyText] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +133,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   };
 
   const handleDemoKey = () => {
-    onSaveApiKey('groq', 'demo-local-mode');
+    // The deterministic planner is a real no-key mode. Do not persist a fake provider
+    // credential just to unlock it: that makes settings and usage reporting misleading.
+    setOfflineMode(true);
   };
 
   // Live thinking state per message
@@ -266,8 +267,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <span className="byok-dot-pulse" />
                 {apiKeyProvider.toUpperCase()} ACTIVE
               </span>
+            ) : offlineMode ? (
+              <span className="byok-active-tag">
+                <span className="byok-dot-pulse" />
+                LOCAL ENGINE · NO KEY
+              </span>
             ) : (
-              <span className="byok-inactive-tag">BYOK Key Required</span>
+              <span className="byok-inactive-tag">LOCAL READY · AI KEY OPTIONAL</span>
             )}
             {learnedActions !== undefined && learnedActions > 0 && (
               <span
@@ -283,17 +289,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       </div>
 
       {/* GATED BYOK SETUP STATE */}
-      {!hasApiKey ? (
+      {!hasApiKey && !offlineMode ? (
         <div className="byok-gate-container">
           <div className="byok-gate-card">
             <div className="byok-avatar-icon">
               <ShieldCheck size={28} className="byok-shield-icon" />
             </div>
 
-            <h3 className="byok-gate-title">Activate Excel Agent</h3>
+            <h3 className="byok-gate-title">Get started with ExcelAgento</h3>
             <p className="byok-gate-desc">
-              Connect your AI provider to unlock conversational data engineering, multi-step
-              planning, and deterministic Excel transformations directly in your browser.
+              Start with the local spreadsheet agent—no account, API key, or upload required.
+              Connect an AI provider whenever you want broader conversational reasoning.
             </p>
 
             <form onSubmit={handleActivateKey} className="byok-gate-form">
@@ -441,31 +447,36 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 style={{ width: '100%', justifyContent: 'center' }}
                 onClick={handleDemoKey}
               >
-                Launch with Demo Mode (Instant)
+                Try the local agent — no key needed
               </button>
             </form>
 
             <div className="byok-privacy-callout">
-              <strong>Local Privacy Guaranteed:</strong> Keys and spreadsheets are processed
-              directly in your browser memory and never stored on remote servers.
+              <strong>Ready instantly:</strong> Clean, sort, format, and calculate with the
+              deterministic engine. Your workbook stays in this browser.
             </div>
           </div>
         </div>
       ) : (
         /* UNLOCKED ACTIVE CHAT STATE */
         <>
+          {!hasApiKey && offlineMode && messages.length === 0 && (
+            <div className="byok-privacy-callout" role="status">
+              The local agent is ready. Ask for a spreadsheet change below; each change is previewed
+              and can be undone. Connect a provider in Settings for broader reasoning.
+            </div>
+          )}
           {/* Autonomous Agent Swarm HUD - Live Real Swarm Execution */}
           {(() => {
-            const latestAssistantMsg =
-              messages.length > 0 && messages[messages.length - 1].sender === 'assistant'
-                ? messages[messages.length - 1]
-                : null;
+            const lastMessage = messages.at(-1);
+            const latestAssistantMsg = lastMessage?.sender === 'assistant' ? lastMessage : null;
 
             const currentActivities = latestAssistantMsg?.activities || [];
             const latestActivity =
               currentActivities.length > 0 ? currentActivities[currentActivities.length - 1] : null;
 
-            const getActiveSwarmNode = (): 'conductor' | 'scientist' | 'sentinel' | 'engine' | null => {
+            const getActiveSwarmNode = ():
+              'conductor' | 'scientist' | 'sentinel' | 'engine' | null => {
               if (!isProcessing) return null;
               if (!latestActivity) return 'conductor';
 
@@ -515,7 +526,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               for (const act of currentActivities) {
                 const a = (act.agent || '').toLowerCase();
                 const s = (act.summary || '').toLowerCase();
-                if (a.includes('conductor') || act.type === 'planning') contributedAgents.add('conductor');
+                if (a.includes('conductor') || act.type === 'planning')
+                  contributedAgents.add('conductor');
                 if (
                   a.includes('scientist') ||
                   a.includes('analyst') ||
@@ -545,27 +557,21 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </div>
                   <span
                     className={`swarm-hud-status-badge ${
-                      isProcessing
-                        ? `active ${activeSwarmNode || 'conductor'}`
-                        : 'synced'
+                      isProcessing ? `active ${activeSwarmNode || 'conductor'}` : 'synced'
                     }`}
                   >
                     <span className="swarm-hud-pulse-dot" />
-                    {isProcessing ? (
-                      activeSwarmNode === 'conductor' ? (
-                        'Conductor Orchestrating'
-                      ) : activeSwarmNode === 'scientist' ? (
-                        'Scientist Profiling'
-                      ) : activeSwarmNode === 'sentinel' ? (
-                        'Sentinel Verifying'
-                      ) : activeSwarmNode === 'engine' ? (
-                        'Engine Executing'
-                      ) : (
-                        'Swarm Reasoning'
-                      )
-                    ) : (
-                      '4 Nodes Synced'
-                    )}
+                    {isProcessing
+                      ? activeSwarmNode === 'conductor'
+                        ? 'Conductor Orchestrating'
+                        : activeSwarmNode === 'scientist'
+                          ? 'Scientist Profiling'
+                          : activeSwarmNode === 'sentinel'
+                            ? 'Sentinel Verifying'
+                            : activeSwarmNode === 'engine'
+                              ? 'Engine Executing'
+                              : 'Swarm Reasoning'
+                      : '4 Nodes Synced'}
                   </span>
                 </div>
                 <div className="swarm-hud-nodes">
@@ -675,7 +681,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 </div>
                 <h4 className="welcome-title">Ready to assist your spreadsheet</h4>
                 <p className="welcome-desc">
-                  Ask me to clean messy data, format dates, calculate metrics, sort, or analyze patterns.
+                  Ask me to clean messy data, format dates, calculate metrics, sort, or analyze
+                  patterns.
                 </p>
                 <div className="welcome-guarantees">
                   <div className="welcome-guarantee-pill">
@@ -694,7 +701,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               </div>
             ) : (
               messages.map((msg, index) => {
-                const isLatestAssistant = msg.sender === 'assistant' && index === messages.length - 1;
+                const isLatestAssistant =
+                  msg.sender === 'assistant' && index === messages.length - 1;
 
                 return (
                   <motion.div
@@ -717,462 +725,469 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             {msg.proposedAction && (
                               <code className="op-tag">{msg.proposedAction.name}</code>
                             )}
-                          {msg.plan && (
-                            <span className="plan-tag">{msg.plan.steps.length} Steps</span>
-                          )}
-                          {msg.status === 'applied' && !msg.proposedAction && !msg.plan && (
-                            <span className="applied-tag">✓ Applied</span>
-                          )}
-                          {(msg.tokens?.totalTokens !== undefined || msg.isStreaming) && (
-                            <span
-                              className={`token-tag ${msg.isStreaming || msg.tokens?.isLive ? 'is-live' : ''}`}
-                              title={
-                                msg.tokens?.promptTokens !== undefined
-                                  ? `Input: ${msg.tokens.promptTokens.toLocaleString()} | Output: ${msg.tokens.completionTokens ?? 0}`
-                                  : 'Token processing'
-                              }
-                            >
-                              ⚡ {msg.tokens?.totalTokens !== undefined ? `${msg.tokens.totalTokens.toLocaleString()} tok` : 'Streaming…'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Agent Activity Timeline & Live Thinking Toggle */}
-                      {((msg.activities && msg.activities.length > 0) ||
-                        (isLatestAssistant && isProcessing) ||
-                        msg.thought) && (
-                        <div className="activity-timeline">
-                          <div className="activity-status-row">
-                            <button
-                              type="button"
-                              className="activity-status-label-btn"
-                              onClick={() => toggleThinking(msg.id)}
-                              title="Click to toggle live thinking process"
-                              aria-expanded={Boolean(openThinkingMap[msg.id])}
-                            >
-                              {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
-                                <>
-                                  <span className="monitor-spin-dot" />
-                                  <span>Reasoning live…</span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="monitor-done-check">✓</span>
-                                  <span>Inspected & verified</span>
-                                </>
-                              )}
-                            </button>
-                            {msg.tokens?.promptTokens !== undefined && (
-                              <span className="activity-io-metrics">
-                                {msg.tokens.promptTokens.toLocaleString()} in • {msg.tokens.completionTokens ?? 0} out
+                            {msg.plan && (
+                              <span className="plan-tag">{msg.plan.steps.length} Steps</span>
+                            )}
+                            {msg.status === 'applied' && !msg.proposedAction && !msg.plan && (
+                              <span className="applied-tag">✓ Applied</span>
+                            )}
+                            {(msg.tokens?.totalTokens !== undefined || msg.isStreaming) && (
+                              <span
+                                className={`token-tag ${msg.isStreaming || msg.tokens?.isLive ? 'is-live' : ''}`}
+                                title={
+                                  msg.tokens?.promptTokens !== undefined
+                                    ? `Input: ${msg.tokens.promptTokens.toLocaleString()} | Output: ${msg.tokens.completionTokens ?? 0}`
+                                    : 'Token processing'
+                                }
+                              >
+                                ⚡{' '}
+                                {msg.tokens?.totalTokens !== undefined
+                                  ? `${msg.tokens.totalTokens.toLocaleString()} tok`
+                                  : 'Streaming…'}
                               </span>
                             )}
                           </div>
+                        </div>
 
-                          {msg.activities && msg.activities.length > 0 && (
-                            <div className="activity-steps-list">
-                              {msg.activities.map((act, actIdx) => (
-                                <div
-                                  key={act.id || actIdx}
-                                  className={`activity-step-row activity-${act.type}`}
-                                >
-                                  <span className="act-icon">{getActivityIcon(act.type)}</span>
-                                  <span className="act-summary">
-                                    {act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '')}
-                                  </span>
-                                  {act.tokens?.totalTokens !== undefined && (
-                                    <span className="act-token-tag">
-                                      {act.tokens.totalTokens.toLocaleString()} tok
+                        {/* Agent Activity Timeline & Live Thinking Toggle */}
+                        {((msg.activities && msg.activities.length > 0) ||
+                          (isLatestAssistant && isProcessing) ||
+                          msg.thought) && (
+                          <div className="activity-timeline">
+                            <div className="activity-status-row">
+                              <button
+                                type="button"
+                                className="activity-status-label-btn"
+                                onClick={() => toggleThinking(msg.id)}
+                                title="Click to toggle live thinking process"
+                                aria-expanded={Boolean(openThinkingMap[msg.id])}
+                              >
+                                {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
+                                  <>
+                                    <span className="monitor-spin-dot" />
+                                    <span>Reasoning live…</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="monitor-done-check">✓</span>
+                                    <span>Inspected & verified</span>
+                                  </>
+                                )}
+                              </button>
+                              {msg.tokens?.promptTokens !== undefined && (
+                                <span className="activity-io-metrics">
+                                  {msg.tokens.promptTokens.toLocaleString()} in •{' '}
+                                  {msg.tokens.completionTokens ?? 0} out
+                                </span>
+                              )}
+                            </div>
+
+                            {msg.activities && msg.activities.length > 0 && (
+                              <div className="activity-steps-list">
+                                {msg.activities.map((act, actIdx) => (
+                                  <div
+                                    key={act.id || actIdx}
+                                    className={`activity-step-row activity-${act.type}`}
+                                  >
+                                    <span className="act-icon">{getActivityIcon(act.type)}</span>
+                                    <span className="act-summary">
+                                      {act.summary.replace(/^[\p{Emoji}\u200d\s]+/u, '')}
                                     </span>
+                                    {act.tokens?.totalTokens !== undefined && (
+                                      <span className="act-token-tag">
+                                        {act.tokens.totalTokens.toLocaleString()} tok
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Live Thinking Button placed directly at the bottom right of the reasoning box */}
+                            <div className="activity-footer-row">
+                              <button
+                                type="button"
+                                className={`btn-live-thinking ${openThinkingMap[msg.id] ? 'active' : ''} ${(isLatestAssistant && isProcessing) || msg.isStreaming ? 'is-live' : ''}`}
+                                onClick={() => toggleThinking(msg.id)}
+                                aria-expanded={Boolean(openThinkingMap[msg.id])}
+                                title={
+                                  openThinkingMap[msg.id]
+                                    ? 'Collapse thinking process'
+                                    : 'Open live thinking process'
+                                }
+                              >
+                                <Brain
+                                  size={12}
+                                  className={
+                                    (isLatestAssistant && isProcessing) || msg.isStreaming
+                                      ? 'brain-live-pulse'
+                                      : 'brain-icon'
+                                  }
+                                />
+                                <span>
+                                  {(isLatestAssistant && isProcessing) || msg.isStreaming
+                                    ? 'Live Thinking'
+                                    : openThinkingMap[msg.id]
+                                      ? 'Hide Thinking'
+                                      : 'Thinking Process'}
+                                </span>
+                                {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
+                                  <span className="live-thinking-pulse-dot" />
+                                )}
+                                {openThinkingMap[msg.id] ? (
+                                  <ChevronUp size={11} />
+                                ) : (
+                                  <ChevronDown size={11} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Live Thinking Panel (Expanded View - Written in Text like other AIs) */}
+                        <AnimatePresence>
+                          {openThinkingMap[msg.id] && (
+                            <motion.div
+                              key={`thinking-panel-${msg.id}`}
+                              className="live-thinking-panel"
+                              initial={{ opacity: 0, height: 0, y: -4 }}
+                              animate={{ opacity: 1, height: 'auto', y: 0 }}
+                              exit={{ opacity: 0, height: 0, y: -4 }}
+                              transition={{ duration: 0.22, ease: 'easeOut' }}
+                            >
+                              <div className="live-thinking-header">
+                                <div className="live-thinking-header-left">
+                                  <Brain size={12} className="live-thinking-header-icon" />
+                                  <span className="live-thinking-header-title">
+                                    {(isLatestAssistant && isProcessing) || msg.isStreaming
+                                      ? 'Live Thinking Stream'
+                                      : 'Thinking Process'}
+                                  </span>
+                                  {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
+                                    <span className="live-thinking-badge live">
+                                      <span className="live-thinking-pulse-dot" />
+                                      Live
+                                    </span>
+                                  ) : (
+                                    <span className="live-thinking-badge completed">Verified</span>
                                   )}
+                                </div>
+                                <div className="live-thinking-header-right">
+                                  <span className="live-thinking-word-count">
+                                    {
+                                      getThinkingText(msg).trim().split(/\s+/).filter(Boolean)
+                                        .length
+                                    }{' '}
+                                    words
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn-copy-thinking"
+                                    onClick={() => handleCopyThinking(msg.id, getThinkingText(msg))}
+                                    title="Copy thinking text to clipboard"
+                                  >
+                                    {copiedThinkingId === msg.id ? (
+                                      <>
+                                        <Check size={11} className="copy-check-icon" />
+                                        <span>Copied</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy size={11} />
+                                        <span>Copy</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="live-thinking-body">
+                                <div className="live-thinking-text-stream">
+                                  {getThinkingText(msg)}
+                                  {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
+                                    <span className="thinking-cursor" />
+                                  )}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        {/* Message Content */}
+                        <div className="assistant-text">
+                          {msg.isStreaming ? (
+                            <div>
+                              <MarkdownText text={msg.text} />
+                              <span
+                                className="activity-pulse-dot"
+                                style={{
+                                  display: 'inline-block',
+                                  marginLeft: '4px',
+                                  verticalAlign: 'middle',
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <TypewriterText
+                              text={msg.text}
+                              animate={isLatestAssistant}
+                              speed={10}
+                            />
+                          )}
+                        </div>
+
+                        {/* Proactive Clarification Question & Interactive Answer Chips */}
+                        {msg.clarification && (
+                          <div className="clarification-card">
+                            <div className="clarification-prompt-row">
+                              <span className="clarification-badge-pill">Clarification</span>
+                              <span className="clarification-prompt-text">
+                                {msg.clarification.question}
+                              </span>
+                            </div>
+                            <div className="clarification-chips-grid">
+                              {msg.clarification.options.map((opt, optIdx) => (
+                                <button
+                                  key={optIdx}
+                                  type="button"
+                                  className="clarification-chip-btn"
+                                  disabled={isProcessing}
+                                  onClick={() => handleSuggestionClick(opt.query)}
+                                >
+                                  <span className="clarification-chip-label">{opt.label}</span>
+                                  {opt.badge && (
+                                    <span className="clarification-chip-badge">{opt.badge}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Multi-Step Execution Plan Card */}
+                        {msg.plan && (
+                          <div className="plan-card">
+                            <div className="plan-header">
+                              <div>
+                                <div className="plan-title">{msg.plan.title}</div>
+                                <div className="plan-summary">{msg.plan.description}</div>
+                              </div>
+                              <span className={`plan-status-badge ${msg.plan.status}`}>
+                                {msg.plan.status}
+                              </span>
+                            </div>
+
+                            <div className="plan-steps-list">
+                              {msg.plan.steps.map((step, sIdx) => (
+                                <div key={step.id || sIdx} className="plan-step-item">
+                                  <div className="plan-step-num">{sIdx + 1}</div>
+                                  <div className="plan-step-body">
+                                    <div className="plan-step-desc">{step.description}</div>
+                                    <div className="plan-step-meta">
+                                      <span
+                                        className="op-badge"
+                                        style={{ fontSize: '9.5px', padding: '1px 5px' }}
+                                      >
+                                        {step.operation}
+                                      </span>
+                                      <span
+                                        className="plan-step-status"
+                                        style={{
+                                          color:
+                                            step.status === 'completed'
+                                              ? 'var(--accent-emerald)'
+                                              : step.status === 'error'
+                                                ? 'var(--accent-rose)'
+                                                : 'var(--text-dim)',
+                                        }}
+                                      >
+                                        {step.status === 'completed'
+                                          ? '✓ Applied'
+                                          : step.status === 'error'
+                                            ? '✕ Failed'
+                                            : 'Pending'}
+                                      </span>
+                                    </div>
+
+                                    {step.preview?.changes && step.preview.changes.length > 0 && (
+                                      <div className="plan-diff-preview">
+                                        {step.preview.changes.slice(0, 2).map((ch, chIdx) => (
+                                          <div key={chIdx}>
+                                            <strong>
+                                              {ch.location.column}
+                                              {ch.location.row}:
+                                            </strong>{' '}
+                                            <span className="diff-del">
+                                              {String(ch.before.value ?? '')}
+                                            </span>{' '}
+                                            →{' '}
+                                            <span className="diff-ins">
+                                              {String(ch.after.value ?? '')}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
-                          )}
 
-                          {/* Live Thinking Button placed directly at the bottom right of the reasoning box */}
-                          <div className="activity-footer-row">
-                            <button
-                              type="button"
-                              className={`btn-live-thinking ${openThinkingMap[msg.id] ? 'active' : ''} ${(isLatestAssistant && isProcessing) || msg.isStreaming ? 'is-live' : ''}`}
-                              onClick={() => toggleThinking(msg.id)}
-                              aria-expanded={Boolean(openThinkingMap[msg.id])}
-                              title={
-                                openThinkingMap[msg.id]
-                                  ? 'Collapse thinking process'
-                                  : 'Open live thinking process'
-                              }
-                            >
-                              <Brain
-                                size={12}
-                                className={
-                                  (isLatestAssistant && isProcessing) || msg.isStreaming
-                                    ? 'brain-live-pulse'
-                                    : 'brain-icon'
-                                }
-                              />
-                              <span>
-                                {(isLatestAssistant && isProcessing) || msg.isStreaming
-                                  ? 'Live Thinking'
-                                  : openThinkingMap[msg.id]
-                                    ? 'Hide Thinking'
-                                    : 'Thinking Process'}
-                              </span>
-                              {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
-                                <span className="live-thinking-pulse-dot" />
-                              )}
-                              {openThinkingMap[msg.id] ? (
-                                <ChevronUp size={11} />
-                              ) : (
-                                <ChevronDown size={11} />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Live Thinking Panel (Expanded View - Written in Text like other AIs) */}
-                      <AnimatePresence>
-                        {openThinkingMap[msg.id] && (
-                          <motion.div
-                            key={`thinking-panel-${msg.id}`}
-                            className="live-thinking-panel"
-                            initial={{ opacity: 0, height: 0, y: -4 }}
-                            animate={{ opacity: 1, height: 'auto', y: 0 }}
-                            exit={{ opacity: 0, height: 0, y: -4 }}
-                            transition={{ duration: 0.22, ease: 'easeOut' }}
-                          >
-                            <div className="live-thinking-header">
-                              <div className="live-thinking-header-left">
-                                <Brain size={12} className="live-thinking-header-icon" />
-                                <span className="live-thinking-header-title">
-                                  {(isLatestAssistant && isProcessing) || msg.isStreaming
-                                    ? 'Live Thinking Stream'
-                                    : 'Thinking Process'}
-                                </span>
-                                {(isLatestAssistant && isProcessing) || msg.isStreaming ? (
-                                  <span className="live-thinking-badge live">
-                                    <span className="live-thinking-pulse-dot" />
-                                    Live
-                                  </span>
-                                ) : (
-                                  <span className="live-thinking-badge completed">Verified</span>
-                                )}
-                              </div>
-                              <div className="live-thinking-header-right">
-                                <span className="live-thinking-word-count">
-                                  {
-                                    getThinkingText(msg)
-                                      .trim()
-                                      .split(/\s+/)
-                                      .filter(Boolean).length
-                                  }{' '}
-                                  words
-                                </span>
+                            {msg.status === 'pending' && onApplyPlan && (
+                              <div className="action-buttons-group">
                                 <button
-                                  type="button"
-                                  className="btn-copy-thinking"
-                                  onClick={() => handleCopyThinking(msg.id, getThinkingText(msg))}
-                                  title="Copy thinking text to clipboard"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => onApplyPlan(msg.id, msg.plan!)}
+                                  disabled={isProcessing}
                                 >
-                                  {copiedThinkingId === msg.id ? (
-                                    <>
-                                      <Check size={11} className="copy-check-icon" />
-                                      <span>Copied</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy size={11} />
-                                      <span>Copy</span>
-                                    </>
-                                  )}
+                                  Apply All {msg.plan.steps.length} Steps
                                 </button>
                               </div>
-                            </div>
-                            <div className="live-thinking-body">
-                              <div className="live-thinking-text-stream">
-                                {getThinkingText(msg)}
-                                {((isLatestAssistant && isProcessing) || msg.isStreaming) && (
-                                  <span className="thinking-cursor" />
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
+                            )}
+                          </div>
                         )}
-                      </AnimatePresence>
 
-                      {/* Message Content */}
-                      <div className="assistant-text">
-                        {msg.isStreaming ? (
-                          <div>
-                            <MarkdownText text={msg.text} />
-                            <span
-                              className="activity-pulse-dot"
-                              style={{
-                                display: 'inline-block',
-                                marginLeft: '4px',
-                                verticalAlign: 'middle',
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <TypewriterText text={msg.text} animate={isLatestAssistant} speed={10} />
-                        )}
-                      </div>
-
-                      {/* Proactive Clarification Question & Interactive Answer Chips */}
-                      {msg.clarification && (
-                        <div className="clarification-card">
-                          <div className="clarification-prompt-row">
-                            <span className="clarification-badge-pill">Clarification</span>
-                            <span className="clarification-prompt-text">
-                              {msg.clarification.question}
-                            </span>
-                          </div>
-                          <div className="clarification-chips-grid">
-                            {msg.clarification.options.map((opt, optIdx) => (
-                              <button
-                                key={optIdx}
-                                type="button"
-                                className="clarification-chip-btn"
-                                disabled={isProcessing}
-                                onClick={() => handleSuggestionClick(opt.query)}
-                              >
-                                <span className="clarification-chip-label">{opt.label}</span>
-                                {opt.badge && (
-                                  <span className="clarification-chip-badge">{opt.badge}</span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Multi-Step Execution Plan Card */}
-                      {msg.plan && (
-                        <div className="plan-card">
-                          <div className="plan-header">
-                            <div>
-                              <div className="plan-title">{msg.plan.title}</div>
-                              <div className="plan-summary">{msg.plan.description}</div>
-                            </div>
-                            <span className={`plan-status-badge ${msg.plan.status}`}>
-                              {msg.plan.status}
-                            </span>
-                          </div>
-
-                          <div className="plan-steps-list">
-                            {msg.plan.steps.map((step, sIdx) => (
-                              <div key={step.id || sIdx} className="plan-step-item">
-                                <div className="plan-step-num">{sIdx + 1}</div>
-                                <div className="plan-step-body">
-                                  <div className="plan-step-desc">{step.description}</div>
-                                  <div className="plan-step-meta">
-                                    <span
-                                      className="op-badge"
-                                      style={{ fontSize: '9.5px', padding: '1px 5px' }}
-                                    >
-                                      {step.operation}
-                                    </span>
-                                    <span
-                                      className="plan-step-status"
-                                      style={{
-                                        color:
-                                          step.status === 'completed'
-                                            ? 'var(--accent-emerald)'
-                                            : step.status === 'error'
-                                              ? 'var(--accent-rose)'
-                                              : 'var(--text-dim)',
-                                      }}
-                                    >
-                                      {step.status === 'completed'
-                                        ? '✓ Applied'
-                                        : step.status === 'error'
-                                          ? '✕ Failed'
-                                          : 'Pending'}
-                                    </span>
-                                  </div>
-
-                                  {step.preview?.changes && step.preview.changes.length > 0 && (
-                                    <div className="plan-diff-preview">
-                                      {step.preview.changes.slice(0, 2).map((ch, chIdx) => (
-                                        <div key={chIdx}>
-                                          <strong>
-                                            {ch.location.column}
-                                            {ch.location.row}:
-                                          </strong>{' '}
-                                          <span className="diff-del">
-                                            {String(ch.before.value ?? '')}
-                                          </span>{' '}
-                                          →{' '}
-                                          <span className="diff-ins">
-                                            {String(ch.after.value ?? '')}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {msg.status === 'pending' && onApplyPlan && (
-                            <div className="action-buttons-group">
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => onApplyPlan(msg.id, msg.plan!)}
-                                disabled={isProcessing}
-                              >
-                                Apply All {msg.plan.steps.length} Steps
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Single Operation Preview & Diff Card */}
-                      {msg.proposedAction && msg.preview && !msg.plan && (
-                        <div className="preview-summary-box">
-                          <div className="preview-stat-row">
-                            <span>Affected Cells:</span>
-                            <strong>{msg.preview.affectedCells}</strong>
-                          </div>
-
-                          {typeof msg.proposedAction.args?.targetSheet === 'string' && (
+                        {/* Single Operation Preview & Diff Card */}
+                        {msg.proposedAction && msg.preview && !msg.plan && (
+                          <div className="preview-summary-box">
                             <div className="preview-stat-row">
-                              <span>Target Sheet:</span>
-                              <strong>{String(msg.proposedAction.args.targetSheet)}</strong>
+                              <span>Affected Cells:</span>
+                              <strong>{msg.preview.affectedCells}</strong>
                             </div>
-                          )}
 
-                          {msg.preview.warnings.length > 0 && (
-                            <div
-                              style={{
-                                color: 'var(--accent-amber)',
-                                fontSize: '11px',
-                                marginTop: '4px',
-                              }}
-                            >
-                              Notice: {msg.preview.warnings.map((w) => w.message).join('; ')}
-                            </div>
-                          )}
+                            {typeof msg.proposedAction.args?.targetSheet === 'string' && (
+                              <div className="preview-stat-row">
+                                <span>Target Sheet:</span>
+                                <strong>{String(msg.proposedAction.args.targetSheet)}</strong>
+                              </div>
+                            )}
 
-                          {msg.preview.changes.length > 0 && (
-                            <table className="preview-diff-table">
-                              <thead>
-                                <tr>
-                                  <th>Cell</th>
-                                  <th>Before</th>
-                                  <th>After</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {msg.preview.changes.slice(0, 4).map((ch, idx) => (
-                                  <tr key={idx}>
-                                    <td>
-                                      {ch.location.sheet && ch.location.sheet !== audit.sheetName
-                                        ? `${ch.location.sheet}!`
-                                        : ''}
-                                      {ch.location.column}
-                                      {ch.location.row}
-                                    </td>
-                                    <td className="diff-del">{String(ch.before.value ?? '')}</td>
-                                    <td className="diff-ins">{String(ch.after.value ?? '')}</td>
+                            {msg.preview.warnings.length > 0 && (
+                              <div
+                                style={{
+                                  color: 'var(--accent-amber)',
+                                  fontSize: '11px',
+                                  marginTop: '4px',
+                                }}
+                              >
+                                Notice: {msg.preview.warnings.map((w) => w.message).join('; ')}
+                              </div>
+                            )}
+
+                            {msg.preview.changes.length > 0 && (
+                              <table className="preview-diff-table">
+                                <thead>
+                                  <tr>
+                                    <th>Cell</th>
+                                    <th>Before</th>
+                                    <th>After</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      )}
+                                </thead>
+                                <tbody>
+                                  {msg.preview.changes.slice(0, 4).map((ch, idx) => (
+                                    <tr key={idx}>
+                                      <td>
+                                        {ch.location.sheet && ch.location.sheet !== audit.sheetName
+                                          ? `${ch.location.sheet}!`
+                                          : ''}
+                                        {ch.location.column}
+                                        {ch.location.row}
+                                      </td>
+                                      <td className="diff-del">{String(ch.before.value ?? '')}</td>
+                                      <td className="diff-ins">{String(ch.after.value ?? '')}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
 
-                      {msg.errorMessage && (
-                        <div style={{ color: 'var(--accent-rose)', fontSize: '12px' }}>
-                          ✕ Error: {msg.errorMessage}
-                        </div>
-                      )}
+                        {msg.errorMessage && (
+                          <div style={{ color: 'var(--accent-rose)', fontSize: '12px' }}>
+                            ✕ Error: {msg.errorMessage}
+                          </div>
+                        )}
 
-                      {/* Action CTA */}
-                      {msg.proposedAction && msg.status === 'pending' && !msg.plan && (
-                        <div className="action-buttons-group">
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => onApplyAction(msg.id, msg.proposedAction!)}
-                            disabled={isProcessing}
-                          >
-                            Apply Changes
-                          </button>
-                        </div>
-                      )}
+                        {/* Action CTA */}
+                        {msg.proposedAction && msg.status === 'pending' && !msg.plan && (
+                          <div className="action-buttons-group">
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => onApplyAction(msg.id, msg.proposedAction!)}
+                              disabled={isProcessing}
+                            >
+                              Apply Changes
+                            </button>
+                          </div>
+                        )}
 
-                      {/*
+                        {/*
                         A destructive or wide-reaching change never happens on one click. The
                         first press states exactly what will be lost and how many cells it
                         touches; only a deliberate second press confirms.
                       */}
-                      {msg.proposedAction && msg.status === 'confirming' && (
-                        <div
-                          className="confirm-gate"
-                          role="group"
-                          aria-label="Confirm destructive change"
-                        >
-                          <div className="confirm-gate-body">
-                            <div className="confirm-gate-title">
-                              This cannot be undone from the preview. Confirm to continue.
-                            </div>
-                            <div className="confirm-gate-detail">
-                              <strong>{msg.proposedAction.name}</strong> will affect{' '}
-                              <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong> cell
-                              {msg.confirmationPrompt?.affectedCells === 1 ? '' : 's'}.
-                            </div>
-                            {(msg.confirmationPrompt?.reasons.length ?? 0) > 0 && (
-                              <ul className="confirm-gate-reasons">
-                                {msg.confirmationPrompt!.reasons.map((reason) => (
-                                  <li key={reason}>{reason}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                          <div className="action-buttons-group">
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => onApplyAction(msg.id, msg.proposedAction!, true)}
-                              disabled={isProcessing}
-                            >
-                              Yes, apply this change
-                            </button>
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => onCancelAction?.(msg.id)}
-                              disabled={isProcessing}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {msg.status === 'applied' && canUndo && (
-                        <div className="assistant-card-footer">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={onUndoLast}
-                            title="Revert the changes made by this step"
+                        {msg.proposedAction && msg.status === 'confirming' && (
+                          <div
+                            className="confirm-gate"
+                            role="group"
+                            aria-label="Confirm destructive change"
                           >
-                            <RotateCcw size={12} />
-                            <span>Undo this step</span>
-                          </button>
-                          <span className="assistant-footer-status">Invariants verified ✓</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </motion.div>
-              );
-            }))}
+                            <div className="confirm-gate-body">
+                              <div className="confirm-gate-title">
+                                This cannot be undone from the preview. Confirm to continue.
+                              </div>
+                              <div className="confirm-gate-detail">
+                                <strong>{msg.proposedAction.name}</strong> will affect{' '}
+                                <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong> cell
+                                {msg.confirmationPrompt?.affectedCells === 1 ? '' : 's'}.
+                              </div>
+                              {(msg.confirmationPrompt?.reasons.length ?? 0) > 0 && (
+                                <ul className="confirm-gate-reasons">
+                                  {msg.confirmationPrompt!.reasons.map((reason) => (
+                                    <li key={reason}>{reason}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                            <div className="action-buttons-group">
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => onApplyAction(msg.id, msg.proposedAction!, true)}
+                                disabled={isProcessing}
+                              >
+                                Yes, apply this change
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => onCancelAction?.(msg.id)}
+                                disabled={isProcessing}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {msg.status === 'applied' && canUndo && (
+                          <div className="assistant-card-footer">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={onUndoLast}
+                              title="Revert the changes made by this step"
+                            >
+                              <RotateCcw size={12} />
+                              <span>Undo this step</span>
+                            </button>
+                            <span className="assistant-footer-status">Invariants verified ✓</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })
+            )}
             <div ref={messagesEndRef} />
           </div>
 

@@ -112,7 +112,10 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
           Every inference call this workspace has made, with real token counts reported by the
           provider. Zero remote telemetry; all accounting is held client-side in session memory.
         </p>
-        <div className="usage-header-actions" style={{ justifyContent: 'center', marginTop: '16px' }}>
+        <div
+          className="usage-header-actions"
+          style={{ justifyContent: 'center', marginTop: '16px' }}
+        >
           <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenSettings}>
             <Sliders size={13} /> Model settings
           </button>

@@ -300,7 +300,7 @@ export function matchesFilter(
       return !(value === null || (typeof value === 'string' && value.trim() === ''));
     case 'equals': {
       if (expected === undefined) return false;
-      if (cellValueEquals(value, expected)) return true;
+      if (isCellValue(expected) && cellValueEquals(value, expected)) return true;
       if (String(value).trim().toLowerCase() === String(expected).trim().toLowerCase()) return true;
       const numVal =
         typeof value === 'number'
@@ -330,7 +330,7 @@ export function matchesFilter(
     }
     case 'not_equals': {
       if (expected === undefined) return false;
-      if (cellValueEquals(value, expected)) return false;
+      if (isCellValue(expected) && cellValueEquals(value, expected)) return false;
       if (String(value).trim().toLowerCase() === String(expected).trim().toLowerCase())
         return false;
       const numVal =
@@ -372,6 +372,7 @@ export function matchesFilter(
     case 'lt':
     case 'lte': {
       if (expected === undefined) return false;
+      if (!isCellValue(expected)) return false;
       const numVal =
         typeof value === 'number'
           ? value
@@ -406,6 +407,17 @@ export function matchesFilter(
       return cmp <= 0;
     }
   }
+  return false;
+}
+
+function isCellValue(value: unknown): value is CellValue {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value instanceof Date
+  );
 }
 
 function validateFilter(workbook: Workbook, args: FilterRowsArgs): ValidationResult {
