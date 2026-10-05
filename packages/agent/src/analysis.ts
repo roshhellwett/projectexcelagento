@@ -11,6 +11,7 @@ import {
 import { canonicalizeSpreadsheetQuery } from './memory.js';
 import type { ClarificationQuestion, EvidenceItem } from './types.js';
 import { analyzeStatisticalIntent } from './statistical-intent.js';
+import { analyzeReconciliationIntent } from './reconciliation-intent.js';
 
 /**
  * Spreading an array into `Math.min`/`Math.max` throws a RangeError once the
@@ -142,6 +143,33 @@ export function searchCellsInSheet(sheet: Sheet, query: string): CellMatch[] {
   return matches.length > 0 ? matches : fuzzyMatches;
 }
 
+export function isUnstructuredSourceSheet(sheet: Sheet): boolean {
+  if (!sheet.rows || sheet.rows.length === 0) return false;
+  const colCount = maxColumnCount(sheet.rows);
+  if (colCount <= 1) {
+    const firstCell = String(sheet.rows[0]?.[0]?.value ?? '').trim();
+    if (
+      /^(?:#!|"""|'''|\/\*|\/\/|import |from \w+ import|def |class |\{|\[|<|pip install|export |python |curl |wget )/i.test(
+        firstCell,
+      )
+    ) {
+      return true;
+    }
+    let codeOrScriptCount = 0;
+    for (let r = 0; r < Math.min(6, sheet.rows.length); r++) {
+      const val = String(sheet.rows[r]?.[0]?.value ?? '').trim();
+      if (
+        /^(?:#!|#|\/\/|\/\*|import |def |pip |export |python |curl |wget |"""|'''|\{)/i.test(val) ||
+        val.length > 80
+      ) {
+        codeOrScriptCount++;
+      }
+    }
+    if (codeOrScriptCount >= 2) return true;
+  }
+  return false;
+}
+
 export function getColumnProfiles(
   sheet: Sheet,
   readValue?: (column: number, row: number) => CellValue,
@@ -149,14 +177,18 @@ export function getColumnProfiles(
   const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] || [];
   const dataRows = sheet.rows.slice(1);
+  const isUnstructured = isUnstructuredSourceSheet(sheet);
 
   const columns: ColumnMetadata[] = [];
 
   for (let c = 0; c < totalCols; c++) {
     const letter = indexToColumn(c);
     const rawVal = headerRow[c]?.value;
-    const rawName =
+    let rawName =
       rawVal !== null && rawVal !== undefined ? String(rawVal).trim() : `Column ${letter}`;
+    if (isUnstructured && c === 0) {
+      rawName = `Source Content (Column ${letter})`;
+    }
     const cleanName = rawName.toLowerCase();
 
     const distinct = new Map<string, number>();
@@ -234,13 +266,17 @@ export function getCompactColumnProfiles(
   const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] ?? [];
   const MAX_DISTINCT_VALUES = 64;
+  const isUnstructured = isUnstructuredSourceSheet(sheet);
 
   return Array.from({ length: totalCols }, (_, columnIndex) => {
     const rawHeader = headerRow[columnIndex]?.value;
-    const rawName =
+    let rawName =
       rawHeader !== null && rawHeader !== undefined && String(rawHeader).trim() !== ''
         ? String(rawHeader).trim()
         : `Column ${indexToColumn(columnIndex)}`;
+    if (isUnstructured && columnIndex === 0) {
+      rawName = `Source Content (Column ${indexToColumn(columnIndex)})`;
+    }
     const seen = new Set<string>();
     const samples: unknown[] = [];
     let distinctCountIsLowerBound = false;
@@ -661,6 +697,18 @@ export function findFilterCandidateInSheet(
 ): FilterCandidate | null {
   const q = query.trim().toLowerCase();
 
+  // Transfer, migration, restructuring, or multi-sheet ETL requests must never be hijacked into single-column filter candidates
+  const isTransferOrETL =
+    /\b(?:transfer|migrate|move|copy|populate|extract|convert|dump|import|export|structure|put\s+data|add\s+data|fill|organize|parse)\b/i.test(
+      q,
+    ) ||
+    /\b(?:into|to)\s+(?:new|next|another|the|a)\s+sheet\b/i.test(q) ||
+    /\b(?:next|other|target)\s+sheet\b/i.test(q);
+
+  if (isTransferOrETL) {
+    return null;
+  }
+
   // 1. Direct explicit column reference: e.g. "column D contains IN", "Type is IN"
   for (const col of columns) {
     const colNameRegex = new RegExp(
@@ -889,6 +937,8 @@ export function analyzeSpreadsheetIntentAndData(
   clarification?: ClarificationQuestion;
   evidence?: EvidenceItem[];
 } {
+  const reconciliation = analyzeReconciliationIntent(userQuery, workbook);
+  if (reconciliation) return reconciliation;
   const currentSheet =
     workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
   if (!currentSheet || currentSheet.rows.length === 0) {
@@ -1542,6 +1592,55 @@ export function analyzeSpreadsheetIntentAndData(
     }
   }
 
+  // 0c2. CROSS-SHEET JOIN & VLOOKUP (join_sheets)
+  const isJoinOrLookupQuery =
+    /\b(?:join|merge|lookup|vlookup|xlookup)\b[\s\S]{0,60}?\b(?:with|from|and|to|sheet)\b/i.test(
+      raw,
+    ) || /\b(?:join|merge)\s+(?:the\s+)?(?:sheets?|tables?)\b/i.test(raw);
+
+  if (isJoinOrLookupQuery && workbook && workbook.sheets.length >= 2) {
+    const namedSheetMatch = raw.match(/(?:with|from|sheet|and)\s+['"]?([a-z0-9_ -]+)['"]?/i);
+    const targetSheetName = namedSheetMatch?.[1]?.trim().toLowerCase();
+    const otherSheet =
+      workbook.sheets.find(
+        (s) =>
+          s.name !== currentSheet.name &&
+          targetSheetName &&
+          (s.name.toLowerCase() === targetSheetName ||
+            s.name.toLowerCase().includes(targetSheetName) ||
+            targetSheetName.includes(s.name.toLowerCase())),
+      ) || workbook.sheets.find((s) => s.name !== currentSheet.name);
+
+    if (otherSheet) {
+      const otherCols = getColumnProfiles(otherSheet);
+      const keyColCurrent =
+        columns.find((c) => otherCols.some((oc) => oc.cleanName === c.cleanName)) || columns[0]!;
+      const keyColOther =
+        otherCols.find((oc) => oc.cleanName === keyColCurrent.cleanName) || otherCols[0]!;
+      const valColOther =
+        otherCols.find((oc) => oc.letter !== keyColOther.letter) || otherCols[0]!;
+
+      return {
+        message: `I've prepared a **Cross-Sheet Join** between **${currentSheet.name}** and **${otherSheet.name}**:\n\n• **Key Match**: \`${keyColCurrent.rawName}\` (${keyColCurrent.letter}) = \`${keyColOther.rawName}\` (${keyColOther.letter})\n• **Appended Column**: \`${valColOther.rawName}\`\n• **Join Strategy**: Left Join (retains all records in ${currentSheet.name})\n\nClick **Apply Changes** to merge the tables.`,
+        proposedAction: {
+          name: 'join_sheets',
+          args: {
+            sheet: currentSheet.name,
+            keyColumn: keyColCurrent.letter,
+            lookupSheet: otherSheet.name,
+            lookupKeyColumn: keyColOther.letter,
+            lookupValueColumn: valColOther.letter,
+            headerName: valColOther.rawName,
+            joinType: 'left',
+            headerRow: 1,
+          },
+          explanation: `Join ${currentSheet.name} with ${otherSheet.name} matching on ${keyColCurrent.rawName}.`,
+          category: 'columns',
+        },
+      };
+    }
+  }
+
   // 0d. BROAD CLEANING & STRUCTURING DIRECTIVES ("clean the data", "clean and structured the sheet", "tidy up")
   const isBroadCleanQuery =
     /(?:clean|structure|tidy|standardize|prepare)\s+(?:and\s+)?(?:structure\s+|clean\s+)?(?:the\s+)?(?:sheet|data|table|dataset|workbook|file)/i.test(
@@ -1819,16 +1918,60 @@ export function analyzeSpreadsheetIntentAndData(
     if (q.includes('margin') || q.includes('profit')) {
       const numCols = columns.filter((c) => c.isNumeric);
       const revCol =
-        columns.find((c) => /rev|sale|price/i.test(c.cleanName))?.letter ||
-        numCols[0]?.letter ||
-        'B';
+        columns.find((c) => /rev|sale|price|amount/i.test(c.cleanName)) ||
+        numCols[0] ||
+        columns[0]!;
       const costCol =
-        columns.find((c) => /cost|cogs|expense/i.test(c.cleanName))?.letter ||
-        numCols[1]?.letter ||
-        'C';
+        columns.find((c) => /cost|cogs|expense/i.test(c.cleanName)) ||
+        numCols[1] ||
+        columns[1]!;
+
+      const isAction =
+        /\b(?:add|insert|create|compute|calculate|put)\b/i.test(q) &&
+        /\b(?:column|formula|new|field)\b/i.test(q);
+
       return {
-        message: `### 💼 Profit Margin Formula in Excel\n\n• **Gross Profit ($):**\n\`\`\`excel\n=${revCol}2 - ${costCol}2\n\`\`\`\n• **Gross Profit Margin (%):**\n\`\`\`excel\n=(${revCol}2 - ${costCol}2) / ${revCol}2\n\`\`\`\n\n*Mapped to Revenue in column \`${revCol}\` and Cost in column \`${costCol}\` on ${currentSheet.name}. Format the margin cell as a Percentage.*`,
+        message: `### 💼 Profit Margin Formula in Excel\n\n• **Gross Profit ($):**\n\`\`\`excel\n=${revCol.letter}2 - ${costCol.letter}2\n\`\`\`\n• **Gross Profit Margin (%):**\n\`\`\`excel\n=(${revCol.letter}2 - ${costCol.letter}2) / ${revCol.letter}2\n\`\`\`\n\n*Mapped to Revenue in column \`${revCol.letter}\` (${revCol.rawName}) and Cost in column \`${costCol.letter}\` (${costCol.rawName}) on ${currentSheet.name}.*`,
+        ...(isAction
+          ? {
+              proposedAction: {
+                name: 'add_computed_column',
+                args: {
+                  sheet: currentSheet.name,
+                  headerName: 'Profit Margin',
+                  expression: `(col('${revCol.letter}') - col('${costCol.letter}')) / col('${revCol.letter}')`,
+                  headerRow: 1,
+                },
+                explanation: `Calculate Profit Margin from ${revCol.rawName} and ${costCol.rawName}.`,
+                category: 'columns' as const,
+              },
+            }
+          : {}),
       };
+    }
+
+    if (
+      /\b(?:add|insert|create|compute|calculate)\b/i.test(q) &&
+      /\b(?:total|revenue|subtotal)\s+(?:column|amount|formula)\b/i.test(q)
+    ) {
+      const priceCol = columns.find((c) => /price|rate|cost/i.test(c.cleanName));
+      const qtyCol = columns.find((c) => /qty|quantity|units?|count|volume/i.test(c.cleanName));
+      if (priceCol && qtyCol) {
+        return {
+          message: `I've prepared to add a computed **Total Amount** column:\n\n\`\`\`excel\n=col('${priceCol.rawName}') * col('${qtyCol.rawName}')\n\`\`\`\n\nClick **Apply Changes** to insert this computed column into **${currentSheet.name}**.`,
+          proposedAction: {
+            name: 'add_computed_column',
+            args: {
+              sheet: currentSheet.name,
+              headerName: 'Total Amount',
+              expression: `col('${priceCol.letter}') * col('${qtyCol.letter}')`,
+              headerRow: 1,
+            },
+            explanation: `Calculate Total Amount as ${priceCol.letter} * ${qtyCol.letter}.`,
+            category: 'columns',
+          },
+        };
+      }
     }
   }
 
@@ -2384,25 +2527,33 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   // 7. VALUE-BASED SEARCH / FILTER / "LIST OUT" (e.g. "list out the stocks having 8 items", "me the stock having 8", "filter stock 8")
-  // Check if query contains a number or specific value
-  const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
-  let operatorGuess: FilterCandidate['operator'] =
-    q.includes('greater') ||
-    q.includes('more than') ||
-    q.includes('above') ||
-    q.includes('>') ||
-    q.includes('jyada')
-      ? 'gt'
-      : q.includes('less') ||
-          q.includes('fewer') ||
-          q.includes('below') ||
-          q.includes('<') ||
-          q.includes('kam')
-        ? 'lt'
-        : 'equals';
+  const isTransferOrETL =
+    /\b(?:transfer|migrate|move|copy|populate|extract|convert|dump|import|export|structure|put\s+data|add\s+data|fill|organize|parse)\b/i.test(
+      q,
+    ) ||
+    /\b(?:into|to)\s+(?:new|next|another|the|a)\s+sheet\b/i.test(q) ||
+    /\b(?:next|other|target)\s+sheet\b/i.test(q);
 
-  // Check if query matches a column and either has a number or a categorical value
-  let targetColForFilter = resolveColumn(q, columns);
+  if (!isTransferOrETL) {
+    // Check if query contains a number or specific value
+    const numInQuery = q.match(/\b(\d+(?:\.\d+)?)\b/);
+    let operatorGuess: FilterCandidate['operator'] =
+      q.includes('greater') ||
+      q.includes('more than') ||
+      q.includes('above') ||
+      q.includes('>') ||
+      q.includes('jyada')
+        ? 'gt'
+        : q.includes('less') ||
+            q.includes('fewer') ||
+            q.includes('below') ||
+            q.includes('<') ||
+            q.includes('kam')
+          ? 'lt'
+          : 'equals';
+
+    // Check if query matches a column and either has a number or a categorical value
+    let targetColForFilter = resolveColumn(q, columns);
   let targetValue: string | number | undefined = undefined;
 
   if (targetColForFilter) {
@@ -2506,11 +2657,18 @@ export function analyzeSpreadsheetIntentAndData(
           category: 'filter',
         },
       };
-    } else {
-      const samples = Array.from(targetColForFilter.distinct.keys()).slice(0, 5);
-      return {
-        message: `I searched column **${targetColForFilter.rawName}** (Column ${targetColForFilter.letter}) across all **${dataRowsCount} rows**, but found **0 records** matching **"${targetValue}"**.\n\nExisting sample values in this column are: ${samples.map((s) => `\`${s}\``).join(', ')}.`,
-      };
+      } else {
+        const isExplicitFilterQuery =
+          /\b(?:filter|find|search|isolate|where|show\s+only|list\s+out|which\s+rows|rows\s+with|records\s+with)\b/i.test(
+            raw,
+          );
+        if (isExplicitFilterQuery) {
+          const samples = Array.from(targetColForFilter.distinct.keys()).slice(0, 5);
+          return {
+            message: `I searched column **${targetColForFilter.rawName}** (Column ${targetColForFilter.letter}) across all **${dataRowsCount} rows**, but found **0 records** matching **"${targetValue}"**.\n\nExisting sample values in this column are: ${samples.map((s) => `\`${s}\``).join(', ')}.`,
+          };
+        }
+      }
     }
   }
 

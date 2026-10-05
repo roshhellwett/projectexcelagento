@@ -47,6 +47,7 @@ describe('operation registry', () => {
       'edit_cells',
       'filter_to_new_sheet',
       'create_sheet',
+      'append_rows',
       'duplicate_sheet',
       'delete_sheet',
       'add_summary_row',
@@ -55,6 +56,7 @@ describe('operation registry', () => {
       'join_sheets',
       'fill_series',
       'categorize_column',
+      'reconcile_sheets',
     ]);
     expect(registry.schemas.has('format_dates')).toBe(true);
     expect(registry.schemas.has('set_cells')).toBe(true);

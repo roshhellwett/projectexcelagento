@@ -2,26 +2,30 @@
   "schema_version": 1,
   "items": [
     {
-      "title": "Repair mission API and App integration compile errors",
-      "status": "done"
+      "title": "Inspect reporting, operation, and agent contracts",
+      "status": "in-progress"
     },
     {
-      "title": "Integrate deterministic analyst briefing into workspace",
-      "status": "done"
+      "title": "Implement evidence-backed reconciliation and report generation",
+      "status": "pending"
     },
     {
-      "title": "Add mission lifecycle and browser-focused tests",
-      "status": "done"
+      "title": "Connect plain-English requests and guided clarification to the job",
+      "status": "pending"
     },
     {
-      "title": "Run full verification and fix regressions",
-      "status": "done"
+      "title": "Deliver polished, downloadable report results in the workspace",
+      "status": "pending"
     },
     {
-      "title": "Document mission persistence and safety behavior",
-      "status": "done"
+      "title": "Verify reconciliation, safety boundaries, and browser workflows",
+      "status": "pending"
+    },
+    {
+      "title": "Document supported analyst jobs and remaining limits",
+      "status": "pending"
     }
   ],
-  "updated_at": "2026-10-05T15:13:02.883Z",
+  "updated_at": "2026-10-05T15:32:44.904Z",
   "session_id": "01a10b6a-975a-7182-9ac7-353e7313e434"
 }

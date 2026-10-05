@@ -127,6 +127,12 @@ Rules:
 10. If the user is only asking a question, asking for a count, or clarifying what task was given, and no sheet mutation was requested: use read tools as needed and reply in prose. NEVER propose mutation tools like \`aggregate_column\` or \`insert_formula_column\` for informational questions.
 11. Numerical and Value Replacements:
     - To change, clamp, or set negative numbers to 0 (or another value), call \`edit_cells\` with \`{ sheet, edits: [{ row, column, value: 0 }, ...] }\`. NEVER call \`find_replace\` with literal words like "negative" or "all negative amount".
+12. Unstructured Sheets and Cross-Sheet Migration:
+    - If a sheet contains raw code, scripts, leads data, or unstructured text (e.g. Column A filled with script code or text records):
+      * Do not treat code comments or shebangs (#!) as column headers.
+      * When asked to "structure the sheet", "migrate data", "add data here", or "transfer to next sheet":
+        1) Call \`read_cell_range\` to inspect the source records.
+        2) Call \`create_sheet\` (with \`headers\` and \`rows\`) or \`append_rows\` (with \`rows\`) to populate the structured target table.
 
 Available operations:
 ${describeTools(catalog)}`;

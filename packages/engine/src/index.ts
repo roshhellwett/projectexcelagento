@@ -28,6 +28,8 @@ export * from './operations.js';
 export * from './advanced-operations.js';
 export * from './analytics-operations.js';
 export * from './statistics.js';
+export * from './reconciliation.js';
+export * from './reconciliation-operation.js';
 export * from './registry.js';
 export * from './formula/index.js';
 export type {
@@ -52,4 +54,5 @@ export type {
   ValidationIssue,
   ValidationResult,
   Workbook,
+  WorkbookArtifact,
 } from './types.js';

@@ -602,6 +602,64 @@ describe('advanced operations', () => {
     });
   });
 
+  describe('create_sheet with rows', () => {
+    it('creates a new sheet with both headers and data rows', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('Existing')]);
+      const res = applyOperation(
+        before,
+        'create_sheet',
+        {
+          sheetName: 'NewLeads',
+          headers: ['Name', 'Phone', 'City'],
+          rows: [
+            ['Zenith Realty', '9876543210', 'Kolkata'],
+            ['Apex Towers', '9830012345', 'Salt Lake'],
+          ],
+        },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        const sheet = res.workbook.sheets.find((s) => s.name === 'NewLeads');
+        expect(sheet).toBeDefined();
+        expect(sheet?.rows.length).toBe(3);
+        expect(sheet?.rows[0]?.map((c) => c.value)).toEqual(['Name', 'Phone', 'City']);
+        expect(sheet?.rows[1]?.map((c) => c.value)).toEqual(['Zenith Realty', '9876543210', 'Kolkata']);
+        expect(sheet?.rows[2]?.map((c) => c.value)).toEqual(['Apex Towers', '9830012345', 'Salt Lake']);
+      }
+    });
+  });
+
+  describe('append_rows', () => {
+    it('appends multiple data rows to an existing worksheet', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('Header1', 'Header2'), row('A', 'B')]);
+      const res = applyOperation(
+        before,
+        'append_rows',
+        {
+          sheet: 'Data',
+          rows: [
+            ['C', 'D'],
+            ['E', 'F'],
+          ],
+        },
+        { registry: reg },
+      );
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        const sheet = res.workbook.sheets.find((s) => s.name === 'Data');
+        expect(sheet?.rows.length).toBe(4);
+        expect(sheet?.rows[2]?.map((c) => c.value)).toEqual(['C', 'D']);
+        expect(sheet?.rows[3]?.map((c) => c.value)).toEqual(['E', 'F']);
+        expect(res.preview.affectedCells).toBe(4);
+      }
+    });
+  });
+
   describe('registry integration', () => {
     it('applies advanced operations through OperationRegistry with undo/redo capability', () => {
       const reg = createOperationRegistry();
@@ -611,6 +669,8 @@ describe('advanced operations', () => {
       expect(reg.names).toContain('merge_columns');
       expect(reg.names).toContain('lookup_merge');
       expect(reg.names).toContain('filter_to_new_sheet');
+      expect(reg.names).toContain('create_sheet');
+      expect(reg.names).toContain('append_rows');
 
       const before = workbook([row('A', 'B'), row(1, null), row(2, 10)]);
 

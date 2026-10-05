@@ -1,6 +1,8 @@
 import {
   applyOperation,
   cloneWorkbook,
+  columnToIndex,
+  indexToColumn,
   type OperationRegistry,
   type Preview,
   type Sheet,
@@ -27,6 +29,7 @@ import {
 import { sheetFingerprint } from './memory.js';
 import { buildToolCatalog, type ToolDescriptor } from './tools.js';
 import { isComplexRequest, runMultiAgentTurn } from './multi-agent.js';
+import { analyzeReconciliationIntent, isReconciliationRequest } from './reconciliation-intent.js';
 import type {
   AgentActivityEvent,
   AgentDecision,
@@ -230,6 +233,10 @@ export class ExcelAgentOrchestrator {
       return { message, source: 'heuristic', trace, activities };
     }
 
+    // Cross-sheet business jobs must resolve fresh bindings and tolerance; one-sheet memory
+    // fingerprints cannot authorize replay against a different right-side schema.
+    if (analyzeReconciliationIntent(input.query, input.workbook)) return this.plan(input, sheetName, sheet, trace, activities, emitActivity);
+
     // Layer 2 - Memory: Replay proven learned operation
     const memoryHit = this.memory?.retrieveForWorkbook
       ? await this.memory.retrieveForWorkbook(
@@ -361,7 +368,7 @@ export class ExcelAgentOrchestrator {
           : 'Heuristic planner produced an informational answer.',
     });
 
-    if (heuristic.clarification) {
+    if (!isComplexRequest(effectiveQuery) && heuristic.clarification) {
       emitActivity(
         'status',
         'Conductor',
@@ -374,6 +381,14 @@ export class ExcelAgentOrchestrator {
         trace,
         activities,
       };
+    }
+
+    if (!isComplexRequest(effectiveQuery) && isReconciliationRequest(effectiveQuery) && analyzeReconciliationIntent(effectiveQuery, input.workbook)) {
+      if (!heuristic.proposedAction) return { message: heuristic.message, clarification: heuristic.clarification, evidence, source: 'heuristic', trace, activities };
+      const guardrail = this.guardrail(input.workbook, heuristic.proposedAction);
+      trace.push({ layer: 'guardrail', summary: guardrail.passed ? 'Reconciliation job verified against both source sheets.' : 'Reconciliation job refused safely.' });
+      emitActivity(guardrail.passed ? 'status' : 'warning', 'Verifier', guardrail.passed ? 'Report bindings verified. Source sheets remain unchanged; review before generating the workbook.' : guardrail.errors.join(' '));
+      return { message: guardrail.passed ? heuristic.message : `I could not safely prepare this reconciliation report. ${guardrail.errors.join(' ')} Nothing was changed.`, action: guardrail.passed ? heuristic.proposedAction : undefined, guardrail, evidence, source: 'heuristic', trace, activities };
     }
 
     // Layer 3.5 - Multi-agent: complex requests are decomposed, executed, and reviewed.
@@ -491,6 +506,47 @@ export class ExcelAgentOrchestrator {
           role: 'system',
           content: `The user said "${input.query}". They are confirming your previous response and want you to fulfill their underlying request: "${effectiveQuery}". Execute the search/query tool immediately and provide the exact answer directly.`,
         });
+      }
+
+      // Detect migration / population intent between sheets
+      const isMigrationOrPopulation =
+        /\b(?:add\s+(?:all\s+)?data\s+here|migrate\s+(?:the\s+)?data|populate\s+(?:the\s+)?(?:data|sheet|table)|transfer\s+(?:the\s+)?data|put\s+(?:the\s+)?data\s+here|transfer\s+it|move\s+the\s+data|fill\s+this\s+sheet)\b/i.test(
+          input.query.trim(),
+        ) ||
+        (/\btransfer\b/i.test(input.query) && /\b(?:to|into)\b/i.test(input.query));
+
+      if (isMigrationOrPopulation && input.workbook.sheets.length > 1) {
+        let sourceSheetCandidate = input.workbook.sheets.find(
+          (s) => s.name !== sheetName && s.rows.length > 3,
+        );
+        let destSheetCandidate = sheet;
+
+        for (const s of input.workbook.sheets) {
+          const normName = s.name.toLowerCase().replace(/[_\s]+/g, ' ');
+          const normQ = input.query.toLowerCase().replace(/[_\s]+/g, ' ');
+          if (s.name !== sheetName && normQ.includes(normName)) {
+            destSheetCandidate = s;
+            sourceSheetCandidate = sheet;
+            break;
+          }
+        }
+
+        if (sourceSheetCandidate && destSheetCandidate) {
+          const destHeaders = (destSheetCandidate.rows[0] ?? [])
+            .map((c) => String(c?.value ?? '').trim())
+            .filter(Boolean);
+          messages.push({
+            role: 'system',
+            content: `Data Migration Directive:
+The user is requesting: "${input.query}".
+- Source Sheet: "${sourceSheetCandidate.name}" (${sourceSheetCandidate.rows.length} rows)
+- Destination Sheet: "${destSheetCandidate.name}" (${destSheetCandidate.rows.length} rows, target headers: [${destHeaders.join(', ')}])
+Execute this workflow:
+1. Inspect the source sheet records via read_cell_range (e.g. read the top data rows or unparsed text).
+2. Extract the structured records that align with the destination headers.
+3. Call append_rows with { sheet: "${destSheetCandidate.name}", rows: [...] } to populate the destination sheet. Do NOT refuse or state that the source sheet contains code or unformatted text; extract the records and insert them into the destination.`,
+          });
+        }
       }
 
       messages.push({
@@ -955,6 +1011,24 @@ export class ExcelAgentOrchestrator {
       };
     }
 
+    if (!llmPlan && isComplexRequest(effectiveQuery)) {
+      const compositePlan = this.synthesizeCompositePlan(input.workbook, sheetName, effectiveQuery);
+      if (compositePlan) {
+        emitActivity('planning', 'Planner', `Formulated ${compositePlan.steps.length}-step deliverable plan.`);
+        trace.push({
+          layer: 'planner',
+          summary: `Synthesized verified ${compositePlan.steps.length}-step deliverable plan: ${compositePlan.title}.`,
+        });
+        return {
+          message: `I analyzed your workbook and prepared the deliverable: **${compositePlan.title}**.\n\n${compositePlan.description}\n\nReview the ${compositePlan.steps.length} verified steps below and click **Apply Plan** to execute.`,
+          plan: compositePlan,
+          source: 'heuristic',
+          trace,
+          activities,
+        };
+      }
+    }
+
     // Guardrail verification for single action
     const candidates: ProposedAction[] = [];
     const isSheetOrFilterQuery =
@@ -1094,7 +1168,12 @@ export class ExcelAgentOrchestrator {
       if (!rawStep || typeof rawStep.operation !== 'string') continue;
 
       const opName = rawStep.operation;
-      const stepArgs = { ...(rawStep.args ?? {}), sheet: rawStep.args?.sheet ?? sheetName };
+      const stepArgs = {
+        ...(rawStep.args ?? {}),
+        ...(rawStep.operation === 'reconcile_sheets'
+          ? {}
+          : { sheet: rawStep.args?.sheet ?? sheetName }),
+      };
 
       const stepAction: ProposedAction = {
         name: opName,
@@ -1146,6 +1225,131 @@ export class ExcelAgentOrchestrator {
       status,
       totalAffectedCells: totalAffected,
     };
+  }
+
+  private synthesizeCompositePlan(
+    workbook: Workbook,
+    activeSheetName: string,
+    query: string,
+  ): ExecutionPlan | undefined {
+    const q = query.toLowerCase();
+    const isCompositeOutcome =
+      /\b(?:sales\s+report|prepare|reconcil|discrepanc|summariz|by\s+region|clean)\b/i.test(q) &&
+      isComplexRequest(query);
+
+    if (!isCompositeOutcome) return undefined;
+
+    const sheets = workbook.sheets;
+    if (sheets.length === 0) return undefined;
+
+    const ordersSheet =
+      sheets.find((s) => /order|sale|transact/i.test(s.name)) ??
+      sheets.find((s) => s.name === activeSheetName) ??
+      sheets[0]!;
+
+    const invoicesSheet =
+      sheets.find((s) => /invoice|bill/i.test(s.name) && s.name !== ordersSheet.name) ??
+      sheets.find((s) => s.name !== ordersSheet.name);
+
+    const steps: Array<{ operation: string; args: Record<string, unknown>; description: string }> = [];
+
+    const findCol = (sheet: Sheet, pattern: RegExp): string | undefined => {
+      const headerRow = sheet.rows[0] ?? [];
+      for (let i = 0; i < headerRow.length; i++) {
+        const val = String(headerRow[i]?.value ?? '');
+        if (pattern.test(val)) return indexToColumn(i);
+      }
+      return undefined;
+    };
+
+    // Stage 1: Clean orders if requested
+    if (/\b(?:clean|deduplicat|normaliz|format)\b/i.test(q)) {
+      const orderIdCol = findCol(ordersSheet, /order\s*id|id|order\s*#|ref/i) ?? 'A';
+      const seen = new Set<string>();
+      let hasDuplicates = false;
+      const colIdx = columnToIndex(orderIdCol) ?? 0;
+      for (let r = 1; r < ordersSheet.rows.length; r++) {
+        const val = String(ordersSheet.rows[r]?.[colIdx]?.value ?? '');
+        if (val && seen.has(val)) {
+          hasDuplicates = true;
+          break;
+        }
+        if (val) seen.add(val);
+      }
+
+      if (hasDuplicates) {
+        steps.push({
+          operation: 'delete_duplicates',
+          args: { sheet: ordersSheet.name, columns: [orderIdCol], keep: 'first', headerRow: 1 },
+          description: `Clean ${ordersSheet.name}: deduplicate records keyed on ${orderIdCol}`,
+        });
+      } else {
+        const textCols: string[] = [];
+        (ordersSheet.rows[0] ?? []).forEach((cell, idx) => {
+          const val = String(cell?.value ?? '');
+          if (/name|customer|region|status|type/i.test(val)) {
+            textCols.push(indexToColumn(idx));
+          }
+        });
+        if (textCols.length > 0) {
+          steps.push({
+            operation: 'normalize_text',
+            args: { sheet: ordersSheet.name, columns: textCols, trim: true, collapseWhitespace: true, headerRow: 1 },
+            description: `Clean ${ordersSheet.name}: normalize and trim whitespace in text columns (${textCols.join(', ')})`,
+          });
+        }
+      }
+    }
+
+    // Stage 2: Reconcile orders against invoices
+    if (/\b(?:reconcil|discrepanc|match|against\s+invoices?)\b/i.test(q) && invoicesSheet) {
+      const leftKey = findCol(ordersSheet, /order\s*id|id|order\s*#|invoice\s*id/i) ?? 'A';
+      const rightKey = findCol(invoicesSheet, /order\s*id|invoice\s*id|id|order\s*#/i) ?? 'A';
+      const leftAmount = findCol(ordersSheet, /amount|total|sales|price/i);
+      const rightAmount = findCol(invoicesSheet, /amount|total|invoiced|due/i);
+
+      steps.push({
+        operation: 'reconcile_sheets',
+        args: {
+          leftSheet: ordersSheet.name,
+          rightSheet: invoicesSheet.name,
+          leftKeys: [leftKey],
+          rightKeys: [rightKey],
+          ...(leftAmount && rightAmount ? { leftAmount, rightAmount } : {}),
+          tolerance: 0,
+          reportPrefix: 'Sales Reconciliation',
+        },
+        description: `Reconcile ${ordersSheet.name} against ${invoicesSheet.name} and generate exception reports`,
+      });
+    }
+
+    // Stage 3: Summarize performance by region
+    if (/\b(?:summariz|perform|region|group|rollup)\b/i.test(q)) {
+      const regionCol = findCol(ordersSheet, /region|territory|zone|country|state/i);
+      const amountCol = findCol(ordersSheet, /amount|sales|total|revenue/i);
+
+      if (regionCol && amountCol) {
+        steps.push({
+          operation: 'group_and_summarize',
+          args: {
+            sheet: ordersSheet.name,
+            groupBy: [regionCol],
+            valueColumn: amountCol,
+            aggregation: 'sum',
+            targetSheet: 'Regional Performance',
+          },
+          description: `Summarize sales performance grouped by region (${regionCol}) into Regional Performance sheet`,
+        });
+      }
+    }
+
+    if (steps.length < 2) return undefined;
+
+    return this.buildExecutionPlan(workbook, activeSheetName, {
+      title: 'Executive Monthly Sales & Reconciliation Deliverable',
+      description: `End-to-end autonomous analysis: cleaned ${ordersSheet.name}, reconciled against ${invoicesSheet?.name ?? 'invoices'}, flagged discrepancies, and summarized regional KPIs into presentation-ready sheets.`,
+      steps,
+    });
   }
 
   guardrail(workbook: Workbook, action: ProposedAction): GuardrailReport {

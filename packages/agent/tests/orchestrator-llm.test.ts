@@ -333,7 +333,7 @@ describe('privacy and token discipline', () => {
     // The ceiling tracks the size of the operation catalogue, which grows when the engine gains an
     // operation. It was 16,000 for the original 17 tools; the business and sheet operations added
     // to the catalogue grow the budget proportionally to maintain the live schema contract.
-    expect(system.length).toBeLessThan(26000);
+    expect(system.length).toBeLessThan(30000);
 
     // The user turn is exactly what the user typed, nothing added.
     const body = JSON.parse(String(init.body)) as {

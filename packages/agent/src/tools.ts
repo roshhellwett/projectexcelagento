@@ -167,9 +167,26 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
     },
   },
   create_sheet: {
-    description: 'Create a new empty or titled worksheet with optional column headers.',
+    description:
+      'Create a new empty or titled worksheet with optional column headers and optional initial data rows.',
     category: 'structure',
-    example: { sheetName: 'Summary', headers: ['ID', 'Date', 'Amount'] },
+    example: {
+      sheetName: 'Summary',
+      headers: ['ID', 'Date', 'Amount'],
+      rows: [['1', '2024-01-01', 100]],
+    },
+  },
+  append_rows: {
+    description:
+      'Append multiple new data rows to an existing worksheet. Use this to insert extracted, migrated, or newly generated records into a target table.',
+    category: 'transform',
+    example: {
+      sheet: 'Sheet1',
+      rows: [
+        ['Acme Corp', 'Finance', '123-456-7890'],
+        ['Beta LLC', 'Tech', '987-654-3210'],
+      ],
+    },
   },
   duplicate_sheet: {
     description: 'Duplicate an entire existing worksheet into a new sheet.',
@@ -270,6 +287,21 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
         { operator: 'between', value: [100, 999], label: 'Medium' },
       ],
       otherwise: 'Small',
+    },
+  },
+  reconcile_sheets: {
+    description:
+      'Reconcile two sheets on matching key columns (e.g. Orders vs Invoices) and compare amounts. Generates four comprehensive report sheets: Summary, Matched records, Exceptions/Discrepancies, and Methodology, while keeping source sheets completely untouched.',
+    category: 'transform',
+    example: {
+      leftSheet: 'Orders',
+      rightSheet: 'Invoices',
+      leftKeys: ['A'],
+      rightKeys: ['A'],
+      leftAmount: 'C',
+      rightAmount: 'C',
+      tolerance: 0,
+      reportPrefix: 'Reconciliation',
     },
   },
 };

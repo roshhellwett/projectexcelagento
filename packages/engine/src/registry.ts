@@ -4,6 +4,7 @@ import { formatDatesOperation } from './format-dates.js';
 import { analyticsOperations } from './analytics-operations.js';
 import { initialOperations } from './operations.js';
 import { advancedOperations } from './advanced-operations.js';
+import { reconcileSheetsOperation } from './reconciliation-operation.js';
 import { invariantNoCellsOutsideTargetRange } from './invariants.js';
 import type { HistoryStack } from './history.js';
 import type { Operation, OperationResult, Preview, Workbook } from './types.js';
@@ -57,6 +58,7 @@ export function createOperationRegistry(): OperationRegistry {
   for (const operation of initialOperations) registry.register(operation);
   for (const operation of advancedOperations) registry.register(operation);
   for (const operation of analyticsOperations) registry.register(operation);
+  registry.register(reconcileSheetsOperation);
   return registry;
 }
 

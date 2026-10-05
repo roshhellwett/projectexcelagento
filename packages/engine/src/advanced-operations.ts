@@ -1335,19 +1335,23 @@ export const filterToNewSheetOperation = withFormulaStructureSafety<FilterToNewS
 export const createSheetArgsSchema = z.object({
   sheetName: z.string().trim().min(1),
   headers: z.array(z.string()).optional(),
+  rows: z.array(z.array(cellValueSchema)).optional(),
 });
 export type CreateSheetArgs = z.infer<typeof createSheetArgsSchema>;
 
 function createSheetTarget(workbook: Workbook, args: CreateSheetArgs): CellRange[] {
   const name = uniqueSheetName(workbook, args.sheetName);
-  const colCount = Math.max(1, args.headers?.length ?? 1);
+  const headerCols = args.headers?.length ?? 1;
+  const rowCols = args.rows && args.rows.length > 0 ? Math.max(...args.rows.map((r) => r.length)) : 1;
+  const colCount = Math.max(1, headerCols, rowCols);
+  const totalRows = (args.headers && args.headers.length > 0 ? 1 : 0) + (args.rows?.length ?? 0);
   return [
     {
       sheet: name,
       startColumn: 'A',
       endColumn: indexToColumn(colCount - 1),
       startRow: 1,
-      endRow: 1,
+      endRow: Math.max(1, totalRows),
     },
   ];
 }
@@ -1360,10 +1364,18 @@ function applyCreateSheet(workbook: Workbook, args: CreateSheetArgs): OperationR
   const before = cloneWorkbook(workbook);
   const after = cloneWorkbook(workbook);
   const name = uniqueSheetName(after, args.sheetName);
-  const headerRow: Cell[] = (args.headers ?? []).map((h) => createCell(h));
+  const sheetRows: Cell[][] = [];
+  if (args.headers && args.headers.length > 0) {
+    sheetRows.push(args.headers.map((h) => createCell(h)));
+  }
+  if (args.rows && args.rows.length > 0) {
+    for (const r of args.rows) {
+      sheetRows.push(r.map((val) => createCell(val)));
+    }
+  }
   after.sheets.push({
     name,
-    rows: headerRow.length > 0 ? [headerRow] : [],
+    rows: sheetRows,
   });
   const ranges = createSheetTarget(workbook, args);
   return transitionResult(before, after, operationReport(before, after, ranges));
@@ -1383,6 +1395,74 @@ export const createSheetOperation: Operation<CreateSheetArgs> = {
   invariants(before, after, args) {
     return runInvariants(before, after, {
       targetRanges: createSheetTarget(before, args),
+    });
+  },
+};
+
+// ============================================================================
+// 9.5 APPEND ROWS (append_rows)
+// ============================================================================
+
+export const appendRowsArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  rows: z.array(z.array(cellValueSchema)).min(1),
+});
+export type AppendRowsArgs = z.infer<typeof appendRowsArgsSchema>;
+
+function appendRowsTarget(workbook: Workbook, args: AppendRowsArgs): CellRange[] {
+  const targetSheet = getSheet(workbook, args.sheet);
+  if (!targetSheet) return [];
+  const startRow = targetSheet.rows.length + 1;
+  const endRow = startRow + args.rows.length - 1;
+  const maxExistingCols = maxColumnCount(targetSheet.rows);
+  const maxNewCols = Math.max(1, ...args.rows.map((r) => r.length));
+  const colCount = Math.max(maxExistingCols, maxNewCols);
+  return [
+    {
+      sheet: targetSheet.name,
+      startColumn: 'A',
+      endColumn: indexToColumn(colCount - 1),
+      startRow,
+      endRow,
+    },
+  ];
+}
+
+function validateAppendRows(workbook: Workbook, args: AppendRowsArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyAppendRows(workbook: Workbook, args: AppendRowsArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const targetSheet = getSheet(after, args.sheet);
+  if (!targetSheet) {
+    return transitionResult(before, after, operationReport(before, after, []));
+  }
+
+  const ranges = appendRowsTarget(before, args);
+  for (const r of args.rows) {
+    targetSheet.rows.push(r.map((val) => createCell(val)));
+  }
+
+  return transitionResult(before, after, operationReport(before, after, ranges));
+}
+
+export const appendRowsOperation: Operation<AppendRowsArgs> = {
+  name: 'append_rows',
+  schema: appendRowsArgsSchema,
+  targetRanges: appendRowsTarget,
+  validate: validateAppendRows,
+  preview(workbook, args) {
+    const ranges = appendRowsTarget(workbook, args);
+    const result = applyAppendRows(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyAppendRows,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: appendRowsTarget(before, args),
     });
   },
 };
@@ -1632,6 +1712,7 @@ export const advancedOperations: Operation<unknown>[] = [
   editCellsOperation as Operation<unknown>,
   filterToNewSheetOperation as Operation<unknown>,
   createSheetOperation as Operation<unknown>,
+  appendRowsOperation as Operation<unknown>,
   duplicateSheetOperation as Operation<unknown>,
   deleteSheetOperation as Operation<unknown>,
   addSummaryRowOperation as Operation<unknown>,

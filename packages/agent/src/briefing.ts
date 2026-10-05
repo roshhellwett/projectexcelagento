@@ -1,13 +1,10 @@
 import {
-  createWorkbookValueReader,
-  FORMULA_FUNCTIONS,
+  createDeterministicWorkbookValueReader,
   indexToColumn,
   columnToIndex,
-  isFormulaError,
   maxColumnCount,
   summarizeNumericValues,
   toNumericOrNull,
-  tokenize,
   type Cell,
   type CellType,
   type FormulaValue,
@@ -127,87 +124,6 @@ function range(sheet: Sheet, startRow: number, endRow: number, from: number, to:
 const isMissing = (value: unknown) =>
   value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
 const lexicalOrder = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
-type BlockedReason = 'unsupported' | 'volatile';
-
-/** Conservative dependency gate: unsupported/clock/random formulas and their dependents are
- * excluded, even when IFERROR would hide them. Uses the engine's own tokenizer, not regex refs.
- * This never evaluates volatile functions and never substitutes cached results. */
-function createBriefingReader(workbook: Workbook) {
-  const key = (sheet: string, column: number, row: number) =>
-    JSON.stringify([sheet.toLowerCase(), column, row]);
-  const formulas = workbook.sheets.flatMap((sheet) =>
-    sheet.rows.flatMap((row, rowIndex) =>
-      row.flatMap((cell, column) =>
-        cell?.formula || cell?.type === 'formula'
-          ? [{ sheet, column, row: rowIndex + 1, cell, key: key(sheet.name, column, rowIndex + 1) }]
-          : [],
-      ),
-    ),
-  );
-  const formulaKeys = new Set(formulas.map((formula) => formula.key));
-  const blocked = new Map<string, BlockedReason>();
-  const dependents = new Map<string, Set<string>>();
-  const volatile = new Set(['TODAY', 'NOW', 'RAND', 'RANDBETWEEN']);
-  for (const formula of formulas) {
-    if (!formula.cell.formula?.trim()) blocked.set(formula.key, 'unsupported');
-    const tokens = tokenize(formula.cell.formula ?? '');
-    for (const [index, token] of tokens.entries()) {
-      if (token.type === 'IDENT' && tokens[index + 1]?.type === 'LPAREN') {
-        if (volatile.has(token.value)) blocked.set(formula.key, 'volatile');
-        else if (!Object.hasOwn(FORMULA_FUNCTIONS, token.value) && !blocked.has(formula.key))
-          blocked.set(formula.key, 'unsupported');
-      }
-      if (token.type !== 'CELL' && token.type !== 'RANGE') continue;
-      const sheetName = token.sheet ?? formula.sheet.name;
-      const address = token.value.slice(token.value.lastIndexOf('!') + 1).replace(/\$/g, '');
-      const match = /^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/.exec(address);
-      if (!match) continue;
-      const fromColumn = columnToIndex(match[1]!)!;
-      const fromRow = Number(match[2]);
-      const toColumn = match[3] ? columnToIndex(match[3])! : fromColumn;
-      const toRow = match[4] ? Number(match[4]) : fromRow;
-      const dependencies =
-        token.type === 'CELL'
-          ? [key(sheetName, fromColumn, fromRow)].filter((address) => formulaKeys.has(address))
-          : formulas
-              .filter(
-                (other) =>
-                  other.sheet.name.toLowerCase() === sheetName.toLowerCase() &&
-                  other.column >= fromColumn &&
-                  other.column <= toColumn &&
-                  other.row >= fromRow &&
-                  other.row <= toRow,
-              )
-              .map((other) => other.key);
-      for (const dependency of dependencies) {
-        const entries = dependents.get(dependency) ?? new Set<string>();
-        entries.add(formula.key);
-        dependents.set(dependency, entries);
-      }
-    }
-  }
-  const queue = [...blocked.keys()];
-  for (let index = 0; index < queue.length; index += 1) {
-    const source = queue[index]!;
-    for (const dependent of dependents.get(source) ?? []) {
-      if (blocked.has(dependent)) continue;
-      blocked.set(dependent, blocked.get(source)!);
-      queue.push(dependent);
-    }
-  }
-  const read = createWorkbookValueReader(workbook);
-  return (sheet: string, column: number, row: number) => {
-    const reason = blocked.get(key(sheet, column, row));
-    if (reason) return { value: '#ERROR!' as FormulaValue, reason };
-    try {
-      const value = read(sheet, column, row);
-      return { value, reason: isFormulaError(value) ? ('error' as const) : null };
-    } catch {
-      return { value: '#ERROR!' as FormulaValue, reason: 'error' as const };
-    }
-  };
-}
-
 function category(value: FormulaValue): Omit<BriefingCategory, 'count'> | null {
   if (value instanceof Date) {
     return Number.isFinite(value.getTime())
@@ -312,7 +228,7 @@ export function createAnalystBriefing(workbook: Workbook, sheetName: string): An
     briefing.findings.push('No stored cells are available for this sheet.');
     return briefing;
   }
-  const read = createBriefingReader(workbook);
+  const read = createDeterministicWorkbookValueReader(workbook);
   const candidates: BriefingChart[] = [];
   const headerCounts = new Map<string, number>();
   const blankRows = new Array<boolean>(rowCount).fill(true);

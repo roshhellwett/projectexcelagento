@@ -10,6 +10,7 @@ import {
   resolveColumn,
   getCompactColumnProfiles,
   getColumnProfiles,
+  isUnstructuredSourceSheet,
 } from '../src/index.js';
 
 const SHEET = 'Orders';
@@ -431,5 +432,117 @@ describe('row horizontal aggregation analysis', () => {
       SHEET,
     );
     expect(stdevRes.message).toContain('STDEV.S');
+  });
+
+  it('detects unstructured script sheets and does not use shebang as column header', () => {
+    const rawScriptWb: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('"""')],
+            [createCell('zenith_leads.py - Kolkata real-estate lead pipeline')],
+            [createCell('Setup: pip install requests beautifulsoup4')],
+            [createCell('export GOOGLE_PLACES_API_KEY=...')],
+          ],
+        },
+      ],
+    };
+
+    const sheet = rawScriptWb.sheets[0]!;
+    expect(isUnstructuredSourceSheet(sheet)).toBe(true);
+
+    const profiles = getColumnProfiles(sheet);
+    expect(profiles[0]?.rawName).not.toContain('#!/usr/bin/env python3');
+    expect(profiles[0]?.rawName).toContain('Source Content');
+  });
+
+  it('does not hijack transfer/migration prompts into zero-match column filter errors', () => {
+    const rawScriptWb: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('"""')],
+            [createCell('zenith_leads.py - Kolkata real-estate lead pipeline')],
+            [createCell('Setup: pip install requests')],
+          ],
+        },
+        {
+          name: 'Zenith_Leads_Template',
+          rows: [
+            [createCell('#'), createCell('Company'), createCell('Phone')],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'this worksheet has the data transfer it to Zenith Leads Template',
+      rawScriptWb,
+      'Worksheet',
+    );
+
+    // It must NOT emit the failure message about searching column #!/usr/bin/env python3 for 0 records
+    expect(res.message).not.toContain('searched column');
+    expect(res.message).not.toContain('#!/usr/bin/env python3');
+  });
+
+  it('proposes join_sheets for cross-sheet merge requests', () => {
+    const multiSheetWb: Workbook = {
+      sheets: [
+        {
+          name: 'Orders',
+          rows: [
+            [createCell('Order ID'), createCell('Customer ID'), createCell('Amount')],
+            [createCell('101'), createCell('C1'), createCell(250)],
+          ],
+        },
+        {
+          name: 'Customers',
+          rows: [
+            [createCell('Customer ID'), createCell('Customer Name'), createCell('City')],
+            [createCell('C1'), createCell('Acme Corp'), createCell('New York')],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'join with Customers on Customer ID',
+      multiSheetWb,
+      'Orders',
+    );
+
+    expect(res.proposedAction).toBeDefined();
+    expect(res.proposedAction?.name).toBe('join_sheets');
+    expect(res.proposedAction?.args.sheet).toBe('Orders');
+    expect(res.proposedAction?.args.lookupSheet).toBe('Customers');
+  });
+
+  it('proposes add_computed_column for formula calculation requests', () => {
+    const salesWb: Workbook = {
+      sheets: [
+        {
+          name: 'Sales',
+          rows: [
+            [createCell('Item'), createCell('Revenue'), createCell('Cost')],
+            [createCell('Laptop'), createCell(1000), createCell(600)],
+          ],
+        },
+      ],
+    };
+
+    const res = analyzeSpreadsheetIntentAndData(
+      'add a formula column for profit margin',
+      salesWb,
+      'Sales',
+    );
+
+    expect(res.proposedAction).toBeDefined();
+    expect(res.proposedAction?.name).toBe('add_computed_column');
+    expect(res.proposedAction?.args.headerName).toBe('Profit Margin');
   });
 });

@@ -70,7 +70,20 @@ export interface Preview {
   requiresConfirmation: boolean;
 }
 
+export interface WorkbookArtifact {
+  id: string;
+  kind: 'reconciliation';
+  title: string;
+  sheets: { name: string; role: 'summary' | 'matched' | 'exceptions' | 'methodology' }[];
+  sources: CellRange[];
+  facts: { label: string; value: string }[];
+  checks: { id: string; label: string; status: 'passed' | 'warning' | 'failed'; detail: string }[];
+  notes: string[];
+}
+
 export interface Report {
+  /** Actual generated deliverables; never inferred from model prose or a proposed preview. */
+  artifacts?: WorkbookArtifact[];
   affectedCells: number;
   skippedCells: number;
   unchangedCells: number;
