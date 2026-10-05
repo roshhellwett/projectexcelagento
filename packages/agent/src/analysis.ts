@@ -1500,10 +1500,16 @@ export function analyzeSpreadsheetIntentAndData(
       /(?:clean|cleaning|tidy|tidying|structure|structuring|organize|organizing|format|prepare|extract)[\s\S]{0,80}?(?:new\s+(?:sheet|tab)|separate\s+(?:sheet|tab)|clean\s+sheet|new\s+dataset)/i,
     ) ||
     raw.match(
-      /\b(?:clean|structure|tidy|organize|prepare|standardize)\s+(?:up\s+)?(?:the\s+)?(?:data|dataset|sheet|records|worksheet|table|everything)\b/i,
+      /\b(?:clean|structure|tidy|organize|prepare|standardize)\s+(?:up\s+)?(?:the\s+|this\s+)?(?:data|dataset|sheet|records|worksheet|table|everything)\b/i,
     ) ||
     raw.match(
-      /^(?:clean\s+data|structured\s+data|clean\s+the\s+data|give\s+me\s+(?:the\s+)?structured\s+data|tidy\s+up|make\s+it\s+clean|clean\s+up)$/i,
+      /\b(?:make|turn|convert|format)\s+(?:the\s+|this\s+)?(?:sheet|data|table|dataset|worksheet|it)\s+(?:look\s+)?(?:clean|structured|understandable|presentable|organized|tidy)/i,
+    ) ||
+    raw.match(
+      /\b(?:clean\s+and\s+structure|structure\s+and\s+clean|clean\s+up\s+and\s+structure|clean\s+and\s+structured)\b/i,
+    ) ||
+    raw.match(
+      /^(?:clean\s+data|structured\s+data|clean\s+the\s+data|give\s+me\s+(?:the\s+)?structured\s+data|tidy\s+up|make\s+it\s+clean|clean\s+up|clean\s+and\s+structured?)$/i,
     );
   if (cleanSheetMatch) {
     const namedMatch = raw.match(/(?:sheet|tab)\s+(?:named|called)\s*['"]([^'"]+)['"]/i);
@@ -2744,9 +2750,30 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   // FINAL DEFAULT HELPFUL SUGGESTION
+  if (
+    isUnstructuredSourceSheet(currentSheet) ||
+    /\b(?:perform|clean|structure|format|organize|tidy|make|fix|process|parse|do\s+it)\b/i.test(
+      userQuery,
+    )
+  ) {
+    const templateSheet = workbook.sheets.find(
+      (s) => s.name !== currentSheet.name && /template/i.test(s.name),
+    );
+    const targetName = templateSheet ? templateSheet.name : `${currentSheet.name}_Cleaned`;
+    return {
+      message: `I've prepared a comprehensive data cleaning & structuring operation for **${currentSheet.name}** into **${targetName}**.\n\n• Trim whitespace and collapse irregular formatting\n• Clean blank padding rows and empty columns\n• Coerce numbers and format records into structured rows\n\nClick **Apply Changes** below to perform this transformation!`,
+      proposedAction: {
+        name: 'clean_to_new_sheet',
+        args: { sheet: currentSheet.name, targetSheet: targetName },
+        explanation: `Clean and structure "${currentSheet.name}" into "${targetName}".`,
+        category: 'transform',
+      },
+    };
+  }
+
   const sampleHeaders = columns.map((c) => c.rawName).slice(0, 4);
   return {
-    message: `I analyzed your request: "${userQuery}".\n\nI am ready to perform high-speed operations on **${currentSheet.name}** (${dataRowsCount} rows). Here are common things I can do for you:\n• *"List out rows where ${sampleHeaders[sampleHeaders.length - 1] || 'stock'} is 8"*\n• *"Total sum of ${columns.find((c) => c.isNumeric)?.rawName || 'Quantity'}"*\n• *"Remove all duplicate rows"*\n• *"Sort by ${sampleHeaders[0] || 'Column A'} descending"*\n• *"Who handled the most transactions?"*\n• *"Find missing values"*`,
+    message: `I analyzed **${currentSheet.name}** (${dataRowsCount} rows). Tell me what transformation or analysis you would like to run:\n• *"List out rows where ${sampleHeaders[sampleHeaders.length - 1] || 'stock'} is 8"*\n• *"Total sum of ${columns.find((c) => c.isNumeric)?.rawName || 'Quantity'}"*\n• *"Remove all duplicate rows"*\n• *"Sort by ${sampleHeaders[0] || 'Column A'} descending"*\n• *"Who handled the most transactions?"*\n• *"Find missing values"*`,
   };
 }
 

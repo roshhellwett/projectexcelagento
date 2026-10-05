@@ -162,6 +162,66 @@ describe('ExcelAgentOrchestrator', () => {
     ).toBe(false);
   });
 
+  it('proposes clean_to_new_sheet when asked to make sheet clean and structured on an unstructured code sheet', async () => {
+    const orchestrator = createOrchestrator({ registry });
+    const codeWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('import os, sys')],
+            [createCell('def main(): pass')],
+          ],
+        },
+        {
+          name: 'Zenith_Leads_Template',
+          rows: [[createCell('Name'), createCell('Company'), createCell('Email')]],
+        },
+      ],
+    };
+
+    const decision = await orchestrator.decide({
+      query: 'can you make this sheet clean and structured so that it can be understandable',
+      workbook: codeWorkbook,
+      sheetName: 'Worksheet',
+    });
+
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('clean_to_new_sheet');
+    expect(decision.message).not.toContain('Here are common things I can do for you:');
+  });
+
+  it('resolves "perform then" conversational followup using history and proposes action', async () => {
+    const orchestrator = createOrchestrator({ registry });
+    const codeWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('import os, sys')],
+            [createCell('def main(): pass')],
+          ],
+        },
+      ],
+    };
+
+    const decision = await orchestrator.decide({
+      query: 'perform then',
+      workbook: codeWorkbook,
+      sheetName: 'Worksheet',
+      history: [
+        { role: 'user', content: 'can you make this sheet clean and structured so that it can be understandable' },
+        { role: 'assistant', content: 'I am ready to perform...' },
+      ],
+    });
+
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('clean_to_new_sheet');
+    expect(decision.message).not.toContain('Here are common things I can do for you:');
+  });
+
   it('exposes a tool catalog derived from the engine registry', () => {
     const orchestrator = createOrchestrator({ registry });
     expect(orchestrator.tools.map((tool) => tool.name)).toEqual(registry.names);

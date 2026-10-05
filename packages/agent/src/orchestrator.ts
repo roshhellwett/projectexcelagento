@@ -329,10 +329,10 @@ export class ExcelAgentOrchestrator {
       tokens?: AgentActivityEvent['tokens'],
     ) => void,
   ): Promise<AgentDecision> {
-    const isConversationalFollowup =
-      /^(?:do\s+it|run\s+it|proceed|go\s+ahead|yes|ok|sure|please\s+do|count\s+it|show\s+me|give\s+me\s+(?:the\s+)?data\s*\??|show\s+(?:me\s+)?(?:the\s+)?data\s*\??|tell\s+me\s*\??|what\s+is\s+it\s*\??|what\s+does\s+it\s+say\s*\??|what\s+happend\s*\??|what\s+happened\s*\??|what\s+task\s+i\s+gave\s+you\s*\??|\?)$/i.test(
-        input.query.trim(),
-      );
+    const CONVERSATIONAL_FOLLOWUP_PATTERN =
+      /^(?:perform(?:\s+then|\s+it)?|do\s+it(?:\s+then)?|run\s+it(?:\s+then)?|proceed(?:\s+then)?|go\s+ahead|yes|ok|sure|please\s+do|please\s+perform|execute(?:\s+it|\s+then)?|apply(?:\s+it|\s+then)?|clean\s+it(?:\s+then)?|structure\s+it(?:\s+then)?|do\s+that(?:\s+then)?|start(?:\s+then)?|count\s+it|show\s+me|give\s+me\s+(?:the\s+)?data\s*\??|show\s+(?:me\s+)?(?:the\s+)?data\s*\??|tell\s+me\s*\??|what\s+is\s+it\s*\??|what\s+does\s+it\s+say\s*\??|what\s+happend\s*\??|what\s+happened\s*\??|what\s+task\s+i\s+gave\s+you\s*\??|\?)$/i;
+
+    const isConversationalFollowup = CONVERSATIONAL_FOLLOWUP_PATTERN.test(input.query.trim());
 
     let effectiveQuery = input.query;
     if (
@@ -345,10 +345,8 @@ export class ExcelAgentOrchestrator {
         if (
           h &&
           h.role === 'user' &&
-          h.content.trim().length > 3 &&
-          !/^(?:do\s+it|run\s+it|proceed|yes|ok|\?|give\s+me\s+(?:the\s+)?data|show\s+me)$/i.test(
-            h.content.trim(),
-          )
+          h.content.trim().length > 1 &&
+          !CONVERSATIONAL_FOLLOWUP_PATTERN.test(h.content.trim())
         ) {
           effectiveQuery = h.content;
           break;
