@@ -1,0 +1,442 @@
+/* Isolated analyst briefing skin: uses the workbench's light/dark design tokens. */
+.analyst-briefing {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  width: 100%;
+  padding: 28px;
+  color: var(--text-main);
+  background: var(--bg-canvas);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+.analyst-briefing .briefing-hero,
+.analyst-briefing .briefing-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.analyst-briefing .briefing-hero {
+  padding: 26px;
+  border: 1px solid var(--border-main);
+  border-left: 3px solid var(--brand-emerald);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(120deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: var(--shadow-sm);
+}
+
+.analyst-briefing h2,
+.analyst-briefing h3,
+.analyst-briefing h4 {
+  color: var(--text-main);
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.analyst-briefing h2 {
+  margin: 6px 0 10px;
+  font-size: clamp(24px, 3vw, 34px);
+}
+.analyst-briefing h3 {
+  margin: 5px 0 0;
+  font-size: 20px;
+}
+.analyst-briefing h4 {
+  font-size: 17px;
+}
+.analyst-briefing .briefing-hero p {
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.analyst-briefing .briefing-eyebrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.analyst-briefing .briefing-badge {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.analyst-briefing .briefing-source-strip {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.analyst-briefing .briefing-source-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.analyst-briefing .briefing-source-strip span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.analyst-briefing .briefing-source-strip strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.analyst-briefing code,
+.analyst-briefing pre {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.analyst-briefing .briefing-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.analyst-briefing .briefing-metric {
+  padding: 20px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+.analyst-briefing .briefing-metric > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.analyst-briefing .briefing-metric strong {
+  display: block;
+  margin: 8px 0;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 2.5vw, 30px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.analyst-briefing .briefing-metric p {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.analyst-briefing .briefing-card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+.analyst-briefing .briefing-section-heading {
+  margin-bottom: 14px;
+}
+.analyst-briefing .briefing-description {
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 1000px;
+}
+.analyst-briefing .briefing-findings,
+.analyst-briefing .briefing-warnings {
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.analyst-briefing .briefing-findings li,
+.analyst-briefing .briefing-warnings li {
+  margin-bottom: 6px;
+}
+.analyst-briefing .briefing-findings li::marker {
+  color: var(--brand-emerald);
+}
+.analyst-briefing .briefing-quality-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin-top: 18px;
+}
+.analyst-briefing .briefing-quality-counts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+}
+.analyst-briefing .briefing-quality-counts dt {
+  color: var(--text-muted);
+}
+.analyst-briefing .briefing-quality-counts dd {
+  color: var(--text-main);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.analyst-briefing .briefing-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-md);
+}
+.analyst-briefing .briefing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.analyst-briefing .briefing-table caption {
+  padding: 11px 14px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  text-align: left;
+  font-size: 10px;
+}
+.analyst-briefing .briefing-table th,
+.analyst-briefing .briefing-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.analyst-briefing .briefing-table thead th {
+  color: var(--text-muted);
+  background: var(--bg-canvas);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.analyst-briefing .briefing-table tbody th {
+  min-width: 150px;
+  font-weight: 500;
+}
+.analyst-briefing .briefing-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.analyst-briefing .briefing-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+.analyst-briefing .briefing-table small,
+.analyst-briefing .briefing-numeric-table th code {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 400;
+}
+.analyst-briefing .briefing-numeric-table td {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.analyst-briefing .briefing-numeric-table tbody th {
+  min-width: 220px;
+}
+.analyst-briefing .briefing-numeric-table th strong span {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.analyst-briefing .briefing-footnote {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.analyst-briefing .briefing-warnings {
+  margin-top: 16px;
+}
+
+.analyst-briefing .briefing-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.analyst-briefing .briefing-chart-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.analyst-briefing .briefing-chart-heading h4 {
+  overflow-wrap: anywhere;
+}
+.analyst-briefing .briefing-chart-heading h4 span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.analyst-briefing .briefing-chart-heading .briefing-eyebrow {
+  font-size: 8px;
+}
+.analyst-briefing .briefing-chart-source {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.analyst-briefing .briefing-chart {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  margin: 12px auto;
+  overflow: visible;
+}
+.analyst-briefing .briefing-chart-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.analyst-briefing .briefing-chart-bar {
+  fill: var(--brand-emerald);
+}
+.analyst-briefing .briefing-chart-count {
+  fill: var(--text-main);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.analyst-briefing .briefing-chart-tick {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-family: var(--font-mono);
+}
+.analyst-briefing .briefing-chart-table th,
+.analyst-briefing .briefing-chart-table td {
+  padding: 7px 10px;
+}
+.analyst-briefing .briefing-chart-table tbody th {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.analyst-briefing .briefing-chart-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.analyst-briefing .briefing-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--border-main);
+  padding-top: 12px;
+}
+.analyst-briefing .briefing-details summary {
+  cursor: pointer;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.analyst-briefing .briefing-details > .briefing-table-wrap {
+  margin-top: 12px;
+}
+.analyst-briefing .briefing-evidence-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  list-style: none;
+}
+.analyst-briefing .briefing-evidence-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-canvas);
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.analyst-briefing .briefing-evidence-list code {
+  color: var(--text-main);
+}
+.analyst-briefing .briefing-change-table pre {
+  min-width: 200px;
+  max-width: 420px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+.analyst-briefing .briefing-empty {
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.analyst-briefing .briefing-baseline-empty p {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.analyst-briefing .briefing-methods {
+  padding: 0 4px 18px;
+  color: var(--text-muted);
+}
+.analyst-briefing .briefing-methods h3 {
+  font-size: 14px;
+}
+.analyst-briefing .briefing-methods ul {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+}
+.analyst-briefing .briefing-methods li {
+  margin-bottom: 7px;
+}
+.analyst-briefing :is(summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+}
+
+@media (max-width: 1000px) {
+  .analyst-briefing {
+    padding: 18px;
+    gap: 20px;
+  }
+  .analyst-briefing .briefing-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .analyst-briefing .briefing-source-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .analyst-briefing .briefing-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .analyst-briefing {
+    padding: 12px;
+    gap: 16px;
+  }
+  .analyst-briefing .briefing-hero,
+  .analyst-briefing .briefing-card {
+    padding: 16px;
+  }
+  .analyst-briefing .briefing-chart-grid,
+  .analyst-briefing .briefing-quality-counts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .analyst-briefing .briefing-section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .analyst-briefing .briefing-metric {
+    padding: 14px;
+  }
+  .analyst-briefing .briefing-source-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

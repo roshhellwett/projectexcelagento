@@ -73,6 +73,39 @@ fails silently. A plan is not shown as apply-ready until the critic returns a st
 issue-free approval and every step passes engine verification; one bounded revision is allowed,
 after which the request is blocked. The resulting plan uses the same `ExecutionPlan` shape the UI renders.
 
+### Mission control: durable work, not disposable chat
+
+Open **Missions** (`#/missions`) for the latest 50 locally stored tasks: the original request,
+reviewable operation or multi-step plan, computed evidence, saved answer and engine execution receipt.
+Planning, prepared, completed, cancelled, stale and interrupted states are explicit.
+
+- **Safe refresh resume** checks SHA-256 of the full workbook content (including formulas,
+  formatting, Dates and date epoch), then rebuilds the preview through the engine. It restores
+  review—not past approval or automatic execution. A changed workbook requires a new request.
+- **Worker-based execution** stages chat actions/plans in a dedicated browser worker where supported.
+  Stop terminates it; successful work commits once only if the live document still matches.
+  Undo/redo updates the receipt belonging to that exact history boundary, not every past task.
+- **Honest persistence** shows checking/saving/committed/failure state. In-memory work remains usable
+  after storage failure; retry and confirmed delete/clear controls never claim an uncommitted deletion.
+- **Privacy controls** remove individual missions or all history and download a JSON record.
+  Records include requests, answers, operation arguments and evidence which may contain workbook data;
+  they are browser-local, not encrypted by the app, and are separate from workbook checkpoints,
+  learned actions, usage logs and provider records. Treat downloaded records as sensitive.
+
+Active calls and workers do not survive a closed tab. An in-progress last saved state becomes
+**interrupted** after reload; inspect the restored workbook before replanning. Mission state and
+workbook checkpoints are separate transactions, not a crash-consistent journal. Undo history is
+session-local; a receipt is not a persisted undo action. There is no server queue or unattended schedule.
+
+### Analyst briefing: computed answers with visible sources
+
+Open **Insights** for provider-free, live formula-aware numeric distributions, missing/error
+counts, bounded categorical charts with accessible table alternatives, and exact cell/shape
+comparison against the document's opening snapshot. You can explicitly reset the in-memory baseline.
+Each section displays its full source range, exclusions and assumptions; row 1 is treated as the header.
+Unsupported, error and volatile formulas (and known dependents) are excluded instead of using caches.
+A baseline comparison is address-based, not record matching, causal explanation or forecasting.
+
 ### Full transparency: the Model & Usage page
 
 Open **Usage** in the nav bar (or deep-link `#/usage`) for a live, auditable record of what the
@@ -108,19 +141,22 @@ pnpm typecheck    # tsc -b across all packages
 pnpm test         # unit, property, round-trip, jsdom UI, and recorded-fixture tests
 pnpm evals        # golden NL -> action accuracy
 pnpm build        # production bundle
+pnpm exec playwright install --with-deps chromium  # once, for browser tests
+pnpm test:e2e     # real Chromium mission/recovery/worker/briefing flows
 ```
 
-CI runs all of the above on every push and pull request.
+CI runs lint, typecheck, unit/UI tests, evals, build and the Chromium browser suite on every push and pull request.
 
 ### Test layout
 
-| Suite      | Location                     | Covers                                                                                    |
-| ---------- | ---------------------------- | ----------------------------------------------------------------------------------------- |
-| Engine     | `packages/engine/tests`      | Operations, invariants, and `fast-check` undo/redo property tests                         |
-| Agent      | `packages/agent/tests`       | Planner, guardrail attacks, memory gating, and provider adapters vs recorded API payloads |
-| Evals      | `packages/evals/tests`       | Golden NL -> action accuracy plus guardrail precision                                     |
-| Web (unit) | `apps/web/src/lib/*.test.ts` | Settings and usage stores, workbook import/export round-trip fidelity                     |
-| Web (UI)   | `apps/web/tests/*.test.tsx`  | Real jsdom renders: upload, export, apply/undo, BYOK settings, and the usage page         |
+| Suite      | Location                     | Covers                                                                                                                          |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Engine     | `packages/engine/tests`      | Operations, invariants, and `fast-check` undo/redo property tests                                                               |
+| Agent      | `packages/agent/tests`       | Planner, guardrail attacks, memory gating, and provider adapters vs recorded API payloads                                       |
+| Evals      | `packages/evals/tests`       | Golden NL -> action accuracy plus guardrail precision                                                                           |
+| Web (unit) | `apps/web/src/lib/*.test.ts` | Settings and usage stores, workbook import/export round-trip fidelity                                                           |
+| Web (UI)   | `apps/web/tests/*.test.tsx`  | Real jsdom renders: upload, export, mission lifecycle/storage failures, task-specific undo/redo, briefings, BYOK and usage      |
+| Browser    | `apps/web/e2e/*.spec.ts`     | Real Chromium: persisted review after reload, confirmation, worker commit, undo/redo, deletion, stale edits and mobile briefing |
 
 The provider adapters are exercised against recorded request/response payloads for Groq,
 OpenRouter, and Gemini - including 401/429/5xx handling, retry and backoff, caller aborts, and

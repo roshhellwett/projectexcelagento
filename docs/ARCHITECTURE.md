@@ -38,7 +38,8 @@ AgentDecision { message, action?, guardrail?, evidence?, source, trace }
 App shows a preview card; user clicks Apply
    |
    v
-engine.applyOperation()  validate -> preview -> apply -> invariant check -> patch verify
+mission worker -> engine.applyOperationPlan()
+  validate -> preview -> private apply -> invariant check -> patch verify -> one fenced UI commit
    |
    v
 orchestrator.learn()  reinforces or decays the association, then persists to localStorage
@@ -55,6 +56,53 @@ Applied operations produce a task receipt in the chat with the request, workbook
 revision, operation names, affected-cell counts, warnings, and status. Undo changes the receipt to
 `undone`; failed operations produce a failed receipt. This separates proposed `Preview` data from
 completed engine `Report` data and gives users a durable, auditable outcome for each mission.
+
+### Mission ledger and execution boundary
+
+`apps/web/src/lib/missions.ts` defines versioned, runtime-validated `MissionRecord`s and a `MissionStore`
+seam. IndexedDB database `excelagento-missions` / store `missions` retains the most recently updated 50
+records. A save and retention trimming share one transaction; success is reported only on commit.
+Ordered writes/deletions, open/transaction timeouts and blocked/version-change handling prevent false
+persistence claims. `use-mission-ledger.ts` serializes state persistence outside React updater functions,
+retains unsaved work in memory, merges recovery without overwriting new in-memory records, and exposes
+retry/error status. Deletion changes the visible ledger only after storage confirms it.
+
+A task moves from `planning` to `prepared` (action/plan) or `analyzed`, or to a failure/cancellation/stale
+state. Apply stages `executing` work; receipts represent actual reports after `applied`, with `undone`
+set only for its bound history operation. A reload converts stored `planning`/`executing` states into
+`interrupted`; it does not claim the last workbook checkpoint and mission update were committed together.
+Workbook replacement resets the session's undo bindings, not the local ledger. Compacted history and
+discarded redo branches lose executable task-specific undo bindings; saved receipts are historical records.
+
+Prepared resume requires an exact SHA-256 content match (`crypto.subtle`; no weak-hash fallback).
+Generation/revision are checked again after asynchronous verification; operation schemas and previews are
+freshly checked, and confirmation is never restored from storage. Completed, cancelled, interrupted,
+failed and stale missions cannot execute. Replan only populates the composer for a new reviewed request.
+
+`mission-execution-core.ts` stages a plan using the pure engine with no caller history, returns only the
+final workbook/patch/inverse and bounded per-step reports/previews. A dedicated `mission-worker.ts` keeps
+chat transformations off the UI thread where supported and emits verifying/verified/failed step progress.
+`mission-execution.ts` terminates the worker on abort, completion, crash or timeout; real failures are not
+silently re-executed. The main-thread fallback uses the same core when Worker is absent but cannot
+interrupt synchronous CPU work. The UI commits once only when the live document generation/revision
+still matches and the abort signal remains clear. Manual edits/history changes cancel in-flight staging.
+
+Records intentionally omit provider settings and full workbook snapshots, but requests, answers,
+arguments, previews and evidence can contain actual cell data. They are origin-local, unencrypted,
+separately removable from checkpoints/usage/memory, and may be downloaded as sensitive JSON.
+
+### Deterministic analyst briefing and baseline
+
+`packages/agent/src/briefing.ts` computes full-range descriptive statistics and quality counts with the
+engine's live value reader. A tokenizer-based dependency gate excludes unsupported and volatile formulas
+and their known dependents rather than substituting caches. Categorical series, chart counts and evidence
+examples are bounded; labels explain omitted observations. `AnalystBriefing.tsx` renders accessible SVG
+charts with corresponding tables, source ranges and numeric exclusions. It makes no model calls.
+
+`compareWorkbookBaseline()` compares exact stored-cell snapshots, headers, formulas, caches, types,
+formats and Dates, plus sheet/shape/epoch changes. It does not infer trends or aggregate comparability
+when positions/layouts change. App retains an immutable opening/restored workbook reference in memory
+and lets the user explicitly choose a new baseline. Refresh/file replacement resets it.
 
 ### Why the guardrail matters
 
@@ -126,7 +174,7 @@ connected models as `describe_column` and `analyze_column_relationship`.
 
 ## Testing strategy
 
-Five layers, each with a different job:
+Six layers, each with a different job:
 
 - **Engine** - unit tests per operation plus `fast-check` property tests for undo/redo.
 - **Agent** - planner behaviour, guardrail rejection of hallucinated and engine-invalid actions,
@@ -138,7 +186,10 @@ Five layers, each with a different job:
   import/export round-trip fidelity (values, formulas, blanks, number formats, sheet-name
   sanitization, CSV detection).
 - **Web (UI)** - jsdom + Testing Library renders the real app: upload an actual `.xlsx`, export an
-  actual blob, apply and undo an operation, save/clear a BYOK key, and read the usage ledger.
+  actual blob, persist/recover/revalidate missions, exercise save/delete failures and task-specific
+  undo/redo/reset, inspect deterministic briefings, save/clear a BYOK key, and read the usage ledger.
+- **Browser** - Playwright/Chromium covers real IndexedDB reload/recovery, prepared-review confirmation,
+  worker execution and undo/redo, persisted deletion, stale manual edits, and mobile briefing rendering.
 
 The UI and provider layers use a real DOM and real payload shapes rather than mocks of our own
 code, so a regression in wiring is caught. CI needs no API key and makes no network request.
@@ -174,8 +225,8 @@ provider and font hosts the app genuinely uses.
   usage accounting, and the guardrail's handling of model proposals are covered by recorded-payload
   tests. A live, opt-in contract test against each provider (behind an env flag, never in CI) would
   additionally catch upstream schema drift.
-- **Browser E2E** - the jsdom suite renders the real app, but not a real browser. A Playwright
-  smoke test (upload, chat, apply, export) would cover paint-level regressions jsdom cannot see.
+- **Browser E2E** - the Chromium mission/briefing suite supplements jsdom. Cross-browser WebKit/Firefox,
+  clipboard, downloads, very large files, live providers and deployment CSP remain additional checks.
 - **Coverage thresholds** - coverage is not yet enforced in CI. Adding a floor per package would
   make untested additions fail loudly.
 - **Cloud memory** - local associations persist in `localStorage`, with verified outcome

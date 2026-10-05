@@ -40,3 +40,7 @@ jobs:
         run: pnpm evals
       - name: Production build
         run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser mission and analyst flows
+        run: pnpm test:e2e

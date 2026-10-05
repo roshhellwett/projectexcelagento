@@ -2,22 +2,26 @@
   "schema_version": 1,
   "items": [
     {
-      "title": "Map the next analyst-workspace milestone and choose safe extension points",
+      "title": "Repair mission API and App integration compile errors",
       "status": "done"
     },
     {
-      "title": "Build evidence-backed analysis results and execution receipts",
+      "title": "Integrate deterministic analyst briefing into workspace",
       "status": "done"
     },
     {
-      "title": "Add premium task lifecycle UX with progress and recovery actions",
+      "title": "Add mission lifecycle and browser-focused tests",
       "status": "done"
     },
     {
-      "title": "Run focused regression and full quality checks",
+      "title": "Run full verification and fix regressions",
+      "status": "done"
+    },
+    {
+      "title": "Document mission persistence and safety behavior",
       "status": "done"
     }
   ],
-  "updated_at": "2026-10-05T11:15:08.613Z",
+  "updated_at": "2026-10-05T15:13:02.883Z",
   "session_id": "01a10b6a-975a-7182-9ac7-353e7313e434"
 }

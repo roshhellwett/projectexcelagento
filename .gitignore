@@ -3,6 +3,8 @@ node_modules/
 dist/
 .tsbuild/
 coverage/
+playwright-report/
+test-results/
 .turbo/
 *.tsbuildinfo
 # Environment files & secrets

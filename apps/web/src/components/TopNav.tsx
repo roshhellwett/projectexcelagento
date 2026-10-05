@@ -15,6 +15,7 @@ import {
   Settings,
   FileSpreadsheet,
   Bot,
+  ClipboardCheck,
   BookOpen,
   ChevronRight,
 } from 'lucide-react';
@@ -61,6 +62,7 @@ interface TopNavProps {
   onToggleHistory: () => void;
   onOpenSettings: () => void;
   onOpenUsage?: () => void;
+  onOpenMissions?: () => void;
   onOpenAgents?: () => void;
   onOpenDocs?: () => void;
   onOpenCommandPalette?: () => void;
@@ -300,6 +302,16 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
           >
             <BookOpen size={15} />
             <span>Docs</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={props.onOpenMissions}
+            data-testid="open-missions"
+            title="Mission control"
+          >
+            <ClipboardCheck size={15} />
+            <span>Missions</span>
           </button>
           <button
             type="button"

@@ -34,6 +34,7 @@ const CellEditor: React.FC<CellEditorProps> = ({
   const [text, setText] = useState(initialText);
   const inputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
+  const mountedRef = useRef(false);
   // Latest values, read by the unmount cleanup. Depending on them instead would re-arm that
   // cleanup on every keystroke and commit the same edit over and over.
   const textRef = useRef(text);
@@ -58,11 +59,17 @@ const CellEditor: React.FC<CellEditorProps> = ({
 
   // Losing the grid mid-edit (a modal opens and takes focus) commits rather than discards.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      if (!committedRef.current) {
-        committedRef.current = true;
-        commitRef.current(textRef.current, 'none');
-      }
+      mountedRef.current = false;
+      // Strict Mode probes cleanup and immediately re-mounts effects. Only a real unmount
+      // may commit: otherwise opening the editor closes it before the first keystroke.
+      queueMicrotask(() => {
+        if (!mountedRef.current && !committedRef.current) {
+          committedRef.current = true;
+          commitRef.current(textRef.current, 'none');
+        }
+      });
     };
   }, []);
 

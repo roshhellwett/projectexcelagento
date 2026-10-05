@@ -6,7 +6,6 @@ import {
   type DateSystem,
   type Preview,
   applyOperation,
-  applyOperationPlan,
   HistoryStack,
   cloneWorkbook,
   maxColumnCount,
@@ -32,6 +31,8 @@ import { AgentsPage } from './components/AgentsPage.js';
 import { PrivacyPolicyPage } from './components/PrivacyPolicyPage.js';
 import { TermsPage } from './components/TermsPage.js';
 import { DocsPage } from './components/DocsPage.js';
+import { MissionControlPage } from './components/MissionControlPage.js';
+import { AnalystBriefing } from './components/AnalystBriefing.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 
@@ -81,6 +82,15 @@ import {
 
 import { useDialogA11y } from './lib/use-dialog-a11y.js';
 import {
+  missionStore,
+  missionMatchesWorkbook,
+  workbookSignature,
+  type MissionRecord,
+  type MissionStore,
+} from './lib/missions.js';
+import { useMissionLedger } from './lib/use-mission-ledger.js';
+import { executeMissionMutation } from './lib/mission-execution.js';
+import {
   workspaceRecoveryStore,
   type CheckpointStatus,
   type WorkspaceCheckpoint,
@@ -101,7 +111,8 @@ interface WorkbookReplacement {
 type WorkspaceDecision = { kind: 'replace'; replacement: WorkbookReplacement } | { kind: 'clear' };
 
 /** Top-level pages. The views are URL-addressable via `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
-export type WorkspaceView = 'workspace' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
+export type WorkspaceView =
+  'workspace' | 'missions' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
 
 /** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
 function describeDelimiter(delimiter: string): string {
@@ -116,6 +127,7 @@ function readViewFromHash(): WorkspaceView {
   try {
     if (typeof window === 'undefined') return 'workspace';
     const clean = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+    if (clean === 'missions') return 'missions';
     if (clean === 'usage') return 'usage';
     if (clean === 'agents') return 'agents';
     if (clean === 'privacy') return 'privacy';
@@ -127,10 +139,12 @@ function readViewFromHash(): WorkspaceView {
   }
 }
 
-export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
-  recoveryStore = workspaceRecoveryStore,
-}) => {
+export const App: React.FC<{
+  recoveryStore?: WorkspaceRecoveryStore;
+  missionRepository?: MissionStore;
+}> = ({ recoveryStore = workspaceRecoveryStore, missionRepository = missionStore }) => {
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
+  const [baselineWorkbook, setBaselineWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
     initialWorkbook.sheets[0]?.name || 'Sheet1',
   );
@@ -288,6 +302,19 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
   const [view, setView] = useState<WorkspaceView>(() => readViewFromHash());
   const [usageEntries, setUsageEntries] = useState<UsageEntry[]>(() => loadUsageLog());
   const [learnedActions, setLearnedActions] = useState(() => learnedActionCount());
+  const {
+    missions,
+    records: missionRecords,
+    storageStatus: missionStorageStatus,
+    storageError: missionStorageError,
+    unsavedIds: unsavedMissionIds,
+    upsert: persistMission,
+    update: updateMission,
+    remove: removeMission,
+    clear: clearMissionLedger,
+    retry: retryMissionStorage,
+  } = useMissionLedger(missionRepository);
+  const [missionBusy, setMissionBusy] = useState(false);
 
   useEffect(() => {
     const syncView = () => setView(readViewFromHash());
@@ -376,7 +403,10 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
   const [historyStack, setHistoryStack] = useState<HistoryStack>(
     () => new HistoryStack(initialWorkbook, { snapshotEvery: 5 }),
   );
-  const [, setHistoryRevision] = useState(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const missionHistory = useRef(
+    new Map<string, { stack: HistoryStack; position: number; messageId: string }>(),
+  );
 
   // Recently changed cells for diff highlighting in the grid
   const [recentChangedCells, setRecentChangedCells] = useState<Set<string>>(new Set());
@@ -426,35 +456,110 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
   // Initial Chat Messages
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const turnAbortRef = useRef<AbortController | null>(null);
+  const mutationAbortRef = useRef<AbortController | null>(null);
+  const activeMissionId = useRef<string | null>(null);
   const turnSequence = useRef(0);
   useEffect(
     () => () => {
       documentGeneration.current += 1;
       turnAbortRef.current?.abort();
+      mutationAbortRef.current?.abort();
     },
     [],
   );
 
-  const markWorkbookEdited = useCallback(() => {
-    workbookRevision.current += 1;
-    unexportedRef.current = true;
-    setHasUnexportedChanges(true);
-    setCheckpointEligible(true);
-    setMessages((previous) =>
-      previous.map((message) =>
-        (message.proposedAction || message.plan) &&
-        (message.status === 'pending' || message.status === 'confirming')
-          ? {
-              ...message,
-              status: 'stale',
-              confirmationPrompt: undefined,
-              staleReason:
-                'The workbook changed after this preview. Preview again before applying; previous confirmation no longer applies.',
-            }
-          : message,
-      ),
+  const markWorkbookEdited = useCallback(
+    (committingMissionId?: string) => {
+      if (mutationAbortRef.current && committingMissionId !== activeMissionId.current)
+        mutationAbortRef.current.abort();
+      for (const mission of missionRecords.current) {
+        if (
+          mission.id !== committingMissionId &&
+          mission.status === 'prepared' &&
+          mission.workbook.generation === documentGeneration.current
+        ) {
+          updateMission(mission.id, {
+            status: 'stale',
+            error: 'The workbook changed after inspection. Replan this request before applying.',
+          });
+        }
+      }
+      workbookRevision.current += 1;
+      unexportedRef.current = true;
+      setHasUnexportedChanges(true);
+      setCheckpointEligible(true);
+      setMessages((previous) =>
+        previous.map((message) =>
+          (message.proposedAction || message.plan) &&
+          (message.status === 'pending' || message.status === 'confirming')
+            ? {
+                ...message,
+                status: 'stale',
+                confirmationPrompt: undefined,
+                staleReason:
+                  'The workbook changed after this preview. Preview again before applying; previous confirmation no longer applies.',
+              }
+            : message,
+        ),
+      );
+    },
+    [missionRecords, updateMission],
+  );
+  const trackMissionCommit = useCallback(
+    (beforePosition: number, beforeCompacted: number, missionId?: string, messageId?: string) => {
+      const shift = Math.max(0, historyStack.compactedCount - beforeCompacted);
+      for (const [id, binding] of missionHistory.current) {
+        if (binding.stack !== historyStack) continue;
+        if (binding.position > beforePosition || (shift > 0 && binding.position <= shift + 1))
+          missionHistory.current.delete(id);
+        else binding.position -= shift;
+      }
+      if (missionId && messageId)
+        missionHistory.current.set(missionId, {
+          stack: historyStack,
+          position: historyStack.position,
+          messageId,
+        });
+    },
+    [historyStack],
+  );
+  const syncMissionHistory = useCallback(() => {
+    const affected = new Map<string, 'applied' | 'undone'>();
+    for (const [id, binding] of missionHistory.current) {
+      if (binding.stack !== historyStack) continue;
+      const record = missionRecords.current.find((item) => item.id === id);
+      const status = binding.position > historyStack.position ? 'undone' : 'applied';
+      affected.set(binding.messageId, status);
+      // Clearing persisted history must not detach a still-visible chat receipt from real undo.
+      if (
+        record &&
+        (record.status === 'applied' || record.status === 'undone') &&
+        record.status !== status
+      )
+        updateMission(id, {
+          status,
+          receipt: record.receipt ? { ...record.receipt, status } : undefined,
+        });
+    }
+    if (affected.size)
+      setMessages((previous) =>
+        previous.map((message) => {
+          const status = affected.get(message.id);
+          return status && message.receipt && message.receipt.status !== status
+            ? { ...message, receipt: { ...message.receipt, status } }
+            : message;
+        }),
+      );
+  }, [historyStack, missionRecords, updateMission]);
+  const undoableMessageId = useMemo(() => {
+    // Old task buttons must not undo a different task or a later manual edit.
+    void historyRevision;
+    return (
+      [...missionHistory.current.values()].find(
+        (binding) => binding.stack === historyStack && binding.position === historyStack.position,
+      )?.messageId ?? ''
     );
-  }, []);
+  }, [historyRevision, historyStack]);
   const [selectionContext, setSelectionContext] = useState<CellSelection | null>(null);
   const [studioView, setStudioView] = useState<StudioView>('sheet');
   const [agentDraft, setAgentDraft] = useState<{ text: string; revision: number }>();
@@ -475,8 +580,10 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       learnQuery?: string,
       confirmed = false,
       // A grid keystroke must not raise a toast per character, but a refusal still must be loud.
-      options?: { quiet?: boolean },
+      options?: { quiet?: boolean; missionId?: string; messageId?: string },
     ): ApplyOperationResult => {
+      const beforePosition = historyStack.position;
+      const beforeCompacted = historyStack.compactedCount;
       setIsProcessing(true);
       try {
         const result = applyOperation(workbook, name, input, {
@@ -490,7 +597,13 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
         const sheetName = typeof args.sheet === 'string' ? args.sheet : activeSheetName;
 
         if (result.ok) {
-          markWorkbookEdited();
+          markWorkbookEdited(options?.missionId);
+          trackMissionCommit(
+            beforePosition,
+            beforeCompacted,
+            options?.missionId,
+            options?.messageId,
+          );
           setWorkbook(result.workbook);
           setHistoryRevision((r) => r + 1);
 
@@ -551,7 +664,7 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
         setIsProcessing(false);
       }
     },
-    [workbook, historyStack, activeSheetName, pushToast, markWorkbookEdited],
+    [workbook, historyStack, activeSheetName, pushToast, markWorkbookEdited, trackMissionCommit],
   );
 
   /**
@@ -575,18 +688,9 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       setWorkbook(prev);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.receipt?.status === 'applied'
-            ? {
-                ...message,
-                receipt: { ...message.receipt, status: 'undone', completedAt: Date.now() },
-              }
-            : message,
-        ),
-      );
+      syncMissionHistory();
     }
-  }, [historyStack, markWorkbookEdited]);
+  }, [historyStack, markWorkbookEdited, syncMissionHistory]);
 
   const handleRedo = useCallback(() => {
     const next = historyStack.redo();
@@ -595,8 +699,9 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       setWorkbook(next);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
+      syncMissionHistory();
     }
-  }, [historyStack, markWorkbookEdited]);
+  }, [historyStack, markWorkbookEdited, syncMissionHistory]);
 
   const handleStepBack = useCallback(
     (position: number) => {
@@ -605,8 +710,9 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       setWorkbook(restored);
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
+      syncMissionHistory();
     },
-    [historyStack, markWorkbookEdited],
+    [historyStack, markWorkbookEdited, syncMissionHistory],
   );
 
   const handleReset = useCallback(() => {
@@ -648,10 +754,21 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
     workbookRevision.current = 0;
     importRequest.current += 1;
     turnAbortRef.current?.abort();
+    mutationAbortRef.current?.abort();
+    mutationAbortRef.current = null;
+    if (activeMissionId.current)
+      updateMission(activeMissionId.current, {
+        status: 'cancelled',
+        stage: undefined,
+        error: 'Workbook replaced during planning. Nothing was applied.',
+      });
+    activeMissionId.current = null;
     turnAbortRef.current = null;
     setIsProcessing(false);
     setGeneration(documentGeneration.current);
+    missionHistory.current.clear();
     setWorkbook(wb);
+    setBaselineWorkbook(wb);
     setActiveSheetName(
       checkpoint && wb.sheets.some((sheet) => sheet.name === checkpoint.activeSheetName)
         ? checkpoint.activeSheetName
@@ -892,10 +1009,27 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
 
   // Chat message send handler
   const handleSendMessage = async (query: string) => {
+    if (turnAbortRef.current || mutationAbortRef.current || missionBusy) return;
     const context = { generation: documentGeneration.current, revision: workbookRevision.current };
     const turnId = ++turnSequence.current;
     const userMsgId = `user-${context.generation}-${turnId}`;
     const assistMsgId = `assist-${context.generation}-${turnId}`;
+    const missionId = `mission-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    const startedAt = Date.now();
+    const signaturePromise = workbookSignature(workbook).catch(() => null);
+    persistMission({
+      version: 1,
+      id: missionId,
+      kind: 'analysis',
+      status: 'planning',
+      title: query.slice(0, 110),
+      request: query.slice(0, 10000),
+      createdAt: startedAt,
+      updatedAt: startedAt,
+      workbook: { ...context, fileName, sheetName: activeSheetName, signature: null },
+      stage: 'Inspecting the workbook and preparing a grounded response…',
+    });
+    activeMissionId.current = missionId;
 
     const userMsg: ChatMessage = {
       id: userMsgId,
@@ -910,13 +1044,13 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       sourceQuery: query,
       status: 'pending',
       workbookContext: context,
+      missionId,
       isStreaming: true,
       activities: [],
     };
 
     setMessages((prev) => [...prev, userMsg, initialAssistMsg]);
     setIsProcessing(true);
-    turnAbortRef.current?.abort();
     const turnAbort = new AbortController();
     turnAbortRef.current = turnAbort;
     const belongsToDocument = () =>
@@ -977,6 +1111,7 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
 
       const onActivity = (activity: AgentActivityEvent) => {
         if (!acceptsCallback()) return;
+        updateMission(missionId, { stage: activity.summary.slice(0, 1000) });
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id !== assistMsgId) return m;
@@ -1047,6 +1182,8 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
           );
 
       if (!acceptsCallback()) return;
+      const signature = await signaturePromise;
+      if (!acceptsCallback()) return;
       const proposalIsStale = context.revision !== workbookRevision.current;
       const proposed = agentRes.proposedAction;
       let previewResult: Preview | undefined;
@@ -1064,6 +1201,31 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
           }
         }
       }
+
+      const planBlocked = agentRes.plan?.status === 'error';
+      updateMission(missionId, {
+        kind: agentRes.plan ? 'plan' : proposed ? 'action' : 'analysis',
+        status: proposalIsStale
+          ? 'stale'
+          : planBlocked
+            ? 'failed'
+            : proposed || agentRes.plan
+              ? 'prepared'
+              : 'analyzed',
+        title: agentRes.plan?.title?.slice(0, 1000) ?? query.slice(0, 110),
+        answer: agentRes.message?.slice(0, 20000),
+        stage: undefined,
+        workbook: { ...context, fileName, sheetName: activeSheetName, signature },
+        action: proposed,
+        plan: agentRes.plan,
+        preview: previewResult,
+        evidence: agentRes.evidence?.slice(0, 12),
+        error: proposalIsStale
+          ? 'The workbook changed during planning. Replan before applying.'
+          : planBlocked
+            ? 'The engine could not verify this plan. Nothing was applied.'
+            : undefined,
+      });
 
       if (agentRes.source === 'fallback' && agentRes.trace) {
         const blocked = agentRes.trace.find(
@@ -1092,6 +1254,7 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
               thought: agentRes.thought || m.thought,
               activities: agentRes.activities ?? m.activities,
               evidence: agentRes.evidence ?? m.evidence,
+              missionId,
               proposedAction: proposed,
               plan: agentRes.plan,
               clarification: agentRes.clarification,
@@ -1107,7 +1270,11 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
                   ? { ...m.tokens, isLive: false }
                   : undefined,
               isStreaming: false,
-              status: proposalIsStale && (proposed || agentRes.plan) ? 'stale' : 'pending',
+              status: planBlocked
+                ? 'error'
+                : proposalIsStale && (proposed || agentRes.plan)
+                  ? 'stale'
+                  : 'pending',
               staleReason: proposalIsStale
                 ? 'The workbook changed while this response was being prepared. Preview again against the current workbook.'
                 : undefined,
@@ -1156,12 +1323,22 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
             : m,
         ),
       );
+      updateMission(missionId, {
+        status: aborted ? 'cancelled' : 'failed',
+        stage: undefined,
+        error: aborted
+          ? 'Stopped by the user. No action was applied.'
+          : error instanceof Error
+            ? error.message.slice(0, 20000)
+            : 'The agent could not respond.',
+      });
       if (!aborted) {
         pushToast('error', error instanceof Error ? error.message : 'The agent could not respond.');
       }
     } finally {
       if (belongsToDocument()) {
         turnAbortRef.current = null;
+        activeMissionId.current = null;
         setIsProcessing(false);
       }
     }
@@ -1169,9 +1346,14 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
 
   // Never trust a card's rendered props: recheck the live document and revision at commit time.
   const canApplyProposal = (messageId: string, confirmed: boolean): boolean => {
+    if (mutationAbortRef.current || turnAbortRef.current) return false;
     const message = messages.find((candidate) => candidate.id === messageId);
     const context = message?.workbookContext;
+    const mission = message?.missionId
+      ? missionRecords.current.find((item) => item.id === message.missionId)
+      : undefined;
     if (
+      (message?.missionId && mission?.status !== 'prepared') ||
       !message ||
       !context ||
       context.generation !== documentGeneration.current ||
@@ -1201,22 +1383,136 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
     return true;
   };
 
-  // Apply multi-step execution plan from chat
-  const handleApplyPlan = (messageId: string, plan: ExecutionPlan, confirmed = false) => {
-    if (!canApplyProposal(messageId, confirmed)) return;
+  const executeChatMutation = async (
+    messageId: string,
+    steps: { operation: string; args: Record<string, unknown> }[],
+    title: string,
+    confirmed: boolean,
+  ) => {
+    const source = messages.find((message) => message.id === messageId)!;
+    const context = source.workbookContext!;
+    const controller = new AbortController();
+    const beforePosition = historyStack.position;
+    const beforeCompacted = historyStack.compactedCount;
+    mutationAbortRef.current = controller;
+    activeMissionId.current = source.missionId ?? null;
     setIsProcessing(true);
-    try {
-      const result = applyOperationPlan(workbook, plan.steps, {
-        registry,
-        history: historyStack,
-        confirmed,
-        operationName: `plan: ${plan.title}`,
+    if (source.missionId)
+      updateMission(source.missionId, {
+        status: 'executing',
+        stage: 'Staging verified changes in a private workbook…',
       });
-      if (result.ok) {
-        markWorkbookEdited();
+    try {
+      const result = await executeMissionMutation(
+        { workbook, steps, confirmed },
+        {
+          signal: controller.signal,
+          onProgress: (event) => {
+            if (!controller.signal.aborted && source.missionId)
+              updateMission(source.missionId, {
+                stage: `Step ${event.index + 1}/${steps.length}: ${event.phase} ${steps[event.index]?.operation ?? 'operation'}`,
+              });
+          },
+        },
+      );
+      if (
+        controller.signal.aborted ||
+        context.generation !== documentGeneration.current ||
+        context.revision !== workbookRevision.current
+      )
+        throw new DOMException(
+          'Execution was cancelled or the workbook changed. Nothing was committed.',
+          'AbortError',
+        );
+      if (result.ok && result.patch.length) {
+        historyStack.commit(title, result.workbook, result.patch, result.inverse);
+        markWorkbookEdited(source.missionId);
+        trackMissionCommit(beforePosition, beforeCompacted, source.missionId, messageId);
         setWorkbook(result.workbook);
-        setHistoryRevision((r) => r + 1);
-        setRecentChangedCells(new Set());
+        setHistoryRevision((revision) => revision + 1);
+        const added = result.workbook.sheets.find(
+          (sheet) => !workbook.sheets.some((old) => old.name === sheet.name),
+        );
+        if (added) setActiveSheetName(added.name);
+        else if (!result.workbook.sheets.some((sheet) => sheet.name === activeSheetName))
+          setActiveSheetName(result.workbook.sheets[0]?.name ?? '');
+        setRecentChangedCells(
+          new Set(
+            result.patch.flatMap((entry) =>
+              entry.kind === 'cell'
+                ? [`${entry.address.sheet}:${entry.address.row}:${entry.address.column}`]
+                : [],
+            ),
+          ),
+        );
+      }
+      if (!result.ok && result.error.code === 'confirmation-required')
+        pushToast(
+          'warning',
+          'This change was not confirmed. Review the affected cells and confirm before applying.',
+        );
+      if (source.missionId)
+        updateMission(source.missionId, {
+          stage: undefined,
+          ...(!result.ok && result.error.code === 'confirmation-required'
+            ? { status: 'prepared' as const }
+            : {}),
+        });
+      return result;
+    } finally {
+      if (mutationAbortRef.current === controller) {
+        mutationAbortRef.current = null;
+        activeMissionId.current = null;
+        setIsProcessing(false);
+      }
+    }
+  };
+  const failChatMutation = (messageId: string, error: unknown) => {
+    const source = messages.find((message) => message.id === messageId);
+    if (source?.workbookContext?.generation !== documentGeneration.current) return;
+    const stale = source.workbookContext.revision !== workbookRevision.current;
+    const cancelled = error instanceof Error && error.name === 'AbortError';
+    const reason = stale
+      ? 'The workbook changed during execution. Staged changes were discarded; replan before applying.'
+      : cancelled
+        ? 'Stopped by the user. Nothing was committed.'
+        : error instanceof Error
+          ? error.message
+          : 'Mission execution failed. Nothing was committed.';
+    if (source.missionId)
+      updateMission(source.missionId, {
+        status: stale ? 'stale' : cancelled ? 'cancelled' : 'failed',
+        stage: undefined,
+        error: reason,
+      });
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              status: stale ? 'stale' : 'error',
+              errorMessage: reason,
+              staleReason: stale ? reason : undefined,
+              confirmationPrompt: undefined,
+            }
+          : message,
+      ),
+    );
+    pushToast(cancelled || stale ? 'warning' : 'error', reason);
+  };
+
+  // Apply multi-step execution plan from chat, atomically and off the UI thread when supported.
+  const handleApplyPlan = async (messageId: string, plan: ExecutionPlan, confirmed = false) => {
+    if (!canApplyProposal(messageId, confirmed)) return;
+    const missionId = messages.find((message) => message.id === messageId)?.missionId;
+    try {
+      const result = await executeChatMutation(
+        messageId,
+        plan.steps,
+        `plan: ${plan.title}`,
+        confirmed,
+      );
+      if (result.ok) {
         const newlyAddedSheetInPlan = result.workbook.sheets.find(
           (s) => !workbook.sheets.some((old) => old.name === s.name),
         );
@@ -1236,6 +1532,27 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
         );
       }
       const awaitingConfirmation = !result.ok && result.error.code === 'confirmation-required';
+      if (missionId && !awaitingConfirmation) {
+        updateMission(
+          missionId,
+          result.ok
+            ? {
+                status: 'applied',
+                receipt: {
+                  id: `receipt-${Date.now()}`,
+                  status: 'applied',
+                  createdAt: Date.now(),
+                  completedAt: Date.now(),
+                  operations: result.steps.map((step, index) => ({
+                    name: plan.steps[index]?.operation ?? 'step',
+                    affectedCells: step.report.affectedCells,
+                    warnings: step.report.warnings.map((warning) => warning.message),
+                  })),
+                },
+              }
+            : { status: 'failed', error: result.error.messages.join(' ') },
+        );
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id !== messageId
@@ -1272,7 +1589,7 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
                         operations: [
                           {
                             name: plan.title,
-                            affectedCells: result.preview?.affectedCells ?? 0,
+                            affectedCells: 0,
                             warnings: result.error.messages,
                           },
                         ],
@@ -1307,33 +1624,128 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
               },
         ),
       );
-    } finally {
-      setIsProcessing(false);
+    } catch (error) {
+      failChatMutation(messageId, error);
     }
   };
 
-  // Apply proposed action from chat
-  const handleApplyAction = (messageId: string, action: ProposedAction, confirmed = false) => {
+  // Apply proposed action through the same staged worker/confirmation contract.
+  const handleApplyAction = async (
+    messageId: string,
+    action: ProposedAction,
+    confirmed = false,
+  ) => {
     if (!canApplyProposal(messageId, confirmed)) return;
-    const sourceQuery = messages.find((message) => message.id === messageId)?.sourceQuery;
-    const result = executeOperation(action.name, action.args, sourceQuery, confirmed);
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== messageId) return m;
-        if (result.ok) {
-          const affectedCount =
-            result.report.affectedCells ??
-            result.report.removedRows ??
-            result.report.deletedColumns ??
-            result.report.addedColumns ??
-            0;
+    const sourceMessage = messages.find((message) => message.id === messageId);
+    const missionId = sourceMessage?.missionId;
+    const sourceQuery = sourceMessage?.sourceQuery;
+    try {
+      const outcome = await executeChatMutation(
+        messageId,
+        [{ operation: action.name, args: action.args }],
+        action.name,
+        confirmed,
+      );
+      const result = outcome.ok
+        ? { ...outcome, report: outcome.steps[0]!.report, preview: outcome.steps[0]!.preview }
+        : outcome;
+      if (result.ok)
+        pushToast(
+          result.report.affectedCells === 0 ? 'info' : 'success',
+          `${action.name} applied - ${result.report.affectedCells} cell(s) updated, invariants verified.`,
+        );
+      else if (result.error.code !== 'confirmation-required')
+        pushToast('error', result.error.messages.join(' '));
+      if (sourceQuery && (result.ok || result.error.code !== 'confirmation-required')) {
+        orchestrator.learn({
+          query: sourceQuery,
+          sheetName: activeSheetName,
+          operation: action.name,
+          args: action.args,
+          success: result.ok,
+          workbook: result.ok ? result.workbook : workbook,
+        });
+        persistMemory();
+        setLearnedActions(learnedActionCount());
+      }
+      if (missionId && (result.ok || result.error.code !== 'confirmation-required')) {
+        updateMission(
+          missionId,
+          result.ok
+            ? {
+                status: 'applied',
+                receipt: {
+                  id: `receipt-${Date.now()}`,
+                  status: 'applied',
+                  createdAt: Date.now(),
+                  completedAt: Date.now(),
+                  operations: [
+                    {
+                      name: action.name,
+                      affectedCells: result.report.affectedCells,
+                      warnings: result.report.warnings.map((warning) => warning.message),
+                    },
+                  ],
+                },
+              }
+            : { status: 'failed', error: result.error.messages.join(' ') },
+        );
+      }
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m;
+          if (result.ok) {
+            const affectedCount =
+              result.report.affectedCells ??
+              result.report.removedRows ??
+              result.report.deletedColumns ??
+              result.report.addedColumns ??
+              0;
+            return {
+              ...m,
+              status: 'applied',
+              confirmationPrompt: undefined,
+              receipt: {
+                id: `receipt-${Date.now()}`,
+                status: 'applied',
+                request: m.sourceQuery ?? action.name,
+                createdAt: Date.now(),
+                completedAt: Date.now(),
+                workbookContext: {
+                  generation: documentGeneration.current,
+                  revision: workbookRevision.current,
+                  fileName,
+                  sheetName: activeSheetName,
+                },
+                operations: [
+                  {
+                    name: action.name,
+                    affectedCells: result.report.affectedCells,
+                    warnings: result.report.warnings.map((warning) => warning.message),
+                  },
+                ],
+              } satisfies TaskReceipt,
+              text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
+            };
+          }
+          // The engine refused pending a human decision. Move the card into its confirm state
+          // instead of showing an error, so the user can approve or dismiss it.
+          if (result.error.code === 'confirmation-required') {
+            return {
+              ...m,
+              status: 'confirming',
+              confirmationPrompt: {
+                affectedCells: result.preview?.affectedCells ?? 0,
+                reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
+              },
+            };
+          }
           return {
             ...m,
-            status: 'applied',
-            confirmationPrompt: undefined,
+            status: 'error',
             receipt: {
               id: `receipt-${Date.now()}`,
-              status: 'applied',
+              status: 'failed',
               request: m.sourceQuery ?? action.name,
               createdAt: Date.now(),
               completedAt: Date.now(),
@@ -1346,57 +1758,28 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
               operations: [
                 {
                   name: action.name,
-                  affectedCells: result.report.affectedCells,
-                  warnings: result.report.warnings.map((warning) => warning.message),
+                  affectedCells: 0,
+                  warnings: result.error.messages,
                 },
               ],
             } satisfies TaskReceipt,
-            text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
+            confirmationPrompt: undefined,
+            errorMessage: result.error.messages.join(', '),
           };
-        }
-        // The engine refused pending a human decision. Move the card into its confirm state
-        // instead of showing an error, so the user can approve or dismiss it.
-        if (result.error.code === 'confirmation-required') {
-          return {
-            ...m,
-            status: 'confirming',
-            confirmationPrompt: {
-              affectedCells: result.preview?.affectedCells ?? 0,
-              reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
-            },
-          };
-        }
-        return {
-          ...m,
-          status: 'error',
-          receipt: {
-            id: `receipt-${Date.now()}`,
-            status: 'failed',
-            request: m.sourceQuery ?? action.name,
-            createdAt: Date.now(),
-            completedAt: Date.now(),
-            workbookContext: {
-              generation: documentGeneration.current,
-              revision: workbookRevision.current,
-              fileName,
-              sheetName: activeSheetName,
-            },
-            operations: [
-              {
-                name: action.name,
-                affectedCells: result.preview?.affectedCells ?? 0,
-                warnings: result.error.messages,
-              },
-            ],
-          } satisfies TaskReceipt,
-          confirmationPrompt: undefined,
-          errorMessage: result.error.messages.join(', '),
-        };
-      }),
-    );
+        }),
+      );
+    } catch (error) {
+      failChatMutation(messageId, error);
+    }
   };
 
   const handleCancelAction = (messageId: string) => {
+    const missionId = messages.find((message) => message.id === messageId)?.missionId;
+    if (missionId)
+      updateMission(missionId, {
+        status: 'cancelled',
+        error: 'Cancelled before execution. Nothing was applied.',
+      });
     // Cancelling a confirmation is not evidence that the proposed operation was incorrect.
     setMessages((prev) =>
       prev.map((m) =>
@@ -1429,6 +1812,182 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
     setAgentDraft((previous) => ({ text: prompt, revision: (previous?.revision ?? 0) + 1 }));
   };
 
+  const handleResumeMission = async (mission: MissionRecord) => {
+    if (
+      isProcessing ||
+      missionBusy ||
+      missionRecords.current.find((item) => item.id === mission.id)?.status !== 'prepared'
+    )
+      return;
+    const context = { generation: documentGeneration.current, revision: workbookRevision.current };
+    setMissionBusy(true);
+    try {
+      const matches = await missionMatchesWorkbook(mission, workbook);
+      if (
+        context.generation !== documentGeneration.current ||
+        context.revision !== workbookRevision.current
+      )
+        throw new Error(
+          'The workbook changed while verifying this mission. Replan before applying.',
+        );
+      if (!matches)
+        throw new Error(
+          'This workbook does not match the content inspected by the mission. Restore the matching checkpoint, or replan the request.',
+        );
+      let action = mission.action;
+      let plan = mission.plan;
+      let preview: Preview | undefined;
+      if (action) {
+        const op = registry.get(action.name);
+        if (!op) throw new Error('The saved operation is no longer available.');
+        const parsed = op.schema.safeParse(action.args);
+        if (!parsed.success) throw new Error('The saved operation arguments are invalid.');
+        action = { ...action, args: parsed.data as Record<string, unknown> };
+        const guardrail = orchestrator.guardrail(workbook, action);
+        if (!guardrail.passed) throw new Error(guardrail.errors.join(' '));
+        preview = guardrail.preview;
+      } else if (plan) {
+        const simulation = await executeMissionMutation({
+          workbook,
+          steps: plan.steps,
+          confirmed: true,
+        });
+        if (!simulation.ok) throw new Error(simulation.error.messages.join(' '));
+        plan = {
+          ...plan,
+          status: 'pending',
+          steps: plan.steps.map((step, index) => ({
+            ...step,
+            status: 'pending',
+            error: undefined,
+            preview: simulation.steps[index]?.preview,
+          })),
+        };
+      } else throw new Error('The saved mission has no complete operation to review.');
+      if (
+        context.generation !== documentGeneration.current ||
+        context.revision !== workbookRevision.current
+      )
+        throw new Error(
+          'The workbook changed while rebuilding the preview. Replan before applying.',
+        );
+      if (missionRecords.current.find((item) => item.id === mission.id)?.status !== 'prepared')
+        return;
+      updateMission(mission.id, {
+        action,
+        plan,
+        preview,
+        workbook: { ...mission.workbook, ...context, fileName, sheetName: activeSheetName },
+        error: undefined,
+      });
+      const resumed: ChatMessage = {
+        id: `mission-resume-${mission.id}-${turnSequence.current++}`,
+        sender: 'assistant',
+        text: `Resumed mission **${mission.title}**. Its workbook content matched and the engine generated a fresh preview. Review it before applying; previous confirmation is not restored.`,
+        sourceQuery: mission.request,
+        missionId: mission.id,
+        proposedAction: action,
+        plan,
+        preview,
+        evidence: mission.evidence,
+        status: 'pending',
+        workbookContext: context,
+      };
+      setMessages((previous) => [
+        ...previous.map((message) =>
+          message.missionId === mission.id && message.status !== 'applied'
+            ? { ...message, status: 'stale' as const, confirmationPrompt: undefined }
+            : message,
+        ),
+        resumed,
+      ]);
+      setRevealAgentRevision((revision) => revision + 1);
+      navigate('workspace');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Mission verification failed.';
+      updateMission(mission.id, { status: 'stale', error: reason });
+      pushToast('warning', `${reason} Nothing was applied.`);
+    } finally {
+      setMissionBusy(false);
+    }
+  };
+  const handleReplanMission = (mission: MissionRecord) => {
+    if (isProcessing || missionBusy) return;
+    navigate('workspace');
+    handleDraft(mission.request);
+    pushToast(
+      'info',
+      'Request loaded into the composer. Review it and send to create a new mission for this workbook.',
+    );
+  };
+  const handleDownloadMission = (mission: MissionRecord) => {
+    const blob = new Blob(
+      [JSON.stringify({ ...mission, exportedAt: new Date().toISOString() }, null, 2)],
+      { type: 'application/json' },
+    );
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${mission.id}.json`;
+      link.click();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  };
+  const handleDeleteMission = async (mission: MissionRecord) => {
+    await removeMission(mission.id);
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.missionId === mission.id
+          ? {
+              ...message,
+              status: 'stale',
+              confirmationPrompt: undefined,
+              staleReason: 'This mission was removed. Replan the request before applying.',
+            }
+          : message,
+      ),
+    );
+  };
+  const handleClearMissions = async () => {
+    await clearMissionLedger();
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.missionId && message.status !== 'applied'
+          ? {
+              ...message,
+              status: 'stale',
+              confirmationPrompt: undefined,
+              staleReason: 'Mission history was cleared. Replan before applying.',
+            }
+          : message,
+      ),
+    );
+  };
+
+  const handleStopTask = () => {
+    turnAbortRef.current?.abort();
+    mutationAbortRef.current?.abort();
+    mutationAbortRef.current = null;
+    if (activeMissionId.current)
+      updateMission(activeMissionId.current, {
+        status: 'cancelled',
+        stage: undefined,
+        error: 'Stopped by the user. Nothing was applied.',
+      });
+    activeMissionId.current = null;
+    turnAbortRef.current = null;
+    setIsProcessing(false);
+    setMessages((previous) =>
+      previous.map((message) =>
+        message.isStreaming
+          ? { ...message, isStreaming: false, text: message.text || 'Stopped.', status: 'error' }
+          : message,
+      ),
+    );
+  };
+
   const checkpointLabel: Record<CheckpointStatus, string> = {
     checking: 'Checking local checkpoint…',
     idle: 'Not checkpointed yet',
@@ -1444,6 +2003,35 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
       : checkpointStatus === 'unavailable'
         ? 'Your current edits are in memory. Export to keep them; only the last successful checkpoint can be restored.'
         : 'Local checkpoints stay in this browser. They do not replace an exported workbook.';
+
+  // Durable mission control: prepared tasks and applied receipts survive navigation and refresh.
+  if (view === 'missions') {
+    return (
+      <div className="app-container">
+        <ErrorBoundary variant="panel" label="Mission Control">
+          <MissionControlPage
+            missions={missions}
+            storageStatus={missionStorageStatus}
+            storageError={missionStorageError}
+            unsavedIds={unsavedMissionIds}
+            busy={isProcessing || missionBusy}
+            activeMissionId={activeMissionId.current}
+            onStop={(mission) => {
+              if (activeMissionId.current === mission.id) handleStopTask();
+            }}
+            onBack={() => navigate('workspace')}
+            onResume={(mission) => void handleResumeMission(mission)}
+            onReplan={handleReplanMission}
+            onDelete={handleDeleteMission}
+            onClear={handleClearMissions}
+            onRetryStorage={() => void retryMissionStorage()}
+            onDownload={handleDownloadMission}
+          />
+        </ErrorBoundary>
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
 
   // Dedicated Model & Usage page (kept as a separate route-like view).
   if (view === 'usage') {
@@ -1607,6 +2195,7 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
           onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenUsage={() => navigate('usage')}
+          onOpenMissions={() => navigate('missions')}
           onOpenAgents={() => navigate('agents')}
           onOpenDocs={() => navigate('docs')}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
@@ -1735,23 +2324,8 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
                 onCancelAction={handleCancelAction}
                 onUndoLast={handleUndo}
                 canUndo={historyStack.canUndo}
-                onStop={() => {
-                  turnAbortRef.current?.abort();
-                  turnAbortRef.current = null;
-                  setIsProcessing(false);
-                  setMessages((previous) =>
-                    previous.map((message) =>
-                      message.isStreaming
-                        ? {
-                            ...message,
-                            isStreaming: false,
-                            text: message.text || 'Stopped.',
-                            status: 'error',
-                          }
-                        : message,
-                    ),
-                  );
-                }}
+                undoableMessageId={undoableMessageId}
+                onStop={handleStopTask}
                 selectionContext={selectionContext}
                 onClearSelectionContext={() => setSelectionContext(null)}
                 learnedActions={learnedActions}
@@ -1782,12 +2356,36 @@ export const App: React.FC<{ recoveryStore?: WorkspaceRecoveryStore }> = ({
           </div>
           {studioView === 'insights' && (
             <ErrorBoundary variant="panel" label="workbook insights">
-              <WorkbookInsights
-                profiles={studioProfiles}
-                audit={sheetAudit}
-                onRun={handleWorkflow}
-                isProcessing={isProcessing}
-              />
+              <div className="studio-insights-stack">
+                <div className="briefing-baseline-controls">
+                  <p>
+                    Comparison uses this document’s opening snapshot, or the checkpoint you
+                    restored. Baselines stay in memory and reset on refresh or file replacement.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={isProcessing || baselineWorkbook === workbook}
+                    onClick={() => setBaselineWorkbook(workbook)}
+                  >
+                    Use current workbook as baseline
+                  </button>
+                </div>
+                <AnalystBriefing
+                  workbook={workbook}
+                  sheetName={activeSheetName}
+                  baseline={baselineWorkbook}
+                />
+                <details className="briefing-workflow-suggestions">
+                  <summary>Suggested analyst workflows</summary>
+                  <WorkbookInsights
+                    profiles={studioProfiles}
+                    audit={sheetAudit}
+                    onRun={handleWorkflow}
+                    isProcessing={isProcessing}
+                  />
+                </details>
+              </div>
             </ErrorBoundary>
           )}
           {studioView === 'workflows' && (

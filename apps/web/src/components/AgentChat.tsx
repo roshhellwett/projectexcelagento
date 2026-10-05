@@ -55,6 +55,7 @@ export interface ChatMessage {
   plan?: ExecutionPlan;
   clarification?: ClarificationQuestion;
   evidence?: EvidenceItem[];
+  missionId?: string;
   receipt?: TaskReceipt;
   /** The user request that produced this message, used for self-learning feedback. */
   sourceQuery?: string;
@@ -93,6 +94,8 @@ interface AgentChatProps {
   onCancelAction?: (messageId: string) => void;
   onUndoLast: () => void;
   canUndo: boolean;
+  /** Only the receipt bound to the current history boundary can undo its own task. */
+  undoableMessageId?: string;
   onStop?: () => void;
   selectionContext?: import('../lib/selection-context.js').CellSelection | null;
   onClearSelectionContext?: () => void;
@@ -116,6 +119,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onCancelAction,
   onUndoLast,
   canUndo,
+  undoableMessageId,
   onStop,
   selectionContext,
   onClearSelectionContext,
@@ -1328,20 +1332,22 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           </div>
                         )}
 
-                        {msg.status === 'applied' && canUndo && (
-                          <div className="assistant-card-footer">
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={onUndoLast}
-                              title="Revert the changes made by this step"
-                            >
-                              <RotateCcw size={12} />
-                              <span>Undo this step</span>
-                            </button>
-                            <span className="assistant-footer-status">Invariants verified ✓</span>
-                          </div>
-                        )}
+                        {msg.status === 'applied' &&
+                          canUndo &&
+                          (undoableMessageId === undefined || undoableMessageId === msg.id) && (
+                            <div className="assistant-card-footer">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={onUndoLast}
+                                title="Revert the changes made by this step"
+                              >
+                                <RotateCcw size={12} />
+                                <span>Undo this step</span>
+                              </button>
+                              <span className="assistant-footer-status">Invariants verified ✓</span>
+                            </div>
+                          )}
                       </div>
                     )}
                   </motion.div>

@@ -525,6 +525,9 @@
   min-width: 0;
   position: relative;
 }
+.studio-sheet-view[hidden] {
+  display: none;
+}
 .studio-sheet-view {
   display: flex;
   flex: 1;
@@ -2476,5 +2479,379 @@
     animation: none !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Durable mission control */
+.mission-page {
+  min-height: 100vh;
+  padding: 18px clamp(18px, 4vw, 64px) 56px;
+  color: var(--text-main);
+  background: var(--bg-canvas);
+}
+.mission-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  max-width: 1180px;
+  margin: 0 auto 34px;
+}
+.mission-topbar .zenith-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mission-hero,
+.mission-toolbar,
+.mission-list,
+.mission-empty {
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.mission-hero {
+  padding: clamp(28px, 6vw, 72px) clamp(20px, 5vw, 64px);
+  border: 1px solid var(--border-main);
+  border-radius: 22px;
+  background: linear-gradient(135deg, var(--bg-surface), var(--studio-tint));
+  box-shadow: var(--shadow-sm);
+}
+.mission-hero-badge,
+.mission-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand-emerald);
+  font: 10px var(--font-mono);
+  letter-spacing: 0.12em;
+}
+.mission-hero h1 {
+  max-width: 680px;
+  margin: 15px 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 6vw, 68px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -2.5px;
+}
+.mission-hero p {
+  max-width: 680px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.mission-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 25px;
+}
+.mission-hero-meta span {
+  padding: 7px 10px;
+  border: 1px solid var(--border-main);
+  border-radius: 7px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  font-size: 10px;
+}
+.mission-hero-meta strong {
+  color: var(--brand-emerald);
+  font: 12px var(--font-mono);
+}
+.mission-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 30px 0 15px;
+}
+.mission-toolbar p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.mission-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+.mission-card {
+  padding: 18px;
+  border: 1px solid var(--border-main);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+.mission-card.is-prepared {
+  border-color: color-mix(in srgb, var(--brand-emerald) 38%, var(--border-main));
+}
+.mission-card.is-stale {
+  border-color: color-mix(in srgb, var(--accent-amber) 50%, var(--border-main));
+}
+.mission-card.is-failed {
+  border-color: color-mix(in srgb, var(--accent-rose) 45%, var(--border-main));
+}
+.mission-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+.mission-card h2 {
+  margin: 7px 0 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+}
+.mission-status {
+  padding: 5px 7px;
+  border-radius: 5px;
+  color: var(--brand-emerald);
+  background: var(--studio-tint);
+  font: 9px var(--font-mono);
+  white-space: nowrap;
+}
+.mission-card.is-stale .mission-status {
+  color: var(--accent-amber);
+  background: var(--studio-amber-tint);
+}
+.mission-card.is-failed .mission-status {
+  color: var(--accent-rose);
+}
+.mission-request {
+  min-height: 38px;
+  margin: 16px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.mission-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-dim);
+  font: 9px var(--font-mono);
+}
+.mission-context span {
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+}
+.mission-evidence {
+  margin-top: 12px;
+  color: var(--brand-emerald);
+  font-size: 12px;
+}
+.mission-evidence summary {
+  cursor: pointer;
+}
+.mission-evidence summary svg {
+  vertical-align: middle;
+}
+.mission-evidence-item {
+  padding: 12px;
+  margin-top: 8px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  color: var(--text-main);
+}
+.mission-evidence-item strong,
+.mission-evidence-item code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.mission-evidence-item code {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+.mission-evidence-item dl > div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.mission-evidence-item dd {
+  margin: 0;
+}
+.mission-error {
+  margin: 12px 0 0;
+  color: var(--accent-rose);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.mission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 17px;
+}
+.mission-empty {
+  display: grid;
+  place-items: center;
+  padding: 80px 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.mission-empty svg {
+  color: var(--brand-emerald);
+}
+.mission-empty h2 {
+  margin: 12px 0 5px;
+  color: var(--text-main);
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+.mission-empty p {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.mission-storage-warning,
+.mission-filters,
+.mission-footnote {
+  max-width: 1080px;
+  margin: 16px auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.mission-storage-warning {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--accent-amber);
+  border-radius: 12px;
+}
+.mission-storage-warning p {
+  margin: 5px 0 0;
+}
+.mission-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mission-filters button[aria-pressed='true'] {
+  background: var(--bg-elevated);
+  color: var(--brand-emerald);
+}
+.mission-step-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+.mission-step-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.mission-step-list li > span {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-main);
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+.mission-step-list strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.mission-step-list small {
+  display: block;
+  color: var(--text-muted);
+  font: 10px var(--font-mono);
+  margin-top: 4px;
+}
+.mission-receipt {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  font-size: 12px;
+}
+.mission-receipt strong {
+  color: var(--brand-emerald);
+}
+.mission-receipt p:empty {
+  display: none;
+}
+.mission-answer {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.mission-answer summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.mission-answer p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.mission-answer small,
+.mission-footnote {
+  color: var(--text-muted);
+}
+.mission-progress {
+  color: var(--brand-emerald);
+  font: 11px var(--font-mono);
+}
+.mission-context .mission-unsaved {
+  color: var(--accent-amber);
+}
+.mission-card h2,
+.mission-request {
+  overflow-wrap: anywhere;
+}
+.studio-insights-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 24px;
+}
+.briefing-baseline-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.briefing-baseline-controls p {
+  flex: 1;
+  margin: 0;
+}
+.briefing-workflow-suggestions summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .mission-storage-warning,
+  .briefing-baseline-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .mission-card-head {
+    flex-wrap: wrap;
+  }
+  .mission-topbar {
+    gap: 12px;
+    flex-wrap: wrap;
   }
 }

@@ -37,6 +37,21 @@ ambition of supporting an analyst's entire workflow.
 - 1904 metadata preserved through edit/undo/redo and patch verification; current supported formula
   caches and actual full-recalculation XML on export. Unsupported/error caches are omitted.
 - Full-operation tall-sheet filter/extraction/deduplication regressions at 150,000 rows.
+- Mission control (`#/missions`): latest 50 browser-local requests, plans/actions, answers, evidence
+  and execution receipts. Planning/executing/prepared/analyzed/applied/undone/failed/stale/cancelled/
+  interrupted states, committed save/delete/clear status, in-memory fallback, retry and JSON download.
+- Prepared refresh resume requires full-content SHA-256 matching, fresh schema/engine previews,
+  generation/revision fencing and renewed confirmation. Closed-tab active tasks become interrupted;
+  completed/cancelled/stale work cannot execute again. Replanning starts a new reviewable request.
+- Dedicated workers stage chat mutations where supported, emit per-step verification progress and
+  terminate on abort/crash/timeout; atomic UI commit happens only for the unchanged live document.
+- Task-specific receipts track actual history undo/redo/reset. Discarded redo branches and compacted
+  operations cannot accidentally undo another task. Undo bindings are not persisted across refresh.
+- Deterministic analyst briefing: source-backed full-column distributions/quality/exclusions,
+  bounded categorical/histogram charts with table alternatives, unsupported/error/volatile formula
+  exclusion, and exact positional baseline/shape/epoch comparison. Baseline is memory-only.
+- Real Chromium mission reload/resume/confirmation/worker/undo/redo/delete and stale-edit flows,
+  plus responsive mobile briefing rendering. Strict Mode cell-editor lifecycle regression fixed.
 
 ## Verification commands
 
@@ -49,10 +64,14 @@ pnpm typecheck
 pnpm test
 pnpm evals
 pnpm build
+pnpm exec playwright install --with-deps chromium
+pnpm test:e2e
 ```
 
-CI runs these checks. Tests include real workbook round trips, property-based undo/redo,
-recorded provider contracts, and jsdom workspace integration. Statistical tests include
+CI is configured to run these checks. Tests include real workbook round trips, property-based undo/redo,
+recorded provider contracts, fake-IndexedDB transaction read-back/failure tests, jsdom workspace
+integration, and real Chromium browser flows. The Playwright runner builds and serves the production bundle through Vite preview;
+this is not a deployed production/CSP or cross-browser verification. Statistical tests include
 known reference distributions, perfect and imperfect regressions, missing pairs, constant
 columns, large offsets, tiny values, numerical overflow, and live formula dependencies.
 
@@ -73,8 +92,9 @@ predictor. Outlier detection reports observations without deleting them.
 
 ## Remaining release gaps
 
-1. **Real-browser coverage:** the repository has jsdom integration tests, but no Playwright
-   suite validating real-browser workers, clipboard behavior, downloads, and rendering.
+1. **Remaining browser coverage:** Chromium now covers mission persistence/recovery, real workers,
+   confirmation/undo/redo, deletion, stale edits and mobile briefing rendering. Firefox/WebKit,
+   clipboard, downloaded XLSX validation, large-file responsiveness and deployed CSP remain unchecked.
 2. **Excel fidelity:** the workbook model does not preserve all Excel features. Merged cells,
    comments, hyperlinks, layout, charts, styles, macros, named ranges, and conditional
    formatting need dedicated preservation/reporting work. Import reports some dropped
@@ -85,13 +105,16 @@ predictor. Outlier detection reports observations without deleting them.
    sheets. This protects meaning but restricts workflows until an Excel-aware reference rewriter
    exists. Unsupported formulas need Excel/LibreOffice recalculation; application behavior still
    requires verification. This release does not claim complete Excel compatibility.
-4. **Large-workbook responsiveness:** imports have limits and parsing/export use a worker,
-   but operation validation, repeated workbook cloning, and several analyses still run on
-   the main thread. Benchmarking and worker-based execution remain important for large files.
-5. **Recovery scope:** one latest successful checkpoint is available per browser/origin.
-   Browser storage can be cleared or fail, and a crash before checkpoint commit can lose recent
-   changes. Undo history and chat are intentionally not persisted. Export remains essential;
-   multi-workbook libraries and conflict-safe multi-tab checkpoints remain product work.
+4. **Large-workbook responsiveness:** parsing/export and chat mutations use workers where available,
+   but proposal guardrails, secure-hash serialization, manual grid operations, briefing analysis,
+   repeated cloning and history commit still involve main-thread work. No heavy-use latency/memory
+   benchmark has been established; the worker fallback cannot stop synchronous CPU work.
+5. **Recovery scope:** one latest successful checkpoint and up to 50 mission records are available
+   per browser/origin. They commit independently, so a crash may leave a stale in-progress mission
+   status or an older workbook checkpoint. Browser storage can fail or be cleared; no active call
+   resumes automatically. Chat and undo history are not restored; receipts are not persisted undo
+   handles. Records are unencrypted and may contain customer data. Export remains essential;
+   multi-workbook libraries, crash-consistent journaling and conflict-safe multi-tab state remain work.
 6. **Optional integrations:** live model-provider compatibility and Supabase provisioning,
    isolation, and access policies have not been verified against deployed services. No API
    key or backend is needed for the tested local workflows.

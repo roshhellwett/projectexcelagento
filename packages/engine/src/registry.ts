@@ -106,7 +106,10 @@ export type ApplyOperationPlanResult =
 export function applyOperationPlan(
   workbook: Workbook,
   steps: OperationPlanStep[],
-  options: ApplyOperationOptions & { operationName?: string } = {},
+  options: ApplyOperationOptions & {
+    operationName?: string;
+    onStep?: (index: number, phase: 'verifying' | 'verified' | 'failed') => void;
+  } = {},
 ): ApplyOperationPlanResult {
   if (steps.length === 0) {
     return {
@@ -124,11 +127,13 @@ export function applyOperationPlan(
   const results: Extract<ApplyOperationResult, { ok: true }>[] = [];
   let confirmationStep = -1;
   for (const [index, step] of steps.entries()) {
+    options.onStep?.(index, 'verifying');
     // Confirmation here only authorizes the private simulation; no caller-visible state is committed.
     const result = applyOperation(current, step.operation, step.args, {
       registry: options.registry,
       confirmed: true,
     });
+    options.onStep?.(index, result.ok ? 'verified' : 'failed');
     if (!result.ok) return { ...result, workbook: cloneWorkbook(workbook), failedStep: index };
     if (result.preview.requiresConfirmation && confirmationStep === -1) confirmationStep = index;
     current = result.workbook;

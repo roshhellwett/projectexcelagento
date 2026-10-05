@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createCell, type Workbook } from '@excel-agent/engine';
@@ -25,6 +26,7 @@ function testWorkbook(): Workbook {
 interface HarnessOptions {
   /** Omit the writer to exercise the read-only grid. */
   writable?: boolean;
+  strict?: boolean;
 }
 
 function renderGrid(options: HarnessOptions = {}) {
@@ -41,6 +43,7 @@ function renderGrid(options: HarnessOptions = {}) {
       recentChangedCells={new Set()}
       {...(options.writable === false ? {} : { onEditCells })}
     />,
+    options.strict ? { wrapper: StrictMode } : undefined,
   );
   const cell = (address: string) =>
     screen.getByRole('gridcell', { name: new RegExp(`^${address}: `) });
@@ -122,6 +125,20 @@ describe('editing', () => {
     // Enter commits and steps down, so the next keystroke edits the cell below.
     expect(cell('B2')).toHaveAttribute('aria-selected', 'false');
     expect(cell('B3')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the editor open during Strict Mode effect probes and commits exactly once', async () => {
+    const user = userEvent.setup();
+    const { cell, onEditCells } = renderGrid({ strict: true });
+    await user.dblClick(cell('B2'));
+    expect(screen.getByLabelText('Cell editor')).toHaveValue('7');
+    expect(onEditCells).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText('Cell editor'));
+    await user.type(screen.getByLabelText('Cell editor'), '42');
+    await user.keyboard('{Enter}');
+    expect(onEditCells).toHaveBeenCalledExactlyOnceWith('Sheet1', [
+      { row: 2, column: 'B', value: 42 },
+    ]);
   });
 
   it('opens the editor with the current value on F2 and on a double click', async () => {

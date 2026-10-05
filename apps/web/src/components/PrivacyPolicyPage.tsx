@@ -69,9 +69,10 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             <span className="hl-tag">Local spreadsheet engine</span>
             <p>
               Workbook parsing, local calculations and export run in your browser. Parsing/export
-              use workers where available; transformations currently run on the main thread. Local
-              mode makes no model request. Connected models and optional cloud memory are separate
-              flows described below.
+              and chat actions/plans use workers where available. Manual edits, proposal previews,
+              and deterministic briefings can still run on the main thread. Local mode makes no
+              model request. Connected models and optional cloud memory are separate flows described
+              below.
             </p>
           </div>
           <div className="highlight-item">
@@ -80,6 +81,17 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
               The latest successful workbook checkpoint is stored in browser IndexedDB and may
               contain cells, formulas, dates and filename. It is not encrypted by this app. Restore
               or discard it from the workspace; clearing it turns checkpointing off for the session.
+            </p>
+          </div>
+          <div className="highlight-item">
+            <span className="hl-tag">Browser-local mission records</span>
+            <p>
+              The latest 50 tasks are stored in IndexedDB with requests, saved answers, operation
+              arguments, previews, evidence, workbook signatures and receipts. These may contain
+              customer data and are not encrypted by the app. Remove or clear them from Mission
+              control; downloaded JSON contains the same sensitive data. Deleting a mission does not
+              delete the workbook checkpoint, learned actions, usage logs or any provider/cloud
+              record.
             </p>
           </div>
           <div className="highlight-item">
@@ -93,9 +105,10 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           <div className="highlight-item">
             <span className="hl-tag">Statutory DPDP Act 2023 Rights</span>
             <p>
-              This app provides controls to clear local learned actions, usage logs and workbook
-              checkpoints separately. These controls do not delete provider records or optional
-              cloud memory; verify those deletion rights with the relevant provider or deployment.
+              This app provides controls to clear local learned actions, usage logs, mission records
+              and workbook checkpoints separately. These controls do not delete provider records or
+              optional cloud memory; verify those deletion rights with the relevant provider or
+              deployment.
             </p>
           </div>
         </div>
