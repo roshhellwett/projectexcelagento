@@ -223,7 +223,11 @@ export function getColumnProfiles(sheet: Sheet, readValue?: (column: number, row
  * responsible for exact cardinality and row answers; this scan keeps only bounded examples and
  * streaming numeric statistics so large workbooks do not duplicate their contents in memory.
  */
-export function getCompactColumnProfiles(sheet: Sheet, sampleLimit = 8): CompactColumnProfile[] {
+export function getCompactColumnProfiles(
+  sheet: Sheet,
+  sampleLimit = 8,
+  readValue?: (column: number, row: number) => CellValue,
+): CompactColumnProfile[] {
   const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] ?? [];
   const MAX_DISTINCT_VALUES = 64;
@@ -246,7 +250,7 @@ export function getCompactColumnProfiles(sheet: Sheet, sampleLimit = 8): Compact
 
     for (let rowIndex = 1; rowIndex < sheet.rows.length; rowIndex += 1) {
       const row = sheet.rows[rowIndex] ?? [];
-      const value = row[columnIndex]?.value;
+      const value = readValue ? readValue(columnIndex, rowIndex + 1) : row[columnIndex]?.value;
       if (value === null || value === undefined || String(value).trim() === '') continue;
       nonBlankCount += 1;
 

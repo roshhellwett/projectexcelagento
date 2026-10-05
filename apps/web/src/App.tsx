@@ -10,9 +10,15 @@ import {
   HistoryStack,
   cloneWorkbook,
   maxColumnCount,
+  createWorkbookValueReader,
 } from '@excel-agent/engine';
+import { getCompactColumnProfiles } from '@excel-agent/agent';
+import { MotionConfig } from 'framer-motion';
 
 import { TopNav } from './components/TopNav.js';
+import { WorkspaceShell, type StudioView } from './components/WorkspaceShell.js';
+import { WorkbookInsights } from './components/WorkbookInsights.js';
+import { WorkflowLibrary } from './components/WorkflowLibrary.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
 import type { CellSelection } from './lib/selection-context.js';
 import type { CellEdit } from './lib/grid-edit.js';
@@ -209,7 +215,7 @@ export const App: React.FC = () => {
   const [historyStack, setHistoryStack] = useState<HistoryStack>(
     () => new HistoryStack(initialWorkbook, { snapshotEvery: 5 }),
   );
-  const [historyRevision, setHistoryRevision] = useState(0);
+  const [, setHistoryRevision] = useState(0);
 
   // Recently changed cells for diff highlighting in the grid
   const [recentChangedCells, setRecentChangedCells] = useState<Set<string>>(new Set());
@@ -260,6 +266,16 @@ export const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const turnAbortRef = useRef<AbortController | null>(null);
   const [selectionContext, setSelectionContext] = useState<CellSelection | null>(null);
+  const [studioView, setStudioView] = useState<StudioView>('sheet');
+  const [agentDraft, setAgentDraft] = useState<{ text: string; revision: number }>();
+  const [revealAgentRevision, setRevealAgentRevision] = useState(0);
+  const studioProfiles = useMemo(() => {
+    const read = createWorkbookValueReader(workbook);
+    return getCompactColumnProfiles(currentSheet, 8, (column, row) => {
+      const cell = currentSheet.rows[row - 1]?.[column];
+      return cell?.formula ? read(currentSheet.name, column, row) : cell?.value ?? null;
+    });
+  }, [workbook, currentSheet]);
 
   // Execute an engine operation transactionally
   const executeOperation = useCallback(
@@ -880,6 +896,17 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleWorkflow = (prompt: string) => {
+    if (isProcessing) return;
+    setRevealAgentRevision((revision) => revision + 1);
+    void handleSendMessage(prompt);
+  };
+
+  const handleDraft = (prompt: string) => {
+    setRevealAgentRevision((revision) => revision + 1);
+    setAgentDraft((previous) => ({ text: prompt, revision: (previous?.revision ?? 0) + 1 }));
+  };
+
   // Dedicated Model & Usage page (kept as a separate route-like view).
   if (view === 'usage') {
     return (
@@ -1017,10 +1044,10 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="app-container">
+    <MotionConfig reducedMotion="user">
+    <div className="app-container workbench">
       {/* Top Navigation */}
       <TopNav
-        key={historyRevision}
         fileName={fileName}
         activeSheetName={activeSheetName}
         rowCount={currentSheet.rows.length}
@@ -1048,7 +1075,35 @@ export const App: React.FC = () => {
       />
 
       {/* Main Workspace Body */}
-      <main className="workspace-body">
+      <WorkspaceShell view={studioView} onViewChange={setStudioView} sheetName={currentSheet.name}
+        isProcessing={isProcessing} revealAgentRevision={revealAgentRevision}
+        agent={
+          <ErrorBoundary variant="panel" label="the agent chat">
+            <AgentChat
+              audit={sheetAudit}
+              messages={messages}
+              isProcessing={isProcessing}
+              hasApiKey={hasApiKey}
+              apiKeyProvider={settings.provider}
+              onSaveApiKey={handleSaveApiKey}
+              onClearApiKey={handleClearApiKey}
+              onSendMessage={handleSendMessage}
+              onApplyAction={handleApplyAction}
+              onApplyPlan={handleApplyPlan}
+              onCancelAction={handleCancelAction}
+              onUndoLast={handleUndo}
+              canUndo={historyStack.canUndo}
+              onStop={() => turnAbortRef.current?.abort()}
+              selectionContext={selectionContext}
+              onClearSelectionContext={() => setSelectionContext(null)}
+              learnedActions={learnedActions}
+              draftPrompt={agentDraft}
+              workflowProfiles={studioProfiles}
+              onOpenWorkflows={() => setStudioView('workflows')}
+            />
+          </ErrorBoundary>
+        }>
+        <div className="studio-sheet-view" hidden={studioView !== 'sheet'}>
         {/* Spreadsheet Grid with Drop Zone */}
         <ErrorBoundary variant="panel" label="the grid">
           <SpreadsheetGrid
@@ -1065,29 +1120,10 @@ export const App: React.FC = () => {
           />
         </ErrorBoundary>
 
-        {/* AI Agent Chat Panel */}
-        <ErrorBoundary variant="panel" label="the agent chat">
-          <AgentChat
-            audit={sheetAudit}
-            messages={messages}
-            isProcessing={isProcessing}
-            hasApiKey={hasApiKey}
-            apiKeyProvider={settings.provider}
-            onSaveApiKey={handleSaveApiKey}
-            onClearApiKey={handleClearApiKey}
-            onSendMessage={handleSendMessage}
-            onApplyAction={handleApplyAction}
-            onApplyPlan={handleApplyPlan}
-            onCancelAction={handleCancelAction}
-            onUndoLast={handleUndo}
-            canUndo={historyStack.canUndo}
-            onStop={() => turnAbortRef.current?.abort()}
-            selectionContext={selectionContext}
-            onClearSelectionContext={() => setSelectionContext(null)}
-            learnedActions={learnedActions}
-          />
-        </ErrorBoundary>
-      </main>
+        </div>
+        {studioView === 'insights' && <ErrorBoundary variant="panel" label="workbook insights"><WorkbookInsights profiles={studioProfiles} audit={sheetAudit} onRun={handleWorkflow} isProcessing={isProcessing} /></ErrorBoundary>}
+        {studioView === 'workflows' && <ErrorBoundary variant="panel" label="workflow library"><WorkflowLibrary profiles={studioProfiles} tools={orchestrator.tools} onRun={handleWorkflow} onDraft={handleDraft} isProcessing={isProcessing} /></ErrorBoundary>}
+      </WorkspaceShell>
 
       {/* Manual Operation Modal */}
       <OperationModal
@@ -1120,7 +1156,7 @@ export const App: React.FC = () => {
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        onExecutePrompt={(prompt) => handleSendMessage(prompt)}
+        onExecutePrompt={handleWorkflow}
         onExport={handleExport}
         onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1141,7 +1177,7 @@ export const App: React.FC = () => {
             <strong>Zenith Open Source Projects</strong>
           </a>
           <span className="footer-sep">•</span>
-          <span className="footer-tagline">Autonomous Spreadsheet AI Engine</span>
+          <span className="footer-tagline">{isProcessing ? 'Agent working…' : 'All changes run through the verified engine'}</span>
         </div>
         <div className="workspace-footer-right">
           <button className="footer-link-btn" onClick={() => navigate('agents')}>
@@ -1169,5 +1205,6 @@ export const App: React.FC = () => {
       {/* Non-blocking notifications */}
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
     </div>
+    </MotionConfig>
   );
 };

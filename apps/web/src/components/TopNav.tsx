@@ -1,40 +1,17 @@
 import React, { useRef, useState } from 'react';
 import {
-  Sun,
-  Moon,
-  Search,
-  Command,
-  Upload,
-  Download,
-  PlayCircle,
-  Undo2,
-  Redo2,
-  History,
-  BarChart2,
-  RotateCcw,
-  Settings,
-  FileSpreadsheet,
-  Bot,
-  BookOpen,
+  Sun, Moon, Search, Command, Upload, Download, SlidersHorizontal, Undo2, Redo2,
+  History, BarChart2, RotateCcw, Settings, FileSpreadsheet, Bot, BookOpen, ChevronRight,
 } from 'lucide-react';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 
-/**
- * Persistent light/dark switch. The state is owned by the document element (see theme.ts), so
- * this button does not need to be wired into the workspace's state tree.
- */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme());
+  const label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   return (
-    <button
-      className="btn btn-ghost btn-sm btn-icon"
-      onClick={() => setTheme(toggleTheme())}
-      title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-      aria-pressed={theme === 'dark'}
-      aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-      data-testid="theme-toggle"
-    >
-      {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+    <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => setTheme(toggleTheme())}
+      title={label} aria-label={label} aria-pressed={theme === 'dark'} data-testid="theme-toggle">
+      {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }
@@ -67,303 +44,88 @@ interface TopNavProps {
 }
 
 const FIXTURES = [
-  { label: 'Sample: Messy Orders (Built-in)', value: 'sample' },
-  { label: '01: Mixed Date Formats', value: '01-mixed-date-formats.xlsx' },
-  { label: '02: Merged Cells', value: '02-merged-cells.xlsx' },
-  { label: '03: Blank Rows', value: '03-blank-rows.xlsx' },
-  { label: '04: Numbers as Text', value: '04-numbers-stored-as-text.xlsx' },
-  { label: '05: Multiple Sheets', value: '05-multiple-sheets.xlsx' },
-  { label: '06: Chart File', value: '06-chart.xlsx' },
-  { label: '07: Conditional Formatting', value: '07-conditional-formatting.xlsx' },
-  { label: '08: Leap Days', value: '08-leap-days.xlsx' },
-  { label: '09: Formulas & Empty Cells', value: '09-formulas-and-empty-cells.xlsx' },
-  { label: '10: Combined Messy Orders', value: '10-combined-messy-orders.xlsx' },
-];
+  ['Sample: Messy Orders (Built-in)', 'sample'],
+  ['01: Mixed Date Formats', '01-mixed-date-formats.xlsx'],
+  ['02: Merged Cells', '02-merged-cells.xlsx'],
+  ['03: Blank Rows', '03-blank-rows.xlsx'],
+  ['04: Numbers as Text', '04-numbers-stored-as-text.xlsx'],
+  ['05: Multiple Sheets', '05-multiple-sheets.xlsx'],
+  ['06: Chart File', '06-chart.xlsx'],
+  ['07: Conditional Formatting', '07-conditional-formatting.xlsx'],
+  ['08: Leap Days', '08-leap-days.xlsx'],
+  ['09: Formulas & Empty Cells', '09-formulas-and-empty-cells.xlsx'],
+  ['10: Combined Messy Orders', '10-combined-messy-orders.xlsx'],
+] as const;
 
-export const TopNav: React.FC<TopNavProps> = ({
-  fileName,
-  activeSheetName,
-  rowCount,
-  colCount,
-  canUndo,
-  canRedo,
-  historyLength,
-  historyPosition,
-  searchQuery,
-  searchMatchCount,
-  onSearchChange,
-  onUndo,
-  onRedo,
-  onReset,
-  onFileUpload,
-  onExport,
-  onSelectFixture,
-  onOpenOperationModal,
-  onToggleHistory,
-  onOpenSettings,
-  onOpenUsage,
-  onOpenAgents,
-  onOpenDocs,
-  onOpenCommandPalette,
-}) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform || navigator.userAgent);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onFileUpload(file);
-      e.target.value = '';
-    }
-  };
-
+export const TopNav: React.FC<TopNavProps> = (props) => {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   return (
-    <header className="top-nav">
-      <div className="top-nav-left">
-        <div className="logo-badge">
-          <div className="logo-icon" aria-hidden="true">
-            <img
-              src="/excel-agent-logo.svg"
-              alt="ExcelAgento logo"
-              style={{ width: '24px', height: '24px', objectFit: 'contain' }}
-            />
-          </div>
-          <span className="logo-title">
-            Excel<span className="logo-title-accent">Agento</span>
-          </span>
-          <span className="logo-version-tag">PRO</span>
-        </div>
-
-        <a
-          href="https://zenithopensourceprojects.vercel.app/os"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="zenith-nav-badge"
-          title="Zenith Open Source Projects Hub (https://zenithopensourceprojects.vercel.app/os)"
-        >
-          <span className="zenith-nav-dot" />
-          <span>Zenith OS</span>
+    <header className="studio-header">
+      <div className="studio-header-main">
+        <a className="studio-brand" href="#" aria-label="ExcelAgento workspace">
+          <span className="studio-brand-mark" aria-hidden="true"><img src="/excel-agent-logo.svg" alt="" /></span>
+          <span>Excel<span className="studio-brand-accent">Agento</span><small>THE AGENT WORKSPACE</small></span>
         </a>
-
-        <span className="nav-vertical-divider" aria-hidden="true" />
-
-        <div className="file-meta-pill" title={`${fileName} • ${activeSheetName}`}>
-          <FileSpreadsheet size={13} className="file-meta-icon" />
-          <strong className="file-meta-name">{fileName}</strong>
-          <span className="file-meta-dot">/</span>
-          <span className="file-meta-sheet">{activeSheetName}</span>
-          <span className="file-meta-dims">
-            {rowCount} rows • {colCount} cols
-          </span>
+        <div className="file-meta-pill" title={`${props.fileName} • ${props.activeSheetName}`}>
+          <FileSpreadsheet size={17} aria-hidden="true" />
+          <div className="studio-file-copy"><strong className="file-meta-name">{props.fileName}</strong>
+            <span className="file-meta-dims">{props.rowCount} rows • {props.colCount} cols</span>
+            <span className="file-meta-sheet">{props.activeSheetName}</span>
+          </div>
+          <span className="studio-file-badge">Workbook</span>
         </div>
-
-        <label className="sr-only" htmlFor="top-nav-fixture">
-          Load test fixtures
-        </label>
-        <select
-          id="top-nav-fixture"
-          className="select-input select-fixture-pill"
-          title="Load Test Fixtures"
-          onChange={(e) => {
-            onSelectFixture(e.target.value);
-            // Reset so the same fixture can be re-selected.
-            e.target.value = '';
-          }}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            Load fixture…
-          </option>
-          {FIXTURES.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="top-nav-center">
-        {/* Quick In-Sheet Search */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-          <label className="sr-only" htmlFor="top-nav-search">
-            Find in sheet
-          </label>
-          <input
-            id="top-nav-search"
-            type="search"
-            className="form-input"
-            style={{
-              height: '28px',
-              padding: '3px 24px 3px 26px',
-              fontSize: '11.5px',
-              width: '125px',
-              background: 'var(--bg-elevated)',
-            }}
-            placeholder="Find in sheet…"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-          <Search
-            size={13}
-            style={{
-              position: 'absolute',
-              left: '8px',
-              color: 'var(--text-dim)',
-              pointerEvents: 'none',
-            }}
-          />
-          {searchQuery && (
-            <span
-              style={{
-                position: 'absolute',
-                right: '8px',
-                fontSize: '10px',
-                color: searchMatchCount > 0 ? 'var(--accent-amber)' : 'var(--text-dim)',
-                fontWeight: 600,
-              }}
-            >
-              {searchMatchCount}
-            </span>
-          )}
-        </div>
-
-        {onOpenCommandPalette && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm nav-hud-btn"
-            onClick={onOpenCommandPalette}
-            title={`Open Command Palette (${isMac ? '⌘K' : 'Ctrl+K'})`}
-          >
-            <Command size={12} />
-            <span>Commands</span>
-            <kbd className="nav-kbd">{isMac ? '⌘K' : 'Ctrl+K'}</kbd>
+        <button type="button" className="studio-command-trigger" onClick={props.onOpenCommandPalette}
+          title={`Open Command Palette (${isMac ? '⌘K' : 'Ctrl+K'})`}>
+          <Search size={15} aria-hidden="true" /><span>Search commands & workflows</span><kbd>{isMac ? '⌘ K' : 'Ctrl K'}</kbd>
+        </button>
+        <div className="studio-header-actions">
+          <input type="file" ref={fileInput} hidden tabIndex={-1} aria-hidden="true" accept=".xlsx,.xls,.csv"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) props.onFileUpload(file);
+              event.target.value = '';
+            }} />
+          <button type="button" className="btn btn-secondary" onClick={() => fileInput.current?.click()} title="Upload Excel or CSV file">
+            <Upload size={15} /><span>Upload File</span>
           </button>
-        )}
-
-        <label className="sr-only" htmlFor="top-nav-file">
-          Upload Excel or CSV file
-        </label>
-        <input
-          type="file"
-          id="top-nav-file"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          // Reached through the Upload button, so it is kept out of the tab order and the tree.
-          tabIndex={-1}
-          aria-hidden="true"
-          accept=".xlsx,.xls,.csv"
-          onChange={handleFileChange}
-        />
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => fileInputRef.current?.click()}
-          title="Upload Excel or CSV file"
-        >
-          <Upload size={14} />
-          Upload File
-        </button>
-
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={onExport}
-          title="Export current workbook to .xlsx"
-        >
-          <Download size={14} />
-          Export .xlsx
-        </button>
-
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={onOpenOperationModal}
-          title="Manually configure an engine operation"
-        >
-          <PlayCircle size={14} />
-          Run Operation
-        </button>
+          <button type="button" className="btn btn-primary" onClick={props.onExport} title="Export current workbook to .xlsx">
+            <Download size={15} /><span>Export .xlsx</span>
+          </button>
+          <ThemeToggle />
+          <button type="button" className="btn btn-ghost btn-icon" onClick={props.onOpenSettings}
+            aria-label="API Keys & Settings" title="API Keys & Settings"><Settings size={17} /></button>
+        </div>
       </div>
-
-      <div className="top-nav-right">
-        <button
-          className="btn btn-ghost btn-sm btn-icon"
-          onClick={onUndo}
-          disabled={!canUndo}
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo"
-        >
-          <Undo2 size={14} />
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm btn-icon"
-          onClick={onRedo}
-          disabled={!canRedo}
-          title="Redo (Ctrl+Y)"
-          aria-label="Redo"
-        >
-          <Redo2 size={14} />
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onToggleHistory}
-          title="View Operation Audit History"
-        >
-          <History size={14} />
-          History ({historyPosition}/{historyLength})
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm nav-agents-btn"
-          onClick={onOpenAgents}
-          title="Meet our autonomous multi-agent workforce"
-          data-testid="open-agents"
-        >
-          <Bot size={14} className="text-emerald" />
-          <span>Agents</span>
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onOpenDocs}
-          title="Architecture & Developer Docs"
-          data-testid="open-docs"
-        >
-          <BookOpen size={14} />
-          <span>Docs</span>
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onOpenUsage}
-          title="Model & token usage"
-          data-testid="open-usage"
-        >
-          <BarChart2 size={14} />
-          Usage
-        </button>
-
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onReset}
-          title="Reset to initial workbook"
-        >
-          <RotateCcw size={14} />
-          Reset
-        </button>
-
-        <ThemeToggle />
-
-        <button
-          className="btn btn-ghost btn-sm btn-icon"
-          onClick={onOpenSettings}
-          title="API Keys & Settings"
-          aria-label="API Keys & Settings"
-        >
-          <Settings size={14} />
-        </button>
+      <div className="studio-toolbar">
+        <div className="studio-breadcrumb"><span>Workspace</span><ChevronRight size={12} /><strong>{props.activeSheetName}</strong></div>
+        <div className="studio-undo-group" aria-label="Workbook history controls">
+          <button type="button" className="btn btn-ghost btn-icon" onClick={props.onUndo} disabled={!props.canUndo} aria-label="Undo" title="Undo (Ctrl+Z)"><Undo2 size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={props.onRedo} disabled={!props.canRedo} aria-label="Redo" title="Redo (Ctrl+Y)"><Redo2 size={16} /></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onToggleHistory} title="View Operation Audit History" aria-label={`History (${props.historyPosition}/${props.historyLength})`}>
+            <History size={14} /><span>History <span className="studio-count">{props.historyPosition}/{props.historyLength}</span></span>
+          </button>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={props.onReset} aria-label="Reset workbook" title="Reset to initial workbook"><RotateCcw size={14} /></button>
+        </div>
+        <div className="studio-toolbar-tools">
+          <label className="studio-find"><Search size={13} aria-hidden="true" /><span className="sr-only">Find in sheet</span>
+            <input type="search" placeholder="Find in sheet…" value={props.searchQuery} onChange={(event) => props.onSearchChange(event.target.value)} />
+            {props.searchQuery && <span className="studio-search-count">{props.searchMatchCount}</span>}
+          </label>
+          <label className="studio-examples"><span className="sr-only">Load test fixtures</span>
+            <select title="Load Test Fixtures" defaultValue="" onChange={(event) => { props.onSelectFixture(event.target.value); event.target.value = ''; }}>
+              <option value="" disabled>Sample workbooks</option>
+              {FIXTURES.map(([label, value]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onOpenOperationModal}><SlidersHorizontal size={14} /><span>Run Operation</span></button>
+        </div>
+        <nav className="studio-resource-nav" aria-label="Resources">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onOpenAgents} data-testid="open-agents" title="Meet the agents"><Bot size={15} /><span>Agents</span></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onOpenDocs} data-testid="open-docs" title="Architecture & Developer Docs"><BookOpen size={15} /><span>Docs</span></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onOpenUsage} data-testid="open-usage" title="Model & token usage"><BarChart2 size={15} /><span>Usage</span></button>
+          <button type="button" className="btn btn-ghost btn-icon studio-mobile-command" onClick={props.onOpenCommandPalette} aria-label="Open command palette"><Command size={15} /></button>
+        </nav>
       </div>
     </header>
   );

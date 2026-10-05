@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Search,
   Layers,
@@ -16,7 +16,13 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  ArrowUp,
+  ArrowUpRight,
+  Shapes,
+  Square,
 } from 'lucide-react';
+import type { CompactColumnProfile } from '@excel-agent/agent';
+import { workspaceWorkflows } from '../lib/workflows.js';
 import {
   type ProposedAction,
   type ProviderName,
@@ -75,6 +81,9 @@ interface AgentChatProps {
   selectionContext?: import('../lib/selection-context.js').CellSelection | null;
   onClearSelectionContext?: () => void;
   learnedActions?: number;
+  draftPrompt?: { text: string; revision: number };
+  workflowProfiles?: CompactColumnProfile[];
+  onOpenWorkflows?: () => void;
 }
 
 export const AgentChat: React.FC<AgentChatProps> = ({
@@ -95,13 +104,20 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   selectionContext,
   onClearSelectionContext,
   learnedActions,
+  draftPrompt,
+  workflowProfiles = [],
+  onOpenWorkflows,
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const composerRef = React.useRef<HTMLTextAreaElement>(null);
+  const nearBottomRef = React.useRef(true);
+  const reducedMotion = useReducedMotion();
+  const quickWorkflows = React.useMemo(() => workspaceWorkflows(workflowProfiles).filter((workflow) => ['duplicates', 'missing', 'statistics'].includes(workflow.id)), [workflowProfiles]);
 
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, messages[messages.length - 1]?.text, isProcessing]);
+    if (nearBottomRef.current) messagesEndRef.current?.scrollIntoView?.({ behavior: reducedMotion || isProcessing ? 'auto' : 'smooth', block: 'end' });
+  }, [messages.length, messages[messages.length - 1]?.text, isProcessing, reducedMotion]);
 
   // BYOK setup state
   const [setupProvider, setSetupProvider] = useState<ProviderName>('groq');
@@ -110,10 +126,19 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const [showKeyText, setShowKeyText] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
 
+  React.useEffect(() => {
+    if (!draftPrompt) return;
+    setInputText(draftPrompt.text);
+    setOfflineMode(true);
+    const frame = requestAnimationFrame(() => composerRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [draftPrompt]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || isProcessing) return;
-    onSendMessage(inputText);
+    nearBottomRef.current = true;
+    onSendMessage(inputText.trim());
     setInputText('');
   };
 
@@ -246,7 +271,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <Sparkles size={14} className="agent-sparkle-icon" />
                 <div className={`agent-status-dot ${hasApiKey ? 'active' : 'inactive'}`} />
               </div>
-              <span className="agent-title">ExcelAgento Copilot</span>
+              <div className="studio-agent-title"><span className="studio-eyebrow">YOUR PARTNER IN THE WORK</span><span className="agent-title">ExcelAgento Copilot</span></div>
             </div>
             {hasApiKey && (
               <button
@@ -267,7 +292,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <span className="byok-dot-pulse" />
                 {apiKeyProvider.toUpperCase()} ACTIVE
               </span>
-            ) : offlineMode ? (
+            ) : offlineMode || messages.length > 0 ? (
               <span className="byok-active-tag">
                 <span className="byok-dot-pulse" />
                 LOCAL ENGINE · NO KEY
@@ -278,10 +303,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             {learnedActions !== undefined && learnedActions > 0 && (
               <span
                 className="cortex-badge"
-                title="Synced with Supabase Cloud Collective Intelligence Cortex"
+                title="Previously verified actions learned by this workspace"
               >
                 <Zap size={10} className="cortex-zap-icon" />
-                <span>{learnedActions} Cortex Active</span>
+                <span>{learnedActions} learned</span>
               </span>
             )}
           </div>
@@ -289,19 +314,22 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       </div>
 
       {/* GATED BYOK SETUP STATE */}
-      {!hasApiKey && !offlineMode ? (
+      {!hasApiKey && !offlineMode && messages.length === 0 ? (
         <div className="byok-gate-container">
           <div className="byok-gate-card">
-            <div className="byok-avatar-icon">
-              <ShieldCheck size={28} className="byok-shield-icon" />
+            <div className="byok-avatar-icon studio-onboarding-mark">
+              <Sparkles size={28} className="byok-shield-icon" />
             </div>
 
             <h3 className="byok-gate-title">Get started with ExcelAgento</h3>
             <p className="byok-gate-desc">
-              Start with the local spreadsheet agent—no account, API key, or upload required.
-              Connect an AI provider whenever you want broader conversational reasoning.
+              The spreadsheet is yours. Let the repetitive work be ours. Start locally, then connect your favorite model whenever you need it.
             </p>
-
+            <button type="button" className="btn btn-primary studio-start-button" onClick={handleDemoKey}>
+              <Sparkles size={16} />Try the local agent — no key needed<ArrowUpRight size={16} />
+            </button>
+            <div className="studio-onboarding-steps"><span><b>01</b> Describe your task</span><span><b>02</b> Review the preview</span><span><b>03</b> Make it happen</span></div>
+            <details className="studio-provider-details"><summary><KeyRound size={14} />Connect an AI provider<span>Optional</span></summary>
             <form onSubmit={handleActivateKey} className="byok-gate-form">
               <div className="form-group">
                 <span className="form-label" id="byok-provider-label">
@@ -430,30 +458,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 Activate Excel Agent
               </button>
 
-              <div
-                style={{
-                  textAlign: 'center',
-                  margin: '4px 0',
-                  fontSize: '11px',
-                  color: 'var(--text-dim)',
-                }}
-              >
-                or
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={handleDemoKey}
-              >
-                Try the local agent — no key needed
-              </button>
             </form>
+            </details>
 
             <div className="byok-privacy-callout">
-              <strong>Ready instantly:</strong> Clean, sort, format, and calculate with the
-              deterministic engine. Your workbook stays in this browser.
+              <ShieldCheck size={14} /><span>Local tasks run in this browser. Preview changes, then apply. Undo stays within reach.</span>
             </div>
           </div>
         </div>
@@ -571,7 +580,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             : activeSwarmNode === 'engine'
                               ? 'Engine Executing'
                               : 'Swarm Reasoning'
-                      : '4 Nodes Synced'}
+                      : 'Ready'}
                   </span>
                 </div>
                 <div className="swarm-hud-nodes">
@@ -673,29 +682,31 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           })()}
 
           {/* Chat Messages */}
-          <div className="chat-messages">
+          <div className="chat-messages" aria-label="Agent conversation" onScroll={(event) => {
+            const element = event.currentTarget;
+            nearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 90;
+          }}>
             {messages.length === 0 ? (
               <div className="copilot-welcome-card">
                 <div className="welcome-icon-box">
                   <Sparkles size={20} className="welcome-sparkle-icon" />
                 </div>
-                <h4 className="welcome-title">Ready to assist your spreadsheet</h4>
+                <h4 className="welcome-title">Big ideas. Less busywork.</h4>
                 <p className="welcome-desc">
-                  Ask me to clean messy data, format dates, calculate metrics, sort, or analyze
-                  patterns.
+                  Tell me what you want to understand or change in <strong>{audit.sheetName}</strong>. I’ll help you find the next step.
                 </p>
                 <div className="welcome-guarantees">
                   <div className="welcome-guarantee-pill">
                     <ShieldCheck size={12} className="welcome-pill-icon text-emerald" />
-                    <span>Invariant Safe</span>
+                    <span>Preview first</span>
                   </div>
                   <div className="welcome-guarantee-pill">
                     <Zap size={12} className="welcome-pill-icon text-amber" />
-                    <span>0% Math Hallucination</span>
+                    <span>Local calculations</span>
                   </div>
                   <div className="welcome-guarantee-pill">
                     <Brain size={12} className="welcome-pill-icon text-purple" />
-                    <span>In-Browser Local Execution</span>
+                    <span>Undo available</span>
                   </div>
                 </div>
               </div>
@@ -708,7 +719,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   <motion.div
                     key={msg.id}
                     className={`chat-bubble ${msg.sender}`}
-                    initial={{ opacity: 0, y: 8 }}
+                     initial={reducedMotion ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.22, ease: 'easeOut' }}
                   >
@@ -929,7 +940,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           ) : (
                             <TypewriterText
                               text={msg.text}
-                              animate={isLatestAssistant}
+                               animate={false}
                               speed={10}
                             />
                           )}
@@ -1193,63 +1204,15 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Superhuman Autopilot Toolbar */}
-          <div className="superhuman-toolbar">
-            <div className="superhuman-toolbar-title">
-              <Sparkles size={11} className="superhuman-sparkle-icon" />
-              <span>Superhuman Autopilot</span>
-            </div>
-            <div className="superhuman-chips">
-              <button
-                type="button"
-                className="superhuman-chip chip-autopilot"
-                onClick={() => handleSuggestionClick('autopilot')}
-                disabled={isProcessing}
-                title="Autonomously scan dataset health, detect raw blobs, and propose highest-leverage optimization"
-              >
-                <Sparkles size={12} className="chip-icon-glow" />
-                <span>✨ Autopilot Deep Scan</span>
-              </button>
-              <button
-                type="button"
-                className="superhuman-chip"
-                onClick={() =>
-                  handleSuggestionClick(
-                    'can you give me an executive summary of these database logs and any errors?',
-                  )
-                }
-                disabled={isProcessing}
-                title="Generate high-level executive briefing with dataset vitals and key metrics"
-              >
-                <Layers size={12} />
-                <span>📊 Executive Briefing</span>
-              </button>
-              <button
-                type="button"
-                className="superhuman-chip"
-                onClick={() => handleSuggestionClick('filter rows where level is error')}
-                disabled={isProcessing}
-                title="Isolate incident errors and anomalies into a dedicated view"
-              >
-                <AlertTriangle size={12} />
-                <span>🚨 Isolate Errors</span>
-              </button>
-              <button
-                type="button"
-                className="superhuman-chip"
-                onClick={() => handleSuggestionClick('remove duplicate rows from these logs')}
-                disabled={isProcessing}
-                title="Deduplicate records across the entire dataset"
-              >
-                <ShieldCheck size={12} />
-                <span>🧹 Smart Clean</span>
-              </button>
-            </div>
+          <div className="studio-agent-shortcuts">
+            <div><span className="studio-eyebrow">A GOOD PLACE TO START</span>{onOpenWorkflows && <button type="button" className="studio-text-button" onClick={onOpenWorkflows}><Shapes size={12} />All workflows<ArrowUpRight size={12} /></button>}</div>
+            <div className="studio-shortcut-list">{quickWorkflows.map((workflow) => <button type="button" key={workflow.id} onClick={() => handleSuggestionClick(workflow.prompt)} disabled={isProcessing}>{workflow.title}</button>)}</div>
           </div>
 
           {/* Suggestions Drawer */}
           {audit.suggestions.length > 0 && (
-            <div className="suggestions-drawer">
+            <details className="suggestions-drawer studio-audit-suggestions">
+              <summary>Recommended for this sheet <span>{audit.suggestions.length}</span><ChevronDown size={12} /></summary>
               <div className="suggestions-title">
                 <svg
                   width="12"
@@ -1277,7 +1240,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   </button>
                 ))}
               </div>
-            </div>
+            </details>
           )}
 
           {/* Chat Input Bar */}
@@ -1296,28 +1259,39 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 </button>
               </div>
             )}
-            <input
+            <textarea
+              ref={composerRef}
               id="agent-chat-input"
-              type="text"
+              rows={2}
               className="chat-input"
               aria-label="Ask ExcelAgento"
-              placeholder="Ask ExcelAgento (e.g. 'Sort revenue', 'Dedupe')…"
+              aria-describedby="studio-composer-help"
+              placeholder="Ask ExcelAgento to explore, clean, or transform…"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  handleSubmit(event);
+                }
+              }}
               disabled={isProcessing}
             />
+            <div className="studio-composer-footer"><span id="studio-composer-help">Enter to send · Shift + Enter for a new line</span>
             <button
               type="submit"
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary btn-sm studio-send-button"
+              aria-label="Send"
               disabled={!inputText.trim() || isProcessing}
             >
-              Send
+              <ArrowUp size={16} />
             </button>
             {isProcessing && onStop && (
               <button type="button" className="btn btn-secondary btn-sm" onClick={onStop}>
-                Stop
+                <Square size={12} />Stop
               </button>
             )}
+            </div>
           </form>
         </>
       )}
