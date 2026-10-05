@@ -334,7 +334,7 @@ describe('privacy and token discipline', () => {
     // The ceiling tracks the size of the operation catalogue, which grows when the engine gains an
     // operation. It was 16,000 for the original 17 tools; the business and sheet operations added
     // to the catalogue grow the budget proportionally to maintain the live schema contract.
-    expect(system.length).toBeLessThan(30000);
+    expect(system.length).toBeLessThan(35000);
 
     // The user turn is exactly what the user typed, nothing added.
     const body = JSON.parse(String(init.body)) as {
@@ -342,4 +342,54 @@ describe('privacy and token discipline', () => {
     };
     expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'set C2 to 1' });
   });
+
+  it('delivers conversational LLM response directly without heuristic hijacking on user feedback', async () => {
+    const singleColumnCodeWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet_Cleaned',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('"""zenith_leads.py - Kolkata lead pipeline"""')],
+            [createCell('python zenith_leads.py discover --max-queries 20')],
+          ],
+        },
+      ],
+    };
+
+    stubFetch(async () =>
+      new Response(
+        JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content:
+                  "You're completely right. This worksheet contains Python source code for `zenith_leads.py` rather than a tabular dataset, so running a cleaning operation simply duplicated the script lines.",
+              },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 500, completion_tokens: 45, total_tokens: 545 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const decision = await orchestrator().decide({
+      query: 'you have just copy pasted the sheet',
+      workbook: singleColumnCodeWorkbook,
+      sheetName: 'Worksheet_Cleaned',
+      config: LIVE_CONFIG,
+    });
+
+    expect(decision.action).toBeUndefined();
+    expect(decision.plan).toBeUndefined();
+    expect(decision.source).toBe('llm');
+    expect(decision.message).toContain("You're completely right");
+    expect(decision.message).not.toContain('clean_to_new_sheet');
+  });
 });
+

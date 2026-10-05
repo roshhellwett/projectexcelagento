@@ -467,12 +467,14 @@ export class ExcelAgentOrchestrator {
     let llmMessage: string | undefined;
     let llmThought: string | undefined;
     let telemetry: LlmTelemetry | undefined;
+    let modelResponded = false;
 
     const config = input.config
       ? input.signal
         ? { ...input.config, signal: input.signal }
         : input.config
       : input.config;
+
 
     // Layer 4 - LLM Conductor & Specialists
     if (config && !isDemoKey(config.apiKey) && sheet) {
@@ -945,6 +947,7 @@ Execute this workflow:
         } else if (finalResponseContent && !llmMessage) {
           llmMessage = finalResponseContent;
         }
+        modelResponded = true;
 
         telemetry = {
           provider: response.provider,
@@ -1025,7 +1028,7 @@ Execute this workflow:
       };
     }
 
-    if (!llmPlan && isComplexRequest(effectiveQuery)) {
+    if (!modelResponded && !llmPlan && isComplexRequest(effectiveQuery)) {
       const compositePlan = this.synthesizeCompositePlan(input.workbook, sheetName, effectiveQuery);
       if (compositePlan) {
         emitActivity(
@@ -1049,18 +1052,33 @@ Execute this workflow:
 
     // Guardrail verification for single action
     const candidates: ProposedAction[] = [];
+    const isCritiqueOrFeedback =
+      /\b(?:copy\s*pasted?|duplicate\s*sheet|why\s+did\s+you|wrong|error|mistake|nothing|broken|undo|revert|why\s+llms?|not\s+thinking|not\s+understanding)\b/i.test(
+        input.query,
+      );
     const isSheetOrFilterQuery =
       /(?:filter|extract|separate|new sheet|separate sheet|create sheet|duplicate sheet|delete sheet)/i.test(
         input.query,
       );
     const isInformationalLlmProposal = llmAction?.name === 'aggregate_column';
 
-    if (isSheetOrFilterQuery && isInformationalLlmProposal && heuristic.proposedAction) {
-      candidates.push(heuristic.proposedAction);
-      if (llmAction) candidates.push(llmAction);
+    if (modelResponded) {
+      // When an LLM model is engaged, the LLM is the brain.
+      if (isSheetOrFilterQuery && isInformationalLlmProposal && heuristic.proposedAction) {
+        candidates.push(heuristic.proposedAction);
+        if (llmAction) candidates.push(llmAction);
+      } else if (llmAction) {
+        candidates.push(llmAction);
+      } else if (!isCritiqueOrFeedback && heuristic.proposedAction) {
+        // Fallback for explicit operational directives where model emitted text without a tool call,
+        // but NEVER hijack turns where the user is expressing critique, feedback, or conversational reasoning.
+        candidates.push(heuristic.proposedAction);
+      }
     } else {
-      if (llmAction) candidates.push(llmAction);
-      if (heuristic.proposedAction) candidates.push(heuristic.proposedAction);
+      // Offline mode without model or LLM disabled: use heuristic candidate
+      if (heuristic.proposedAction) {
+        candidates.push(heuristic.proposedAction);
+      }
     }
 
     let blockedByGuardrail: { action: ProposedAction; guardrail: GuardrailReport } | null = null;

@@ -27,7 +27,7 @@ export class ProviderError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_RETRIES = 2;
 export const DEFAULT_MAX_TOKENS = 8192;
 
@@ -298,6 +298,9 @@ function openAiCompatibleAdapter(
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
       }
+      if (name === 'openrouter') {
+        requestBody.include_reasoning = true;
+      }
 
       const response = await requestWithRetry(
         name,
@@ -364,6 +367,9 @@ function openAiCompatibleAdapter(
       };
       if (tools && tools.length > 0) {
         requestBody.tools = tools;
+      }
+      if (name === 'openrouter') {
+        requestBody.include_reasoning = true;
       }
 
       const response = await requestWithRetry(

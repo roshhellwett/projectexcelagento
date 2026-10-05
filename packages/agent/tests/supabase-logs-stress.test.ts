@@ -16,6 +16,7 @@ describe('Supabase Logs - Real-world Agent Stress Testing', () => {
         'id,date,method,pathname,status,timestamp,level,event_message,log_type,log_count,logs,auth_user',
         'row-1,"""2026-10-04T17:43:03.070Z""",,,00000,2026-10-04T17:43:03.070000,success,"statement: SET statement_timeout=\'58s\';\nCREATE FUNCTION test() RETURNS void AS $$ BEGIN NULL; END; $$;",postgres,null,[],null',
         'row-2,"""2026-10-04T17:43:01.416Z""",POST,/rest/v1/rpc,200,2026-10-04T17:43:01.416000,error,"cannot insert a non-DEFAULT value into column ""confidence""",edge,null,[],null',
+        'row-3,"""2026-10-04T17:43:00.000Z""",,,00000,2026-10-04T17:43:00.000000,success,"statement: SET statement_timeout=\'58s\';\nCREATE FUNCTION test() RETURNS void AS $$ BEGIN NULL; END; $$;",postgres,null,[],null',
       ].join('\n');
 
   function loadLogsWorkbook(): Workbook {

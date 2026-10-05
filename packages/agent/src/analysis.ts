@@ -2780,11 +2780,21 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   // FINAL DEFAULT HELPFUL SUGGESTION
-  if (
-    isUnstructuredSourceSheet(currentSheet) ||
-    /\b(?:perform|clean|structure|format|organize|tidy|make|fix|process|parse|do\s+it)\b/i.test(
+  const isCritiqueOrFeedback =
+    /\b(?:copy\s*pasted?|duplicate\s*sheet|why\s+did\s+you|wrong|error|mistake|nothing|broken|undo|revert)\b/i.test(
       userQuery,
-    )
+    );
+  const hasCleaningIntent =
+    /\b(?:clean|structure|format|organize|tidy|process|parse|extract|convert)\b/i.test(userQuery) ||
+    /^(?:do\s+it|perform|run|apply|start|fix\s+this)\b/i.test(userQuery.trim());
+
+  if (
+    !isCritiqueOrFeedback &&
+    (hasCleaningIntent ||
+      (isUnstructuredSourceSheet(currentSheet) &&
+        /\b(?:perform|clean|structure|format|organize|tidy|make|fix|process|parse|do\s+it)\b/i.test(
+          userQuery,
+        )))
   ) {
     const templateSheet = workbook.sheets.find(
       (s) => s.name !== currentSheet.name && /template/i.test(s.name),
