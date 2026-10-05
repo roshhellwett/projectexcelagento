@@ -1,5 +1,9 @@
 import {
   columnToIndex,
+  aggregateCells,
+  createCell,
+  toNumericOrNull,
+  createWorkbookValueReader,
   indexToColumn,
   type Cell,
   type Sheet,
@@ -105,7 +109,8 @@ export function profileColumn(
   const targetIdx = columnToIndex(column);
   if (targetIdx === undefined) return { error: `Invalid column reference: "${column}".` };
 
-  const profiles = getColumnProfiles(sheet);
+  const read = createWorkbookValueReader(workbook);
+  const profiles = getColumnProfiles(sheet, (column, row) => read(sheet.name, column, row));
   const profile = profiles.find((p) => p.letter.toUpperCase() === column.toUpperCase());
   if (!profile) return { error: `Column ${column} not found in sheet "${sheet.name}".` };
 
@@ -294,46 +299,27 @@ export function calculateAggregate(
 
   const sheet = resolveSheet(workbook, sheetName)!;
   const colIdx = columnToIndex(column)!;
-  const values: number[] = [];
-  const allValues = new Set<unknown>();
+  const cells: Cell[] = [];
+  const read = createWorkbookValueReader(workbook);
 
   for (let r = 1; r < sheet.rows.length; r += 1) {
-    const cell = sheet.rows[r]?.[colIdx];
-    if (cell && cell.value !== null && cell.value !== undefined && cell.value !== '') {
-      allValues.add(cell.value);
-      const num = typeof cell.value === 'number' ? cell.value : Number(cell.value);
-      if (!isNaN(num)) values.push(num);
-    }
+    cells.push(createCell(read(sheet.name, colIdx, r + 1)));
   }
 
-  let resultValue: number | null = null;
-  if (metric === 'count') {
-    resultValue = values.length;
-  } else if (metric === 'count_distinct') {
-    resultValue = allValues.size;
-  } else if (values.length > 0) {
-    switch (metric) {
-      case 'sum':
-        resultValue = values.reduce((a, b) => a + b, 0);
-        break;
-      case 'avg':
-        resultValue = values.reduce((a, b) => a + b, 0) / values.length;
-        break;
-      case 'min':
-        resultValue = values.reduce((lowest, value) => Math.min(lowest, value), Infinity);
-        break;
-      case 'max':
-        resultValue = values.reduce((highest, value) => Math.max(highest, value), -Infinity);
-        break;
-    }
+  if (!['sum', 'avg', 'min', 'max', 'count', 'count_distinct'].includes(metric)) {
+    return { error: `Unknown aggregate metric "${metric}".` };
   }
+  const outcome = aggregateCells(cells, metric === 'avg' ? 'average' : metric);
+  const numericCount = cells.reduce((count, cell) => count + (toNumericOrNull(cell.value) === null ? 0 : 1), 0);
+  const resultValue = metric === 'count' || metric === 'count_distinct' || numericCount > 0 || metric === 'sum'
+    ? outcome.value : null;
 
   return {
     sheet: sheet.name,
     column: column.toUpperCase(),
     metric,
-    value: resultValue !== null ? Math.round(resultValue * 1000) / 1000 : null,
-    count: values.length,
+    value: resultValue,
+    count: numericCount,
   };
 }
 
@@ -372,21 +358,34 @@ export function querySheetRecords(
   const headers = headerRow.map((c, i) => String(c?.value ?? indexToColumn(i)));
 
   // Resolve condition column indexes
-  const resolvedConditions = conditions.map((cond) => {
+  const resolvedConditions = [];
+  for (const cond of conditions) {
+    if (!cond || (typeof cond.value !== 'string' && typeof cond.value !== 'number')) {
+      return { error: 'Every condition must supply a string or numeric value.' };
+    }
     let colIdx = cond.column ? columnToIndex(cond.column) : undefined;
+    if (cond.column && (colIdx === undefined || colIdx >= sheetMaxCols(sheet.rows))) {
+      return { error: `Column "${cond.column}" not found in sheet "${sheet.name}".` };
+    }
     if (colIdx === undefined && cond.header) {
       const hLower = cond.header.trim().toLowerCase();
-      colIdx = headers.findIndex((h) => h.toLowerCase().includes(hLower));
-      if (colIdx === -1) colIdx = undefined;
+      const exact = headers.flatMap((h, i) => h.trim().toLowerCase() === hLower ? [i] : []);
+      const matches = exact.length > 0 ? exact : headers.flatMap((h, i) => h.toLowerCase().includes(hLower) ? [i] : []);
+      if (!hLower || matches.length !== 1) return { error: `Header "${cond.header}" is missing or ambiguous; use a column letter.` };
+      colIdx = matches[0];
     }
-    return {
+    const numVal = toNumericOrNull(cond.value);
+    if ((cond.operator === 'gt' || cond.operator === 'lt') && (colIdx === undefined || numVal === null)) {
+      return { error: 'Numeric comparisons require a valid column and numeric value.' };
+    }
+    resolvedConditions.push({
       ...cond,
       colIdx,
       operator: cond.operator ?? 'contains',
       strVal: String(cond.value).trim().toLowerCase(),
-      numVal: typeof cond.value === 'number' ? cond.value : parseFloat(String(cond.value)),
-    };
-  });
+      numVal,
+    });
+  }
 
   const matchingRowNumbers: number[] = [];
   const sampleMatchingRows: { rowNumber: number; cells: Record<string, unknown> }[] = [];
@@ -397,13 +396,13 @@ export function querySheetRecords(
 
     for (const cond of resolvedConditions) {
       let cellValStr = '';
-      let cellNumVal = NaN;
+      let cellNumVal: number | null = null;
 
       if (cond.colIdx !== undefined && cond.colIdx >= 0) {
         const cell = row[cond.colIdx];
         const val = cell?.value;
-        cellValStr = val !== null && val !== undefined ? String(val).toLowerCase() : '';
-        cellNumVal = typeof val === 'number' ? val : parseFloat(cellValStr);
+        cellValStr = val !== null && val !== undefined ? String(val).trim().toLowerCase() : '';
+        cellNumVal = toNumericOrNull(val);
       } else {
         // Search across all cells in the row if column not specified
         cellValStr = row
@@ -425,10 +424,10 @@ export function querySheetRecords(
           matchesCond = cellValStr.endsWith(cond.strVal);
           break;
         case 'gt':
-          matchesCond = !isNaN(cellNumVal) && !isNaN(cond.numVal) && cellNumVal > cond.numVal;
+          matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal > cond.numVal;
           break;
         case 'lt':
-          matchesCond = !isNaN(cellNumVal) && !isNaN(cond.numVal) && cellNumVal < cond.numVal;
+          matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal < cond.numVal;
           break;
         case 'contains':
         default:

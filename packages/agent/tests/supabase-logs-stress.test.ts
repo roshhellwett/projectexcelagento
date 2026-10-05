@@ -28,7 +28,7 @@ describe('Supabase Logs - Real-world Agent Stress Testing', () => {
     };
   }
 
-  it('hard parsing test: accurately parses multiline SQL, preserves SQLSTATE strings, and strips outer quotes', () => {
+  it('hard parsing test: accurately parses multiline SQL and preserves SQLSTATE strings and escaped literal quotes', () => {
     const wb = loadLogsWorkbook();
     const sheet = wb.sheets[0]!;
 
@@ -58,10 +58,10 @@ describe('Supabase Logs - Real-world Agent Stress Testing', () => {
     // Status: preserved as exact string '00000', not cast to integer 0
     expect(row1[4]?.value).toBe('00000');
 
-    // Date: stripped of outer quotes, leaving clean ISO string
+    // Triple CSV quotes encode literal quotes in the value. Import must preserve them;
+    // removing them is a normalization operation, not part of CSV decoding.
     expect(typeof row1[1]?.value).toBe('string');
-    expect(row1[1]?.value).not.toMatch(/^"/);
-    expect(row1[1]?.value).not.toMatch(/"$/);
+    expect(row1[1]?.value).toMatch(/^"\d{4}-\d{2}-\d{2}T.*"$/);
 
     // Event message: contains multiline SQL statements with intact newlines
     const msg = String(row1[7]?.value ?? '');

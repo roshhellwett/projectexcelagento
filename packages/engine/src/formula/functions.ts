@@ -25,6 +25,11 @@ export function setFormulaDateSystem(system: '1900' | '1904'): void {
   formulaDateSystem = system;
 }
 
+/** The evaluator restores this after each synchronous evaluation, including nested calls. */
+export function getFormulaDateSystem(): '1900' | '1904' {
+  return formulaDateSystem;
+}
+
 function flatten(args: unknown[]): unknown[] {
   const result: unknown[] = [];
   for (const item of args) {
@@ -70,9 +75,11 @@ function dateParts(val: unknown): [number, number, number] | FormulaErrorCode {
 }
 
 function isNumeric(val: unknown): boolean {
-  if (typeof val === 'number') return !isNaN(val);
+  if (typeof val === 'number') return Number.isFinite(val);
   if (typeof val === 'string') {
-    return val.trim() !== '' && !isNaN(Number(val.replace(/,/g, '')));
+    const text = val.trim();
+    if (!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+|\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?:[eE][-+]?\d+)?$/.test(text)) return false;
+    return Number.isFinite(Number(text.replace(/,/g, '')));
   }
   return false;
 }
@@ -122,38 +129,38 @@ function networkDaysBetween(start: Date, end: Date): number {
  */
 export function toNumericOrNull(val: unknown): number | null {
   if (!isNumeric(val)) return null;
-  return toNumber(val);
+  return typeof val === 'number' ? val : Number(String(val).trim().replace(/,/g, ''));
 }
 
 /** Evaluates criteria strings like ">10", "<=5", "<>Closed", "Active", or regex/wildcard */
 export function matchesCriteria(val: unknown, criteria: unknown): boolean {
   const critStr = toString(criteria).trim();
-  const valNum = isNumeric(val) ? toNumber(val) : null;
+  const valNum = toNumericOrNull(val);
 
   if (critStr.startsWith('>=')) {
-    const target = parseFloat(critStr.slice(2));
+    const target = toNumericOrNull(critStr.slice(2)) ?? NaN;
     return valNum !== null && valNum >= target;
   }
   if (critStr.startsWith('<=')) {
-    const target = parseFloat(critStr.slice(2));
+    const target = toNumericOrNull(critStr.slice(2)) ?? NaN;
     return valNum !== null && valNum <= target;
   }
-  if (critStr.startsWith('<>')) {
+  if (critStr.startsWith('<>') || critStr.startsWith('!=')) {
     const target = critStr.slice(2).trim();
-    if (isNumeric(target) && valNum !== null) return valNum !== parseFloat(target);
+    if (isNumeric(target) && valNum !== null) return valNum !== toNumericOrNull(target);
     return toString(val).toLowerCase() !== target.toLowerCase();
   }
   if (critStr.startsWith('>')) {
-    const target = parseFloat(critStr.slice(1));
+    const target = toNumericOrNull(critStr.slice(1)) ?? NaN;
     return valNum !== null && valNum > target;
   }
   if (critStr.startsWith('<')) {
-    const target = parseFloat(critStr.slice(1));
+    const target = toNumericOrNull(critStr.slice(1)) ?? NaN;
     return valNum !== null && valNum < target;
   }
   if (critStr.startsWith('=')) {
-    const target = critStr.slice(1).trim();
-    if (isNumeric(target) && valNum !== null) return valNum === parseFloat(target);
+    const target = critStr.slice(critStr.startsWith('==') ? 2 : 1).trim();
+    if (isNumeric(target) && valNum !== null) return valNum === toNumericOrNull(target);
     return toString(val).toLowerCase() === target.toLowerCase();
   }
 
@@ -170,7 +177,7 @@ export function matchesCriteria(val: unknown, criteria: unknown): boolean {
   }
 
   if (isNumeric(critStr) && valNum !== null) {
-    return valNum === parseFloat(critStr);
+    return valNum === toNumericOrNull(critStr);
   }
   return toString(val).toLowerCase() === critStr.toLowerCase();
 }

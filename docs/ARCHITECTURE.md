@@ -83,6 +83,26 @@ store (`packages/agent/src/memory.ts`):
 inverse patch restores the original. Any failure rolls back and returns a structured error
 without committing to history.
 
+## Atomic plans and statistical analysis
+
+`engine.applyOperationPlan()` stages each operation against the previous step's result,
+using the same validation, preview, invariants, and patch verification as a single operation.
+Confirmation authorizes the final commit, not the private simulation. Failed and unconfirmed
+plans never modify history, including an existing redo branch. A successful plan is recorded
+as one change, so one undo restores its starting workbook.
+
+`packages/engine/src/statistics.ts` provides descriptive statistics and ordinary least
+squares regression. Variance and covariance use streaming centered updates; descriptive
+statistics use compensated summation and inclusive interpolated quartiles. Missing and
+nonnumeric values have separate counts. Insufficient observations and constant predictors
+produce undefined statistics rather than invented zeros.
+
+`createWorkbookValueReader()` memoizes live formula results for an immutable workbook
+snapshot and bounds dependency recursion and range allocation. Statistical read tools and
+engine aggregates use this reader. `packages/agent/src/statistical-intent.ts` exposes these
+calculations through no-key chat; `statistical-tools.ts` exposes the same calculations to
+connected models as `describe_column` and `analyze_column_relationship`.
+
 ## Extension points
 
 | Goal                           | Where to change                                                                                                                   |
@@ -142,5 +162,7 @@ provider and font hosts the app genuinely uses.
   smoke test (upload, chat, apply, export) would cover paint-level regressions jsdom cannot see.
 - **Coverage thresholds** - coverage is not yet enforced in CI. Adding a floor per package would
   make untested additions fail loudly.
-- **Cross-device memory** - learned associations live in `localStorage` per browser. Sharing
-  them across devices would require a backend, which would break the zero-secret BYOK design.
+- **Cloud memory** - local associations persist in `localStorage`, with verified outcome
+  counts restored on startup. Optional Supabase synchronization is enabled only when both
+  build-time settings are supplied. Backend provisioning, access policies, and the backend's
+  exact CSP origin require deployment-specific verification.

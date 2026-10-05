@@ -1,5 +1,7 @@
 import {
   createOperationRegistry,
+  applyOperation,
+  cloneWorkbook,
   indexToColumn,
   maxColumnCount,
   type OperationRegistry,
@@ -659,6 +661,7 @@ export async function runMultiAgentTurn(
   const registry = deps.registry ?? createOperationRegistry();
   const verifiedSteps: ExecutionPlanStep[] = [];
   const failures: string[] = [];
+  let simWorkbook = cloneWorkbook(input.workbook);
   for (let index = 0; index < finalPlan.steps.length; index += 1) {
     const step = finalPlan.steps[index]!;
     const operation = registry.get(step.operation);
@@ -689,7 +692,7 @@ export async function runMultiAgentTurn(
       });
       continue;
     }
-    const validation = operation.validate(input.workbook, parsed.data);
+    const validation = operation.validate(simWorkbook, parsed.data);
     if (!validation.valid) {
       failures.push(
         `Step ${index + 1} fails validation: ${validation.errors.map((issue) => issue.message).join('; ')}`,
@@ -704,7 +707,15 @@ export async function runMultiAgentTurn(
       });
       continue;
     }
-    const preview = operation.preview(input.workbook, parsed.data);
+    const result = applyOperation(simWorkbook, step.operation, parsed.data, { registry, confirmed: true });
+    if (!result.ok) {
+      const error = result.error.messages.join('; ');
+      failures.push(`Step ${index + 1} failed verification: ${error}`);
+      verifiedSteps.push({ id: `step_${index + 1}`, operation: step.operation, args: step.args, description: step.description, status: 'error', error });
+      continue;
+    }
+    simWorkbook = result.workbook;
+    const preview = result.preview;
     verifiedSteps.push({
       id: `step_${index + 1}`,
       operation: step.operation,

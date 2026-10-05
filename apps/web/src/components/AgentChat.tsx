@@ -1126,7 +1126,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         first press states exactly what will be lost and how many cells it
                         touches; only a deliberate second press confirms.
                       */}
-                        {msg.proposedAction && msg.status === 'confirming' && (
+                        {(msg.proposedAction || msg.plan) && msg.status === 'confirming' && (
                           <div
                             className="confirm-gate"
                             role="group"
@@ -1134,10 +1134,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           >
                             <div className="confirm-gate-body">
                               <div className="confirm-gate-title">
-                                This cannot be undone from the preview. Confirm to continue.
+                                Review this change before applying. Undo will remain available.
                               </div>
                               <div className="confirm-gate-detail">
-                                <strong>{msg.proposedAction.name}</strong> will affect{' '}
+                                <strong>{msg.plan?.title ?? msg.proposedAction?.name}</strong> will affect{' '}
                                 <strong>{msg.confirmationPrompt?.affectedCells ?? 0}</strong> cell
                                 {msg.confirmationPrompt?.affectedCells === 1 ? '' : 's'}.
                               </div>
@@ -1152,7 +1152,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                             <div className="action-buttons-group">
                               <button
                                 className="btn btn-danger btn-sm"
-                                onClick={() => onApplyAction(msg.id, msg.proposedAction!, true)}
+                                onClick={() => msg.plan
+                                  ? onApplyPlan?.(msg.id, msg.plan, true)
+                                  : onApplyAction(msg.id, msg.proposedAction!, true)}
                                 disabled={isProcessing}
                               >
                                 Yes, apply this change

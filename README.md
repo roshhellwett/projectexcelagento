@@ -6,8 +6,9 @@ ExcelAgento turns hours of spreadsheet work into minutes. You chat; it plans, va
 and applies real Excel operations - deterministically, reversibly, and with every change
 verified against invariants before it touches your data.
 
-Production-ready, Vercel-deployable, and BYOK (Bring Your Own Key): no server, no
-uploaded spreadsheets, no secrets to manage.
+A browser-based, Vercel-deployable spreadsheet copilot with BYOK (Bring Your Own Key).
+Core cleaning and statistical analysis run locally without an API key. See
+[`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) for verified scope and release gaps.
 
 ---
 
@@ -19,8 +20,8 @@ uploaded spreadsheets, no secrets to manage.
 | Changes are reversible             | Each operation returns a forward patch **and** an inverse patch; a snapshot-backed `HistoryStack` powers undo/redo and time travel                                                                                                               |
 | The model cannot wreck your data   | A **guardrail layer** re-validates any AI-proposed action against the engine before it is shown; unknown or invalid actions are blocked                                                                                                          |
 | Destructive changes are deliberate | `applyOperation` _refuses_ any operation whose preview declares `requiresConfirmation` until the caller passes `confirmed: true`; the chat shows a two-step gate naming the operation and affected cell count. Cancel is a signal, not a failure |
-| Plans are atomic                   | A multi-step plan that fails any step rewinds through the history stack, leaving the workbook exactly as it was                                                                                                                                  |
-| Your data stays local              | Spreadsheets never leave the browser. Only a compact column profile is sent to your chosen model                                                                                                                                                 |
+| Plans are atomic                   | Every step is staged and verified before one history commit. Failure preserves the workbook and existing redo branch; one undo restores the whole plan                                                                                          |
+| Local by default                   | Without an AI key or cloud-memory configuration, analysis stays in the browser. Connected models receive column profiles, examples, chat context, and requested read-tool results                                                               |
 | Failures are contained             | Invariant violations roll back automatically and never commit to history                                                                                                                                                                         |
 
 ## Architecture
@@ -157,10 +158,39 @@ plus the analytics suite in `packages/engine/src/analytics-operations.ts`:
 `fill_series` (linear/date/text autofill), and `categorize_column` (first-match
 conditional logic).
 
+## Analyst statistics
+
+These requests work in **Try the local agent**, without an API key:
+
+- `descriptive statistics for column D` — counts, missing values, exclusions, sum, mean,
+  median, min/max, quartiles, sample variance, and sample/population standard deviation.
+- `find outliers in column D` — Tukey's 1.5 × IQR rule with source row numbers. Flags are
+  informational and do not delete observations.
+- `correlation between column C and column D` — Pearson correlation using complete
+  numeric pairs, with excluded-row counts.
+- `linear regression of column D on column C` — D is the response, C the predictor;
+  returns slope, intercept, R², and residual standard error.
+
+Calculations use the full column, not the prompt sample. Quartiles match Excel's
+`PERCENTILE.INC`. Undefined statistics are reported explicitly. Supported formulas are
+evaluated against the current workbook rather than stale imported caches; unsupported
+formulas and error values are excluded from numeric statistics and counted as nonnumeric.
+Grouped summaries also support median, standard deviation, and distinct counts.
+
+## Optional cloud memory
+
+The default deployment uses local browser memory. To configure Supabase synchronization,
+set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` at build time, provision the required
+tables/RPCs, and add that exact backend origin to the deployment's `connect-src` CSP.
+Cloud synchronization includes queries, learned operation arguments, and working-step
+payloads. The repository does not include backend provisioning or access policies, so this
+integration needs separate deployment verification.
+
 Adding a new engine operation automatically appears in the model's tool contract (derived
 from the Zod schema) and fails the build until it is documented in `packages/agent/src/tools.ts`.
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - layers, data flow, and extension points
+- [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) - current scope, examples, and release gaps
 - [`packages/engine/README.md`](packages/engine/README.md) - engine contract details

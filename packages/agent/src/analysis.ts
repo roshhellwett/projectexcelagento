@@ -5,9 +5,12 @@ import {
   columnToIndex,
   indexToColumn,
   maxColumnCount,
+  toNumericOrNull,
+  createWorkbookValueReader,
 } from '@excel-agent/engine';
 import { canonicalizeSpreadsheetQuery } from './memory.js';
 import type { ClarificationQuestion } from './types.js';
+import { analyzeStatisticalIntent } from './statistical-intent.js';
 
 /**
  * Spreading an array into `Math.min`/`Math.max` throws a RangeError once the
@@ -139,7 +142,7 @@ export function searchCellsInSheet(sheet: Sheet, query: string): CellMatch[] {
   return matches.length > 0 ? matches : fuzzyMatches;
 }
 
-export function getColumnProfiles(sheet: Sheet): ColumnMetadata[] {
+export function getColumnProfiles(sheet: Sheet, readValue?: (column: number, row: number) => CellValue): ColumnMetadata[] {
   const totalCols = maxColumnCount(sheet.rows);
   const headerRow = sheet.rows[0] || [];
   const dataRows = sheet.rows.slice(1);
@@ -158,20 +161,20 @@ export function getColumnProfiles(sheet: Sheet): ColumnMetadata[] {
     let dateCount = 0;
     let nonBlankCount = 0;
 
-    for (const r of dataRows) {
-      const val = r[c]?.value;
+    for (const [rowIndex, r] of dataRows.entries()) {
+      const val = readValue ? readValue(c, rowIndex + 2) : r[c]?.value;
       if (val !== null && val !== undefined && String(val).trim() !== '') {
         nonBlankCount++;
         const strVal = String(val).trim();
         distinct.set(strVal, (distinct.get(strVal) || 0) + 1);
 
-        const cleanNumStr = strVal.replace(/,/g, '');
-        const num = typeof val === 'number' ? val : Number(cleanNumStr);
-        if (!isNaN(num) && cleanNumStr !== '') {
+        const num = toNumericOrNull(val);
+        if (num !== null) {
           numericValues.push(num);
         }
 
         if (
+          val instanceof Date ||
           /^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(strVal) ||
           /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(strVal)
         ) {
@@ -257,9 +260,8 @@ export function getCompactColumnProfiles(sheet: Sheet, sampleLimit = 8): Compact
         distinctCountIsLowerBound = true;
       }
 
-      const numericText = text.replace(/,/g, '');
-      const numericValue = typeof value === 'number' ? value : Number(numericText);
-      if (numericText !== '' && Number.isFinite(numericValue)) {
+      const numericValue = toNumericOrNull(value);
+      if (numericValue !== null) {
         numericCount += 1;
         sum += numericValue;
         min = Math.min(min, numericValue);
@@ -267,8 +269,9 @@ export function getCompactColumnProfiles(sheet: Sheet, sampleLimit = 8): Compact
       }
 
       if (
-        typeof value === 'string' &&
-        (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(value))
+        value instanceof Date ||
+        (typeof value === 'string' &&
+        (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(value) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(value)))
       ) {
         dateCount += 1;
       }
@@ -885,7 +888,8 @@ export function analyzeSpreadsheetIntentAndData(
   const canonicalRaw = canonicalizeSpreadsheetQuery(raw);
   const q = canonicalRaw.toLowerCase();
   const origQ = raw.toLowerCase();
-  const columns = getColumnProfiles(currentSheet);
+  const readValue = createWorkbookValueReader(workbook);
+  const columns = getColumnProfiles(currentSheet, (column, row) => readValue(currentSheet.name, column, row));
   const totalRows = currentSheet.rows.length;
   const dataRowsCount = Math.max(0, totalRows - 1);
   const allColumns = columns.map((c) => c.letter);
@@ -1756,6 +1760,9 @@ export function analyzeSpreadsheetIntentAndData(
   }
 
   // 3.5. EXCEL FORMULA & ANALYTICAL KNOWLEDGE SYNTHESIS
+  const statisticalResult = analyzeStatisticalIntent(raw, workbook, currentSheet.name, columns);
+  if (statisticalResult) return statisticalResult;
+
   const isFormulaQuery =
     /\b(?:formula|function|equation|how\s+to\s+calculate|how\s+do\s+i\s+calculate|formula\s+for|calculate\s+formula)\b/i.test(
       q,
@@ -1970,13 +1977,13 @@ export function analyzeSpreadsheetIntentAndData(
           message:
             `### Row ${rowNum} Comprehensive Analysis: ${rowLabel}\n\n` +
             `Here is the complete calculation and breakdown for **Row ${rowNum}** (**${rowLabel}**) across all **${numericCells.length} recorded fiscal periods**:\n\n` +
-            `- **Total Sum (All FY)**: **${totalSum.toLocaleString()}** (${totalSum >= 0 ? '$' : '-$'}${Math.abs(totalSum).toLocaleString()}M)\n` +
+            `- **Total Sum (All FY)**: **${totalSum.toLocaleString()}**\n` +
             `- **Annual Average / Mean**: **${avg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**\n` +
             `- **Highest Period**: **${maxVal.toLocaleString()}** (${maxCell?.header || ''})\n` +
             `- **Lowest Period**: **${minVal.toLocaleString()}** (${minCell?.header || ''})\n` +
             `- **Periods Counted**: ${numericCells.length} Fiscal Periods (${numericCells[0]?.header} to ${numericCells[numericCells.length - 1]?.header})\n\n` +
             `#### Fiscal Year Breakdown Table:\n` +
-            `| Fiscal Period | Value ($M) | % of Total | Status |\n` +
+            `| Fiscal Period | Value (source units) | % of Total | Status |\n` +
             `| :--- | :--- | :--- | :--- |\n` +
             `${periodRows.join('\n')}\n` +
             `| **Total (All ${numericCells.length} FY)** | **${totalSum.toLocaleString()}** | **100.0%** | **${totalSum >= 0 ? 'Cumulative Profit' : 'Cumulative Loss'}** |\n\n` +
@@ -2046,16 +2053,10 @@ export function analyzeSpreadsheetIntentAndData(
         const row = currentSheet.rows[r];
         if (!row) continue;
 
-        const rawAmount = row[amountColIdx]?.value;
-        if (rawAmount === null || rawAmount === undefined || rawAmount === '') continue;
+        const num = toNumericOrNull(readValue(currentSheet.name, amountColIdx, r + 1));
+        if (num === null) continue;
 
-        const num =
-          typeof rawAmount === 'number'
-            ? rawAmount
-            : parseFloat(String(rawAmount).replace(/[^0-9.-]/g, ''));
-        if (isNaN(num)) continue;
-
-        let year = '2026';
+        let year = 'Unknown year';
         if (dateColIdx >= 0) {
           const rawDate = String(row[dateColIdx]?.value ?? '').trim();
           const yearMatch = rawDate.match(/20\d{2}|\b19\d{2}\b/);
@@ -2081,7 +2082,7 @@ export function analyzeSpreadsheetIntentAndData(
             completedRevenue: 0,
             pendingRevenue: 0,
             cancelledRevenue: 0,
-            maxOrder: 0,
+            maxOrder: -Infinity,
             regions: new Set<string>(),
           });
         }
@@ -2129,42 +2130,39 @@ export function analyzeSpreadsheetIntentAndData(
 
           const avgOrder = y.orderCount > 0 ? y.grossRevenue / y.orderCount : 0;
           const realizationRate =
-            y.grossRevenue > 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : '100.0';
-          const isProfitable =
-            y.completedRevenue > 0 || (y.grossRevenue > 0 && y.cancelledRevenue === 0);
-          const profitBadge = isProfitable
-            ? `🟢 **Profitable** (${realizationRate}% realized)`
-            : `🔴 **At Risk / Loss**`;
+            y.grossRevenue !== 0 ? ((y.completedRevenue / y.grossRevenue) * 100).toFixed(1) : 'Undefined';
+          const profitBadge = `${realizationRate}% completed`;
 
-          return `| **${y.year}** | ${y.orderCount} | **$${y.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | $${y.completedRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | $${avgOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${profitBadge} |`;
+          return `| **${y.year}** | ${y.orderCount} | **${y.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | ${y.completedRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${avgOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | ${profitBadge} |`;
         });
 
         const overallAvg = grandTotalOrders > 0 ? grandTotalGross / grandTotalOrders : 0;
         const totalRealization =
-          grandTotalGross > 0
+          grandTotalGross !== 0
             ? ((grandTotalCompleted / grandTotalGross) * 100).toFixed(1)
-            : '100.0';
+            : 'Undefined';
         const topYear = [...yearsSorted].sort((a, b) => b.grossRevenue - a.grossRevenue)[0];
 
         return {
           message:
-            `### 📊 Annual Profitability & Revenue Breakdown (Atlas Data Scientist)\n\n` +
+            `### Annual Revenue Breakdown\n\n` +
+            `This sheet supports a revenue analysis. Profit and margin require cost or expense data; positive revenue alone does not establish profitability.\n\n` +
             `Deterministic multi-period financial analysis of **"${amountCol.rawName}"** (Column ${amountCol.letter}) across reporting years:\n\n` +
-            `| Fiscal Year | Total Orders | Gross Revenue | Completed (Realized) | Avg Order Value | Annual Profitability Status |\n` +
+            `| Fiscal Year | Total Orders | Gross Revenue | Completed | Avg Order Value | Completion Share |\n` +
             `| :--- | :--- | :--- | :--- | :--- | :--- |\n` +
             `${tableRows.join('\n')}\n` +
-            `| **Overall Total** | **${grandTotalOrders}** | **$${grandTotalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **$${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **$${overallAvg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **🟢 High Margin Net Profitable (${totalRealization}% Cleared)** |\n\n` +
-            `### 💡 Strategic Profitability Takeaways:\n` +
+            `| **Overall Total** | **${grandTotalOrders}** | **${grandTotalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **${overallAvg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** | **${totalRealization}% completed** |\n\n` +
+            `### Revenue Findings:\n` +
             (topYear
-              ? `• **Most Profitable Year**: **${topYear.year}** generated **$${topYear.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** across ${topYear.orderCount} orders.\n`
+              ? `• **Highest Revenue Year**: **${topYear.year}** generated **${topYear.grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** across ${topYear.orderCount} orders.\n`
               : '') +
             (topYear?.maxOrderId
-              ? `• **Peak Transaction**: Order **${topYear.maxOrderId}** delivered the highest single volume of **$${topYear.maxOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**.\n`
+              ? `• **Peak Transaction**: Order **${topYear.maxOrderId}** delivered the highest single value of **${topYear.maxOrder.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}**.\n`
               : '') +
             (grandTotalCompleted > 0
-              ? `• **Realization & Cash Flow**: **$${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** (${totalRealization}%) is already completed, with **$${grandTotalPending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** in active pipeline.\n\n`
+              ? `• **Status Breakdown**: **${grandTotalCompleted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** (${totalRealization}%) is marked completed, with **${grandTotalPending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** marked pending or unspecified.\n\n`
               : '\n') +
-            `Would you like me to sort rows by profitability, generate an Annual Summary Pivot sheet, or calculate year-over-year margin growth?`,
+            `All amounts are in the source column's units. Would you like to generate an annual summary sheet?`,
         };
       }
     }

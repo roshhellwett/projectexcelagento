@@ -5,10 +5,10 @@ const MEMORY_KEY = 'excel_agent_memory_v1';
 
 const SUPABASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
-  'https://fsepapdadtrlddkyqqxu.supabase.co';
+  '';
 const SUPABASE_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
-  'sb_publishable_8JPAZFfCaS_U8nAAqc1rrQ_V6OSKAic';
+  '';
 
 function storage(): Storage | undefined {
   try {
@@ -37,47 +37,21 @@ const isTestMode =
   typeof import.meta !== 'undefined' &&
   (import.meta.env?.MODE === 'test' || Boolean(import.meta.env?.VITEST));
 
-export const memory = new SupabaseMemoryStore({
+export const cloudMemoryConfig = {
   url: SUPABASE_URL,
   apiKey: SUPABASE_KEY,
-  enabled: !isTestMode,
+  enabled: !isTestMode && Boolean(SUPABASE_URL && SUPABASE_KEY),
   timeoutMs: 2500,
   minConfidence: 0.5,
-});
+};
+
+export const memory = new SupabaseMemoryStore(cloudMemoryConfig);
 
 // Preload any existing browser local storage into the local hot-cache
 const localCache = readMemory();
 if (localCache) {
-  try {
-    // If local memory serialized JSON exists, seed the in-memory cache
-    const parsed: unknown = JSON.parse(localCache);
-    const records =
-      typeof parsed === 'object' && parsed !== null && 'records' in parsed
-        ? parsed.records
-        : undefined;
-    if (Array.isArray(records)) {
-      for (const rec of records) {
-        if (!isMemorySeed(rec)) continue;
-        memory.remember(rec);
-      }
-    }
-  } catch {
-    // Ignore corrupt local cache
-  }
-}
-
-function isMemorySeed(value: unknown): value is Parameters<typeof memory.remember>[0] {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.key === 'string' &&
-    typeof record.rawQuery === 'string' &&
-    typeof record.operation === 'string' &&
-    typeof record.sheetName === 'string' &&
-    typeof record.args === 'object' &&
-    record.args !== null &&
-    !Array.isArray(record.args)
-  );
+  // Loading preserves verified outcomes and does not re-publish saved records to the cloud.
+  memory.load(localCache);
 }
 
 export const orchestrator = createOrchestrator({ registry, memory });

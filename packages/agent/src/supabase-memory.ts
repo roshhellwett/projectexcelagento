@@ -315,6 +315,11 @@ export class SupabaseMemoryStore implements MemoryStore {
     return this.localStore.toJSON();
   }
 
+  /** Restore the browser cache, including verified outcomes, without any cloud writes. */
+  load(serialized: string): void {
+    this.localStore.load(serialized);
+  }
+
   // ==========================================================================
   // Ephemeral Working Memory Pool (100 MB Recycled Scratchpad)
   // ==========================================================================

@@ -314,9 +314,9 @@ export class InMemoryMemoryStore implements MemoryStore {
     let bestScore = threshold;
     for (const record of this.records) {
       if (record.sheetName !== sheetName) continue;
-      // A record that has never succeeded is untrusted until proven.
+       // A record that has never succeeded is untrusted until proven.
       const confidence = this.score(record);
-      if (confidence <= 0) continue;
+      if (record.successes < 1 || confidence <= 0) continue;
       const similarity = querySimilarity(query, record.key);
       const combined = similarity * confidence;
       if (similarity >= threshold && combined >= bestScore) {
@@ -379,8 +379,16 @@ export class InMemoryMemoryStore implements MemoryStore {
             typeof record === 'object' &&
             record !== null &&
             typeof record.key === 'string' &&
-            typeof record.operation === 'string',
-        );
+            typeof record.operation === 'string' &&
+            typeof record.id === 'string' &&
+            typeof record.rawQuery === 'string' &&
+            typeof record.sheetName === 'string' &&
+            typeof record.args === 'object' && record.args !== null && !Array.isArray(record.args) &&
+            Number.isInteger(record.successes) && record.successes >= 0 &&
+            Number.isInteger(record.failures) && record.failures >= 0 &&
+            Number.isFinite(record.createdAt) && Number.isFinite(record.lastUsedAt) &&
+            (record.schemaFingerprint === undefined || typeof record.schemaFingerprint === 'string'),
+        ).slice(-this.maxRecords);
       }
     } catch {
       // Corrupt memory is ignored rather than crashing the session.
@@ -390,7 +398,7 @@ export class InMemoryMemoryStore implements MemoryStore {
   /** Reliability in [0, 1]: reliability ratio damped by low observation counts. */
   private score(record: MemoryRecord): number {
     const total = record.successes + record.failures;
-    if (total === 0) return 0.5;
+    if (total === 0) return 0;
     const ratio = record.successes / total;
     const confidence = Math.min(1, total / 3);
     return ratio * (0.4 + 0.6 * confidence);

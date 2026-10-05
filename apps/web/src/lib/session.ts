@@ -1,13 +1,8 @@
-import { memory } from './agent-runtime';
+import { cloudMemoryConfig, memory } from './agent-runtime';
 
 const SESSION_KEY = 'excel_agent_tab_session_id';
-
-const SUPABASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
-  'https://fsepapdadtrlddkyqqxu.supabase.co';
-const SUPABASE_KEY =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
-  'sb_publishable_8JPAZFfCaS_U8nAAqc1rrQ_V6OSKAic';
+let fallbackSessionId: string | undefined;
+let storageUnavailable = false;
 
 function safeSessionStorage(): Storage | undefined {
   try {
@@ -26,11 +21,21 @@ function safeSessionStorage(): Storage | undefined {
  * creates completely separate, isolated working memory sandboxes.
  */
 export function getTabSessionId(): string {
-  const store = safeSessionStorage();
-  const existing = store?.getItem(SESSION_KEY);
-  if (existing && existing.length >= 16) {
+  if (storageUnavailable && fallbackSessionId) return fallbackSessionId;
+  let store = safeSessionStorage();
+  let existing: string | null | undefined;
+  try {
+    existing = store?.getItem(SESSION_KEY);
+  } catch {
+    store = undefined;
+    storageUnavailable = true;
+  }
+  // New tabs can inherit sessionStorage from their opener. Only reuse an ID generated
+  // by this document; a copied tab must not share the opener's working-memory sandbox.
+  if (existing && existing === fallbackSessionId) {
     return existing;
   }
+  if (!store && fallbackSessionId) return fallbackSessionId;
 
   let newId: string;
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -52,8 +57,9 @@ export function getTabSessionId(): string {
     store?.setItem(SESSION_KEY, newId);
   } catch {
     // Storage might be restricted; session ID remains held in memory
+    storageUnavailable = true;
   }
-
+  fallbackSessionId = newId;
   return newId;
 }
 
@@ -72,10 +78,11 @@ export async function clearCurrentTabWorkingMemory(): Promise<boolean> {
 if (typeof window !== 'undefined') {
   const cleanup = () => {
     try {
+      if (!cloudMemoryConfig.enabled) return;
       const sessionId = safeSessionStorage()?.getItem(SESSION_KEY);
       if (!sessionId) return;
 
-      const endpoint = `${SUPABASE_URL.replace(/\/+$/, '')}/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(
+      const endpoint = `${cloudMemoryConfig.url.replace(/\/+$/, '')}/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(
         sessionId,
       )}`;
 
@@ -84,8 +91,8 @@ if (typeof window !== 'undefined') {
         void fetch(endpoint, {
           method: 'DELETE',
           headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
+            apikey: cloudMemoryConfig.apiKey,
+            Authorization: `Bearer ${cloudMemoryConfig.apiKey}`,
           },
           keepalive: true,
         }).catch(() => {});

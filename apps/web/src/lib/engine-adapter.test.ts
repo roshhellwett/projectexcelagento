@@ -8,6 +8,8 @@ import {
   decodeTextBytes,
   detectDelimiter,
   parseCsvField,
+  workbookFromCsvText,
+  MAX_IMPORTED_CELLS,
 } from './workbook-io.js';
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -70,6 +72,30 @@ describe('xlsx adapter', () => {
       .sheets[0];
     // No date format means it is just a number, so it must not be reinterpreted.
     expect(sheet?.rows[0]?.[0]?.value).toBe(44197);
+  });
+
+  it('preserves the 1904 epoch, including raw serials referenced by formulas', async () => {
+    const restored = await roundTrip({ dateSystem: '1904', sheets: [{ name: 'Dates', rows: [[
+      createCell(new Date(Date.UTC(2026, 0, 1))), createCell(44561), createCell(44561, { formula: 'B1', numberFormat: 'yyyy-mm-dd' }),
+    ]] }] });
+    expect(restored.dateSystem).toBe('1904');
+    expect(restored.sheets[0]?.rows[0]?.[0]?.value).toEqual(new Date(Date.UTC(2026, 0, 1)));
+    expect(restored.sheets[0]?.rows[0]?.[1]?.value).toBe(44561);
+    expect(restored.sheets[0]?.rows[0]?.[2]?.formula).toBe('B1');
+  });
+
+  it('keeps formulas even when Excel has not supplied a cached result', async () => {
+    const restored = await roundTrip({ sheets: [{ name: 'Formulas', rows: [[createCell(null, { formula: 'SUM(B1:B2)' })]] }] });
+    expect(restored.sheets[0]?.rows[0]?.[0]?.formula).toBe('SUM(B1:B2)');
+  });
+
+  it('imports an Excel error code as an error instead of a magnitude', async () => {
+    const XLSX = await import('xlsx');
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, { '!ref': 'A1', A1: { t: 'e', v: 7, f: '1/0' } }, 'Errors');
+    const { workbook } = await xlsxToWorkbook(XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer);
+    expect(workbook.sheets[0]?.rows[0]?.[0]?.value).toBe('#DIV/0!');
+    expect(workbook.sheets[0]?.rows[0]?.[0]?.formula).toBe('1/0');
   });
 
   it('writes Excel-legal, unique sheet names', async () => {
@@ -189,6 +215,12 @@ describe('delimiter detection', () => {
       ',',
     );
   });
+
+  it('does not use quoted punctuation as evidence of a delimiter', () => {
+    expect(detectDelimiter('"Doe, John"')).toBeNull();
+    expect(detectDelimiter('"Doe, John"\n"Kane, Sue"')).toBeNull();
+    expect(detectDelimiter('Name,Amount')).toBe(',');
+  });
 });
 
 describe('CSV field typing', () => {
@@ -196,6 +228,9 @@ describe('CSV field typing', () => {
     expect(parseCsvField('12.5', ',')).toBe(12.5);
     expect(parseCsvField('42', ',')).toBe(42);
     expect(parseCsvField('-7', ',')).toBe(-7);
+    expect(parseCsvField('0.123', ',')).toBe(0.123);
+    expect(parseCsvField('12.345', ',')).toBe(12.345);
+    expect(parseCsvField('1.25e3', ',')).toBe(1250);
   });
 
   it('preserves identifiers that begin with a zero', () => {
@@ -203,6 +238,7 @@ describe('CSV field typing', () => {
     expect(parseCsvField('00123', ',')).toBe('00123');
     expect(parseCsvField('007', ',')).toBe('007');
     expect(parseCsvField('0', ',')).toBe(0);
+    expect(parseCsvField('9007199254740993', ',')).toBe('9007199254740993');
   });
 
   it('reads a European decimal comma when the delimiter is a semicolon', () => {
@@ -226,10 +262,19 @@ describe('CSV field typing', () => {
     expect(parseCsvField('12abc', ',')).toBe('12abc');
     expect(parseCsvField('  ', ',')).toBe(null);
     expect(parseCsvField('=A1+B1', ',')).toBe('=A1+B1');
+    expect(parseCsvField('  Ada  ', ',')).toBe('  Ada  ');
+    expect(parseCsvField('null', ',')).toBe('null');
+    expect(parseCsvField('"quoted text"', ',')).toBe('"quoted text"');
+    expect(parseCsvField('1,2,3', ',')).toBe('1,2,3');
   });
 });
 
 describe('CSV import end to end', () => {
+  it('enforces the cell limit before allocating a padded CSV workbook', () => {
+    const wideHeader = Array.from({ length: 1500 }, () => 'h').join(',');
+    const csv = `${wideHeader}\n${'x\n'.repeat(Math.floor(MAX_IMPORTED_CELLS / 1500) + 1)}`;
+    expect(() => workbookFromCsvText(csv, ',', 'Large')).toThrow(/cell import limit/);
+  });
   it('imports plain CSV uploads', async () => {
     const csv = 'Name,Amount\nAda,12.5\nGrace,7\n';
     const { workbook, report } = await xlsxToWorkbook(toArrayBuffer(new TextEncoder().encode(csv)));

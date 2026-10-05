@@ -7,7 +7,7 @@ import { advancedOperations } from './advanced-operations.js';
 import { invariantNoCellsOutsideTargetRange } from './invariants.js';
 import type { HistoryStack } from './history.js';
 import type { Operation, OperationResult, Preview, Workbook } from './types.js';
-import { applyPatch, cloneWorkbook, workbookEquals } from './workbook.js';
+import { applyPatch, cloneWorkbook, invertPatch, patchBetween, workbookEquals } from './workbook.js';
 
 export class OperationRegistry {
   private readonly operations = new Map<string, Operation<unknown>>();
@@ -81,6 +81,79 @@ export interface ApplyOperationOptions {
    * guarantee instead of a suggestion.
    */
   confirmed?: boolean;
+}
+
+export interface OperationPlanStep {
+  operation: string;
+  args: unknown;
+}
+
+export type ApplyOperationPlanResult =
+  | { ok: true; workbook: Workbook; steps: Extract<ApplyOperationResult, { ok: true }>[] }
+  | (Extract<ApplyOperationResult, { ok: false }> & { failedStep: number });
+
+/**
+ * Stage and verify every step against the preceding result, then commit once. A refused plan
+ * cannot discard an existing redo branch, leak partial steps into history, or trigger history
+ * compaction. One undo restores the entire plan.
+ */
+export function applyOperationPlan(
+  workbook: Workbook,
+  steps: OperationPlanStep[],
+  options: ApplyOperationOptions & { operationName?: string } = {},
+): ApplyOperationPlanResult {
+  if (steps.length === 0) {
+    return {
+      ok: false,
+      workbook: cloneWorkbook(workbook),
+      failedStep: 0,
+      error: {
+        code: 'validation-error',
+        messages: ['A plan must contain at least one step.'],
+        rolledBack: false,
+      },
+    };
+  }
+  let current = cloneWorkbook(workbook);
+  const results: Extract<ApplyOperationResult, { ok: true }>[] = [];
+  let confirmationStep = -1;
+  for (const [index, step] of steps.entries()) {
+    // Confirmation here only authorizes the private simulation; no caller-visible state is committed.
+    const result = applyOperation(current, step.operation, step.args, {
+      registry: options.registry,
+      confirmed: true,
+    });
+    if (!result.ok) return { ...result, workbook: cloneWorkbook(workbook), failedStep: index };
+    if (result.preview.requiresConfirmation && confirmationStep === -1) confirmationStep = index;
+    current = result.workbook;
+    results.push(result);
+  }
+  if (confirmationStep !== -1 && !options.confirmed) {
+    const previews = results.map((result) => result.preview);
+    return {
+      ok: false,
+      workbook: cloneWorkbook(workbook),
+      failedStep: confirmationStep,
+      error: {
+        code: 'confirmation-required',
+        messages: ['This plan requires confirmation. Nothing was applied.'],
+        rolledBack: false,
+      },
+      preview: {
+        valid: true,
+        affectedCells: previews.reduce((count, preview) => count + preview.affectedCells, 0),
+        changes: previews.flatMap((preview) => preview.changes).slice(0, 20),
+        warnings: previews.flatMap((preview) => preview.warnings),
+        errors: [],
+        requiresConfirmation: true,
+      },
+    };
+  }
+  const patch = patchBetween(workbook, current);
+  if (patch.length > 0) {
+    options.history?.commit(options.operationName ?? 'plan', current, patch, invertPatch(patch));
+  }
+  return { ok: true, workbook: current, steps: results };
 }
 
 /** Single transactional entry point. Failures never modify the caller's workbook. */

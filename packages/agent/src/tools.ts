@@ -220,7 +220,7 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
   },
   group_and_summarize: {
     description:
-      'Pivot: group rows by one or more columns, aggregate a value column (sum, average, count, min, max), and write the result to a new sheet, sorted by group key. Text in the value column is counted and reported, not read as zero.',
+      'Pivot: group rows by one or more columns, aggregate a value column (sum, average, count, count_distinct, min, max, median, stdev), and write the result to a new sheet, sorted by group key. Text in the value column is counted and reported, not read as zero.',
     category: 'transform',
     example: {
       sheet: 'Sheet1',

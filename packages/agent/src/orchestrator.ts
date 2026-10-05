@@ -24,6 +24,7 @@ import { complete, completeStream, FALLBACK_MODELS, ProviderError } from './prov
 import { sheetFingerprint } from './memory.js';
 import { buildToolCatalog, type ToolDescriptor } from './tools.js';
 import { isComplexRequest, runMultiAgentTurn } from './multi-agent.js';
+import { analyzeColumnRelationship, describeColumn, STATISTICAL_TOOL_DEFINITIONS } from './statistical-tools.js';
 
 /**
  * `JSON.stringify` replacer that neutralizes every string in a tool result.
@@ -104,7 +105,7 @@ export class ExcelAgentOrchestrator {
   }
 
   private buildAllToolDefinitions(): ToolDefinition[] {
-    const definitions: ToolDefinition[] = [...READ_TOOL_DEFINITIONS];
+    const definitions: ToolDefinition[] = [...READ_TOOL_DEFINITIONS, ...STATISTICAL_TOOL_DEFINITIONS];
 
     for (const tool of this.catalog) {
       definitions.push({
@@ -588,6 +589,8 @@ export class ExcelAgentOrchestrator {
               'calculate_aggregate',
               'query_sheet_records',
               'search_web',
+              'describe_column',
+              'analyze_column_relationship',
             ].includes(fnName);
 
             if (isReadTool) {
@@ -1048,6 +1051,12 @@ export class ExcelAgentOrchestrator {
     args: Record<string, unknown>,
   ): Promise<unknown> {
     switch (name) {
+      case 'describe_column':
+        return describeColumn(workbook, typeof args.sheet === 'string' ? args.sheet : sheetName,
+          String(args.column ?? ''), typeof args.headerRow === 'number' ? args.headerRow : 1);
+      case 'analyze_column_relationship':
+        return analyzeColumnRelationship(workbook, typeof args.sheet === 'string' ? args.sheet : sheetName,
+          String(args.xColumn ?? ''), String(args.yColumn ?? ''), typeof args.headerRow === 'number' ? args.headerRow : 1);
       case 'get_workbook_overview':
         return getWorkbookOverview(workbook);
       case 'profile_column':
@@ -1128,12 +1137,15 @@ export class ExcelAgentOrchestrator {
 
       const guardrail = this.guardrail(simWorkbook, stepAction);
       const stepPreview = guardrail.preview;
+      const errors = [...guardrail.errors];
 
       if (guardrail.passed) {
-        const execRes = applyOperation(simWorkbook, opName, stepArgs, { registry: this.registry });
+        const execRes = applyOperation(simWorkbook, opName, stepArgs, { registry: this.registry, confirmed: true });
         if (execRes.ok) {
           simWorkbook = execRes.workbook;
           totalAffected += execRes.report.affectedCells;
+        } else {
+          errors.push(...execRes.error.messages);
         }
       }
 
@@ -1143,16 +1155,16 @@ export class ExcelAgentOrchestrator {
         args: stepArgs,
         description: rawStep.description || `Execute ${opName}`,
         category: 'transform',
-        status: guardrail.passed ? 'pending' : 'error',
+        status: guardrail.passed && errors.length === 0 ? 'pending' : 'error',
         preview: stepPreview,
-        error: guardrail.errors.length > 0 ? guardrail.errors.join('; ') : undefined,
+        error: errors.length > 0 ? errors.join('; ') : undefined,
       });
     }
 
     if (steps.length === 0) return undefined;
 
     const failed = steps.filter((s) => s.status === 'error').length;
-    const status = failed === steps.length ? 'error' : 'pending';
+    const status = failed > 0 ? 'error' : 'pending';
 
     return {
       id: `plan-${Date.now()}`,

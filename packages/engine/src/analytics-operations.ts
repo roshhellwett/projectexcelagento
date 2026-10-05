@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { matchesCriteria, toNumericOrNull } from './formula/functions.js';
+import { createWorkbookValueReader } from './formula/workbook-reader.js';
 import { runInvariants } from './invariants.js';
 import {
   cellValueSchema,
@@ -203,7 +204,7 @@ function looselyEqual(left: CellValue, right: CellValue): boolean {
 
 /** Round away binary-float dust so an extrapolated series reads back as the numbers a user typed. */
 function tidy(value: number): number {
-  return Number.isFinite(value) ? Math.round(value * 1e10) / 1e10 : 0;
+  return Number.isFinite(value) ? Number(value.toPrecision(15)) : value;
 }
 
 /** Join key normalization: trimmed and case-insensitive, which is how a lookup key behaves. */
@@ -318,14 +319,14 @@ export function aggregateCells(cells: Cell[], aggregation: Aggregation): Aggrega
       };
     case 'min':
       return {
-        value: numbers.length === 0 ? 0 : Math.min(...numbers),
+        value: numbers.length === 0 ? 0 : numbers.reduce((min, value) => Math.min(min, value), Infinity),
         nonNumeric,
         blank,
         warnings,
       };
     case 'max':
       return {
-        value: numbers.length === 0 ? 0 : Math.max(...numbers),
+        value: numbers.length === 0 ? 0 : numbers.reduce((max, value) => Math.max(max, value), -Infinity),
         nonNumeric,
         blank,
         warnings,
@@ -451,16 +452,17 @@ function selectAggregateCells(workbook: Workbook, args: AggregateColumnArgs): Ce
   const expression = composed.ok ? composed.expression : undefined;
 
   const selected: Cell[] = [];
+  const read = createWorkbookValueReader(workbook);
   for (let rowIndex = args.headerRow; rowIndex < sheet.rows.length; rowIndex += 1) {
     const row = sheet.rows[rowIndex];
     if (rowIsBlank(row)) continue;
     if (
       expression !== undefined &&
-      !matchesCriteria(row?.[filterColumn]?.value ?? null, expression)
+      !matchesCriteria(read(args.sheet, filterColumn, rowIndex + 1), expression)
     ) {
       continue;
     }
-    selected.push(row?.[valueColumn] ?? createCell(null));
+    selected.push(createCell(read(args.sheet, valueColumn, rowIndex + 1)));
   }
   return selected;
 }
@@ -501,7 +503,7 @@ export const aggregateColumnOperation: Operation<AggregateColumnArgs> = {
 // 2. GROUP AND SUMMARIZE (group_and_summarize)
 // ============================================================================
 
-const summarizableSchema = aggregationSchema.exclude(['count_distinct', 'median', 'stdev']);
+const summarizableSchema = aggregationSchema;
 
 export const groupAndSummarizeArgsSchema = z.object({
   sheet: z.string().trim().min(1),
@@ -544,12 +546,13 @@ function buildSummary(workbook: Workbook, args: GroupAndSummarizeArgs): Summary 
   const warnings: ValidationIssue[] = [];
 
   const groups = new Map<string, { key: CellValue[]; cells: Cell[] }>();
+  const read = createWorkbookValueReader(workbook);
   for (let rowIndex = args.headerRow; rowIndex < (sheet?.rows.length ?? 0); rowIndex += 1) {
     const row = sheet?.rows[rowIndex];
     if (rowIsBlank(row)) continue;
-    const key = groupColumns.map((column) => row?.[column]?.value ?? null);
+    const key = groupColumns.map((column) => read(args.sheet, column, rowIndex + 1));
     const id = JSON.stringify(key.map((value) => keyFor(value)));
-    const cell = row?.[valueColumn] ?? createCell(null);
+    const cell = createCell(read(args.sheet, valueColumn, rowIndex + 1));
     const group = groups.get(id);
     if (group) group.cells.push(cell);
     else groups.set(id, { key, cells: [cell] });
@@ -578,8 +581,10 @@ function buildSummary(workbook: Workbook, args: GroupAndSummarizeArgs): Summary 
     const measurable = outcome.blank + outcome.nonNumeric < group.cells.length;
     // `count` always has an answer; a mean or a minimum over nothing does not. Blank beats 0 here
     // because 0 is a real result that would be indistinguishable from "the numbers really were 0".
-    if (!measurable && args.aggregation !== 'count') unmatchedGroups += 1;
-    const value = measurable || args.aggregation === 'count' ? outcome.value : null;
+    const countsValues = args.aggregation === 'count' || args.aggregation === 'count_distinct';
+    if (!measurable && !countsValues) unmatchedGroups += 1;
+    const value = measurable || countsValues ? outcome.value : null;
+    warnings.push(...outcome.warnings);
     rows.push([...group.key.map((key) => createCell(key)), createCell(value)]);
   }
 
@@ -598,7 +603,7 @@ function buildSummary(workbook: Workbook, args: GroupAndSummarizeArgs): Summary 
 function groupAndSummarizeTarget(workbook: Workbook, args: GroupAndSummarizeArgs): CellRange[] {
   if (!getSheet(workbook, args.sheet)) return [];
   const { rows } = buildSummary(workbook, args);
-  const width = Math.max(1, ...rows.map((row) => row.length));
+  const width = Math.max(1, maxColumnCount(rows));
   return [
     {
       sheet: uniqueSheetName(workbook, args.targetSheet),

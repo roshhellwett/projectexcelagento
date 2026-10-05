@@ -27,6 +27,7 @@ export * from './invariants.js';
 export * from './operations.js';
 export * from './advanced-operations.js';
 export * from './analytics-operations.js';
+export * from './statistics.js';
 export * from './registry.js';
 export * from './formula/index.js';
 export type {

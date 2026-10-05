@@ -6,6 +6,7 @@ import {
   type DateSystem,
   type Preview,
   applyOperation,
+  applyOperationPlan,
   HistoryStack,
   cloneWorkbook,
   maxColumnCount,
@@ -770,118 +771,45 @@ export const App: React.FC = () => {
   // Apply multi-step execution plan from chat
   const handleApplyPlan = (messageId: string, plan: ExecutionPlan, confirmed = false) => {
     setIsProcessing(true);
-    let currentWb = workbook;
-    let appliedCount = 0;
-    const updatedSteps = [...plan.steps];
-    let planFailed = false;
-    // Remembered so a partial run can be rewound through history rather than guessed at.
-    const historyPositionBefore = historyStack.position;
-
     try {
-      for (let i = 0; i < updatedSteps.length; i++) {
-        const step = updatedSteps[i];
-        if (!step) continue;
-
-        // A step the guardrail already rejected must never be executed just because it is part
-        // of a batch. Applying the rest is still worth offering, so it is skipped, not fatal.
-        if (step.status === 'error' && !confirmed) {
-          pushToast(
-            'warning',
-            `Skipped Step ${i + 1} (${step.operation}): ${step.error ?? 'this step failed validation'}.`,
-          );
-          continue;
-        }
-
-        const result = applyOperation(currentWb, step.operation, step.args, {
-          registry,
-          history: historyStack,
-          confirmed,
-        });
-
-        if (result.ok) {
-          currentWb = result.workbook;
-          appliedCount++;
-          updatedSteps[i] = { ...step, status: 'completed' };
-        } else if (result.error.code === 'confirmation-required') {
-          planFailed = true;
-          updatedSteps[i] = {
-            ...step,
-            status: 'error',
-            error: result.error.messages.join(', '),
-          };
-          pushToast(
-            'warning',
-            `Plan needs confirmation at Step ${i + 1} (${step.operation}). Nothing was applied - review the plan and apply again to confirm.`,
-          );
-          break;
-        } else {
-          planFailed = true;
-          updatedSteps[i] = {
-            ...step,
-            status: 'error',
-            error: result.error.messages.join(', '),
-          };
-          pushToast(
-            'error',
-            `Plan stopped at Step ${i + 1} (${step.operation}): ${result.error.messages.join(', ')}`,
-          );
-          break;
-        }
-      }
-
-      // A plan is one unit of work. If any step failed, the workbook is left exactly as it was
-      // rather than half-transformed, because there is no "undo the plan" affordance for a user
-      // to discover and pressing Ctrl+Z a step at a time is not a recovery strategy.
-      const rolledBack = planFailed && appliedCount > 0;
-      if (rolledBack) {
-        pushToast(
-          'info',
-          `Rolled back ${appliedCount} applied step(s) so the workbook stays consistent.`,
-        );
-        // Rewind history to where the plan started, so the partial run leaves neither the
-        // workbook nor the undo stack in a half-transformed state.
-        historyStack.restore(historyPositionBefore);
-      }
-
-      setWorkbook(rolledBack ? workbook : currentWb);
-      setHistoryRevision((r) => r + 1);
-
-      if (!rolledBack) {
-        const newlyAddedSheetInPlan = currentWb.sheets.find(
+      const result = applyOperationPlan(workbook, plan.steps, {
+        registry, history: historyStack, confirmed, operationName: `plan: ${plan.title}`,
+      });
+      if (result.ok) {
+        setWorkbook(result.workbook);
+        setHistoryRevision((r) => r + 1);
+        setRecentChangedCells(new Set());
+        const newlyAddedSheetInPlan = result.workbook.sheets.find(
           (s) => !workbook.sheets.some((old) => old.name === s.name),
         );
         if (newlyAddedSheetInPlan) {
           setActiveSheetName(newlyAddedSheetInPlan.name);
-        } else if (!currentWb.sheets.some((s) => s.name === activeSheetName)) {
-          setActiveSheetName(currentWb.sheets[0]?.name ?? '');
+        } else if (!result.workbook.sheets.some((s) => s.name === activeSheetName)) {
+          setActiveSheetName(result.workbook.sheets[0]?.name ?? '');
         }
+        pushToast('success', `Plan "${plan.title}" executed (${plan.steps.length} steps applied). Invariants verified ✓`);
+      } else if (result.error.code !== 'confirmation-required') {
+        pushToast('error', `Plan stopped at Step ${result.failedStep + 1}: ${result.error.messages.join(', ')} Nothing was applied.`);
       }
-
-      const finalStatus: 'applied' | 'error' = planFailed ? 'error' : 'applied';
-      const updatedPlan: ExecutionPlan = {
-        ...plan,
-        steps: updatedSteps,
-        status: finalStatus,
-      };
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                plan: updatedPlan,
-                status: finalStatus,
-              }
-            : m,
-        ),
-      );
-
-      if (!planFailed) {
-        pushToast(
-          'success',
-          `Plan "${plan.title}" executed (${appliedCount} steps applied). Invariants verified ✓`,
-        );
-      }
+      const awaitingConfirmation = !result.ok && result.error.code === 'confirmation-required';
+      setMessages((prev) => prev.map((m) => m.id !== messageId ? m : {
+        ...m,
+        status: result.ok ? 'applied' : awaitingConfirmation ? 'confirming' : 'error',
+        confirmationPrompt: awaitingConfirmation ? {
+          affectedCells: result.preview?.affectedCells ?? 0,
+          reasons: result.preview?.warnings.map((warning) => warning.message) ?? [],
+        } : undefined,
+        errorMessage: !result.ok && !awaitingConfirmation ? result.error.messages.join(', ') : undefined,
+        plan: {
+          ...plan,
+          status: result.ok ? 'applied' : awaitingConfirmation ? 'pending' : 'error',
+          steps: plan.steps.map((step, index) => ({
+            ...step,
+            status: result.ok ? 'completed' : !awaitingConfirmation && index === result.failedStep ? 'error' : 'pending',
+            error: !result.ok && !awaitingConfirmation && index === result.failedStep ? result.error.messages.join(', ') : undefined,
+          })),
+        },
+      }));
     } finally {
       setIsProcessing(false);
     }
@@ -931,19 +859,7 @@ export const App: React.FC = () => {
   };
 
   const handleCancelAction = (messageId: string) => {
-    // A cancellation is a real signal: the agent proposed the wrong thing.
-    const message = messages.find((m) => m.id === messageId);
-    if (message?.proposedAction && message.sourceQuery) {
-      orchestrator.learn({
-        query: message.sourceQuery,
-        sheetName: activeSheetName,
-        operation: message.proposedAction.name,
-        args: message.proposedAction.args,
-        success: false,
-      });
-      persistMemory();
-      setLearnedActions(learnedActionCount());
-    }
+    // Cancelling a confirmation is not evidence that the proposed operation was incorrect.
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId

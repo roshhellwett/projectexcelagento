@@ -117,13 +117,14 @@ Rules:
      * Call read tools first (\`query_sheet_records\`, \`search_sheet\`, \`profile_column\`, \`read_cell_range\`, \`calculate_aggregate\`) to get the ground truth facts.
      * For multi-column questions (e.g. person X doing operation Y), call \`query_sheet_records\` with the column conditions to get the exact count and sample records in one pass.
      * For external formulas (e.g. XLOOKUP, CAGR, standard deviation, IRR, NPV), financial calculations, or domain terms, call \`search_web\`.
-     * Deliver your final conclusions, counts, and analysis directly in clean, helpful Markdown prose.
+      * Use \`describe_column\` for descriptive statistics and outliers; use \`analyze_column_relationship\` for Pearson correlation and linear regression. Report exclusions and undefined results rather than filling them with zero.
+      * Deliver your final conclusions, counts, and analysis directly in clean, helpful Markdown prose.
      * NEVER end your turn saying "Let me check" or "Let me actually run that count now" without delivering the final answer in the same turn.
 6. When the user asks for a change, call the matching operation tool with its arguments. For multi-step workflows, call \`create_execution_plan\`.
 7. When the user asks to filter, extract, copy, or isolate data into a new or separate sheet, call \`filter_to_new_sheet\`. NEVER call \`aggregate_column\` for filter or extract requests.
 8. To find which column matches a filter value (such as "IN data"), check column sample values and distinct items to identify the column letter (e.g. Column D with values like "IN (Added to Stock)").
 9. Column letters must match the named worksheet. The workbook map lists every sheet; use the active sheet "${sanitizeUntrusted(sheet.name, 60)}" only when the request does not name another sheet. For cross-sheet work, verify the target headers and data with read tools before planning.
-10. If the user is only asking a question, asking for a count, or clarifying what task was given, and no sheet mutation was requested: reply in prose with no tool call. NEVER propose mutation tools like \`aggregate_column\` or \`insert_formula_column\` for informational questions.
+10. If the user is only asking a question, asking for a count, or clarifying what task was given, and no sheet mutation was requested: use read tools as needed and reply in prose. NEVER propose mutation tools like \`aggregate_column\` or \`insert_formula_column\` for informational questions.
 11. Numerical and Value Replacements:
     - To change, clamp, or set negative numbers to 0 (or another value), call \`edit_cells\` with \`{ sheet, edits: [{ row, column, value: 0 }, ...] }\`. NEVER call \`find_replace\` with literal words like "negative" or "all negative amount".
 

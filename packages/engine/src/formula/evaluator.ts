@@ -1,4 +1,4 @@
-import { FORMULA_FUNCTIONS } from './functions.js';
+import { FORMULA_FUNCTIONS, getFormulaDateSystem, setFormulaDateSystem } from './functions.js';
 import { isFormulaError, type FormulaErrorCode } from './errors.js';
 import { daysBetween } from './excel-date.js';
 import type { FormulaContext, FormulaValue } from './types.js';
@@ -293,6 +293,8 @@ function compareOrdered(a: ParsedValue, b: ParsedValue): number | FormulaErrorCo
 }
 
 export function evaluateFormula(formula: string, context: FormulaContext): FormulaValue {
+  const previousDateSystem = getFormulaDateSystem();
+  setFormulaDateSystem(context.dateSystem ?? '1900');
   try {
     const tokens = tokenize(formula);
     if (tokens.length === 0) return null;
@@ -528,5 +530,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
     return result as FormulaValue;
   } catch {
     return '#ERROR!';
+  } finally {
+    setFormulaDateSystem(previousDateSystem);
   }
 }

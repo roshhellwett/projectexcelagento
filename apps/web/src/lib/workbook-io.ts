@@ -257,28 +257,14 @@ export function detectDelimiter(text: string): string | null {
     }
   }
 
-  // Fallback: If no candidate reached the threshold yet the first non-empty line has commas or delimiters,
-  // select the most frequent candidate rather than dumping everything into a single un-split column.
+  // A header-only file still has a shape. Count parsed fields rather than raw separators:
+  // commas inside a quoted single-column value must never become column boundaries.
   if (!best) {
-    const firstNonEmpty = text.split(/\r\n|\n|\r/).find((l) => l.trim().length > 0);
-    if (firstNonEmpty) {
-      const commaCount = (firstNonEmpty.match(/,/g) || []).length;
-      const tabCount = (firstNonEmpty.match(/\t/g) || []).length;
-      const semiCount = (firstNonEmpty.match(/;/g) || []).length;
-      const pipeCount = (firstNonEmpty.match(/\|/g) || []).length;
-      if (
-        commaCount >= 1 &&
-        commaCount >= tabCount &&
-        commaCount >= semiCount &&
-        commaCount >= pipeCount
-      ) {
-        best = ',';
-      } else if (tabCount >= 1 && tabCount >= semiCount && tabCount >= pipeCount) {
-        best = '\t';
-      } else if (semiCount >= 1 && semiCount >= pipeCount) {
-        best = ';';
-      } else if (pipeCount >= 1) {
-        best = '|';
+    for (const candidate of CANDIDATE_DELIMITERS) {
+      const records = parseCsvRecords(sample, candidate, 2);
+      if (records.length === 1 && records[0]!.length > bestScore) {
+        bestScore = records[0]!.length;
+        if (bestScore > 1) best = candidate;
       }
     }
   }
@@ -294,19 +280,9 @@ export function detectDelimiter(text: string): string | null {
  * downstream can recover it.
  */
 export function parseCsvField(raw: string, delimiter: string): CellValue {
-  let text = raw.trim();
-  if (text === '' || text.toLowerCase() === 'null') return null;
-  // Strip redundant surrounding quotes if the field is wrapped in literal quotes from exports like """..."""
-  if (
-    text.length >= 2 &&
-    text.startsWith('"') &&
-    text.endsWith('"') &&
-    !text.slice(1, -1).includes('"')
-  ) {
-    text = text.slice(1, -1).trim();
-    if (text === '' || text.toLowerCase() === 'null') return null;
-  }
-  if (text.startsWith('=')) return text;
+  const text = raw.trim();
+  if (text === '') return null;
+  if (text.startsWith('=')) return raw;
 
   // Accounting notation: (450) means negative 450.
   const negativeParenthesised = /^\((.*)\)$/.exec(text);
@@ -317,13 +293,15 @@ export function parseCsvField(raw: string, delimiter: string): CellValue {
   const numericBody = isPercent ? body.slice(0, -1).trim() : body;
 
   // A leading zero marks an identifier. Only "0" itself and "0.5"-style values are numbers.
-  if (/^[-+]?0\d/.test(numericBody)) return text;
+  if (/^[-+]?0\d/.test(numericBody)) return raw;
 
   const magnitude = stripNumericDecoration(numericBody, delimiter);
-  if (magnitude === null) return text;
+  if (magnitude === null) return raw;
 
   const parsed = Number(magnitude);
-  if (!Number.isFinite(parsed)) return text;
+  if (!Number.isFinite(parsed) || (Number.isInteger(parsed) && !Number.isSafeInteger(parsed))) {
+    return raw;
+  }
 
   let value = negative ? -parsed : parsed;
   // Applied last, so "45%" and "45" take the same route through the parser.
@@ -335,7 +313,13 @@ function stripNumericDecoration(body: string, delimiter: string): string | null 
   // Currency symbols and spaces are decoration; a leading sign is not.
   const cleaned = body.replace(/[\s\u00a0]/g, '').replace(/^[$€£¥₹]/, '');
   if (cleaned === '') return null;
-  if (!/^[-+]?[\d.,]+$/.test(cleaned)) return null;
+  if (!/^[-+]?[\d.,]+(?:[eE][-+]?\d+)?$/.test(cleaned)) return null;
+  if (/^[-+]?0\d/.test(cleaned)) return null;
+
+  // Scientific notation is unambiguous only with a plain decimal mantissa.
+  if (/[eE]/.test(cleaned)) {
+    return /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)[eE][-+]?\d+$/.test(cleaned) ? cleaned : null;
+  }
 
   const signed = /^[-+]/.test(cleaned) ? cleaned[0]! : '';
   const magnitude = signed ? cleaned.slice(1) : cleaned;
@@ -344,32 +328,21 @@ function stripNumericDecoration(body: string, delimiter: string): string | null 
   const hasDot = magnitude.includes('.');
 
   if (hasComma && hasDot) {
-    // Whichever separator comes last is the decimal point.
-    return (
-      signed +
-      (magnitude.lastIndexOf(',') > magnitude.lastIndexOf('.')
-        ? magnitude.replace(/\./g, '').replace(',', '.')
-        : magnitude.replace(/,/g, ''))
-    );
+    if (/^\d{1,3}(?:,\d{3})+\.\d+$/.test(magnitude)) return signed + magnitude.replace(/,/g, '');
+    if (/^\d{1,3}(?:\.\d{3})+,\d+$/.test(magnitude)) {
+      return signed + magnitude.replace(/\./g, '').replace(',', '.');
+    }
+    return null;
   }
   if (hasComma) {
-    // With a comma delimiter a comma is a thousands separator; otherwise it is a decimal comma.
-    return signed + (delimiter === ',' ? magnitude.replace(/,/g, '') : magnitude.replace(',', '.'));
+    if (delimiter === ',' || /^\d{1,3}(?:,\d{3}){2,}$/.test(magnitude)) {
+      return /^\d{1,3}(?:,\d{3})+$/.test(magnitude) ? signed + magnitude.replace(/,/g, '') : null;
+    }
+    return /^\d+,\d+$/.test(magnitude) ? signed + magnitude.replace(',', '.') : null;
   }
   if (hasDot) {
-    const parts = magnitude.split('.');
-    if (parts.length > 2) return null;
-    // "1.234.567" is a grouped integer; "1.23" is a decimal. Only an exact three-digit tail
-    // with a short leading group counts as grouping, so "0.123" stays a decimal.
-    if (
-      parts.length === 2 &&
-      parts[1]!.length === 3 &&
-      /^\d+$/.test(parts[0]!) &&
-      parts[0]!.length <= 3
-    ) {
-      return signed + magnitude.replace(/\./g, '');
-    }
-    return signed + magnitude;
+    // A single dot is a decimal point, regardless of how many fractional digits it carries.
+    return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(magnitude) ? signed + magnitude : null;
   }
   return signed + magnitude;
 }
@@ -389,6 +362,9 @@ export function workbookFromCsvText(
   let maxCols = 0;
   for (const r of records) {
     if (r.length > maxCols) maxCols = r.length;
+  }
+  if (records.length * maxCols > MAX_IMPORTED_CELLS) {
+    throw new Error(`CSV contains more than the ${MAX_IMPORTED_CELLS} cell import limit.`);
   }
 
   const effectiveDelimiter = delimiter ?? ',';
@@ -440,7 +416,7 @@ function sheetFromWorksheet(
       const cellObj = ws[address] as
         { v?: unknown; f?: string; z?: string; t?: string; w?: string } | undefined;
 
-      if (!cellObj || cellObj.v === undefined || cellObj.v === null) {
+      if (!cellObj) {
         rowCells.push(createCell(null));
         continue;
       }
@@ -449,7 +425,11 @@ function sheetFromWorksheet(
       const numberFormat = typeof cellObj.z === 'string' ? cellObj.z : undefined;
 
       let value: CellValue = null;
-      if (typeof cellObj.v === 'string') {
+      if (cellObj.t === 'e') {
+        value = typeof cellObj.w === 'string' ? cellObj.w : EXCEL_ERROR_TEXT[Number(cellObj.v)] ?? '#VALUE!';
+      } else if (cellObj.v === undefined || cellObj.v === null) {
+        value = null;
+      } else if (typeof cellObj.v === 'string') {
         value = cellObj.v;
       } else if (typeof cellObj.v === 'boolean') {
         value = cellObj.v;
@@ -466,9 +446,6 @@ function sheetFromWorksheet(
         } else {
           value = cellObj.v;
         }
-      } else if (cellObj.t === 'e') {
-        // An Excel error cell travels as an object; its text lives in `w`.
-        value = typeof cellObj.w === 'string' ? cellObj.w : '#VALUE!';
       } else {
         value = String(cellObj.v);
       }
@@ -554,6 +531,17 @@ export function parseWorkbookBytes(
   const dateSystem = detectDateSystem(parsed);
   report.dateSystem = dateSystem;
 
+  let totalCells = 0;
+  for (const sheetName of parsed.SheetNames) {
+    const ref = parsed.Sheets[sheetName]?.['!ref'];
+    if (!ref) continue;
+    const range = XLSX.utils.decode_range(ref);
+    totalCells += (range.e.r + 1) * (range.e.c + 1);
+    if (!Number.isSafeInteger(totalCells) || totalCells > MAX_IMPORTED_CELLS) {
+      throw new Error(`Workbook exceeds the ${MAX_IMPORTED_CELLS} cell import limit.`);
+    }
+  }
+
   const sheets = parsed.SheetNames.map((sheetName) =>
     sheetFromWorksheet(XLSX, sheetName, parsed.Sheets[sheetName]!, dateSystem, counters, dropped),
   );
@@ -573,16 +561,19 @@ export function parseWorkbookBytes(
 
 /** Fallback format for a date that carries no format of its own, so it still reads as a date. */
 const DEFAULT_DATE_FORMAT = 'yyyy-mm-dd';
+const EXCEL_ERROR_TEXT: Record<number, string> = {
+  0: '#NULL!', 7: '#DIV/0!', 15: '#VALUE!', 23: '#REF!', 29: '#NAME?', 36: '#NUM!', 42: '#N/A',
+};
 
 /**
  * Excel stores every date as a serial number plus a display format. Writing a raw `Date`
  * through `aoa_to_sheet` depends on reader options, so dates are converted back to serials
  * explicitly and given a format when the cell does not already carry one.
  */
-function valueForExport(cell: { value: unknown }): unknown {
+function valueForExport(cell: { value: unknown }, dateSystem: '1900' | '1904'): unknown {
   const { value } = cell;
   if (value === null || value === '') return null;
-  if (value instanceof Date) return dateToExcelSerial(value) ?? null;
+  if (value instanceof Date) return dateToExcelSerial(value, dateSystem) ?? null;
   return value;
 }
 
@@ -622,9 +613,10 @@ export function sanitizeSheetName(name: string, used: Set<string>): string {
 export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8Array {
   const book = XLSX.utils.book_new();
   const usedNames = new Set<string>();
+  const dateSystem = workbook.dateSystem ?? '1900';
 
   for (const sheet of workbook.sheets) {
-    const aoa: unknown[][] = sheet.rows.map((row) => row.map(valueForExport));
+    const aoa: unknown[][] = sheet.rows.map((row) => row.map((cell) => valueForExport(cell, dateSystem)));
     const worksheet = XLSX.utils.aoa_to_sheet(aoa) as Record<string, unknown>;
 
     // Write formula cells explicitly: aoa_to_sheet does not understand {f, v} objects.
@@ -632,7 +624,7 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
       row.forEach((cell, columnIndex) => {
         if (!cell.formula) return;
         const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-        const cached = cell.value instanceof Date ? dateToExcelSerial(cell.value) : cell.value;
+        const cached = cell.value instanceof Date ? dateToExcelSerial(cell.value, dateSystem) : cell.value;
         const type =
           typeof cached === 'number'
             ? 'n'
@@ -681,6 +673,7 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
 
   book.Workbook = {
     ...book.Workbook,
+    WBProps: { ...book.Workbook?.WBProps, date1904: dateSystem === '1904' },
     CalcPr: { fullCalcOnLoad: true },
   } as typeof book.Workbook;
 

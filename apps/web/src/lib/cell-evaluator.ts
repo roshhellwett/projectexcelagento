@@ -3,10 +3,8 @@ import {
   type Cell,
   type DateSystem,
   type FormulaValue,
-  type Sheet,
   type Workbook,
-  columnToIndex,
-  evaluateFormula,
+  createWorkbookValueReader,
 } from '@excel-agent/engine';
 
 import { formatCellDateValue } from './cell-format.js';
@@ -30,83 +28,14 @@ export type CellEvaluator = (
  *
  * Results are memoised per workbook snapshot, so a formula that a hundred cells reference is
  * evaluated once per edit instead of a hundred times, and nothing is re-evaluated at all until the
- * workbook actually changes. Circular references resolve to `null` instead of recursing forever,
- * which is what a spreadsheet shows for one.
+ * workbook actually changes. The grid and the analyst tools use the same live-value reader.
  */
 export function useCellEvaluator(workbook: Workbook, dateSystem: DateSystem): CellEvaluator {
   return useMemo(() => {
-    const cache = new Map<string, FormulaValue>();
-    const visiting = new Set<string>();
-    const findSheet = (name: string): Sheet | undefined =>
-      workbook.sheets.find((sheet) => sheet.name === name);
-
-    const evaluateAddress = (
-      sheetName: string,
-      colIdx: number,
-      rowNumber: number,
-    ): FormulaValue => {
-      const key = `${sheetName}!${colIdx}:${rowNumber}`;
-      const cached = cache.get(key);
-      if (cached !== undefined) return cached;
-      if (visiting.has(key)) return null;
-      visiting.add(key);
-      try {
-        const cell = findSheet(sheetName)?.rows[rowNumber - 1]?.[colIdx];
-        let value: FormulaValue;
-        if (cell?.formula) {
-          value = evaluateFormula(cell.formula, {
-            activeSheet: sheetName,
-            getCellValue: (sheet: string, column: string, row: number) =>
-              evaluateAddress(sheet, columnToIndex(column) ?? 0, row),
-            getRangeValues: (
-              sheet: string,
-              startCol: string,
-              startRow: number,
-              endCol: string,
-              endRow: number,
-            ) => {
-              const target = findSheet(sheet);
-              const from = columnToIndex(startCol) ?? 0;
-              const to = columnToIndex(endCol) ?? from;
-              const out: FormulaValue[][] = [];
-              for (let row = startRow; row <= endRow; row += 1) {
-                const line: FormulaValue[] = [];
-                for (let colIdx = from; colIdx <= to; colIdx += 1) {
-                  const cellInRange = target?.rows[row - 1]?.[colIdx];
-                  line.push(
-                    cellInRange?.formula
-                      ? evaluateAddress(sheet, colIdx, row)
-                      : (cellInRange?.value ?? null),
-                  );
-                }
-                out.push(line);
-              }
-              return out;
-            },
-            // Without this a 1904 workbook's dates render correctly but every date formula in it
-            // evaluates four years and a day off.
-            dateSystem,
-            hasSheet: (name: string) => workbook.sheets.some((sheet) => sheet.name === name),
-          });
-        } else {
-          value = (cell?.value ?? null) as FormulaValue;
-        }
-        cache.set(key, value);
-        return value;
-      } catch {
-        // A formula the engine cannot parse shows whatever was cached for that address rather than
-        // taking the whole grid down with it.
-        return cache.get(key) ?? null;
-      } finally {
-        visiting.delete(key);
-      }
-    };
-
+    const read = createWorkbookValueReader({ ...workbook, dateSystem });
     return (cell, sheetName, colIdx, rowNumber) => {
       if (!cell?.formula) return undefined;
-      // A formula parsed from an address has no cell of its own to fall back to, so a failure
-      // resolves to null (Excel's own #VALUE! behaviour for unparseable text) rather than throwing.
-      return evaluateAddress(sheetName, colIdx, rowNumber);
+      return read(sheetName, colIdx, rowNumber);
     };
   }, [workbook, dateSystem]);
 }

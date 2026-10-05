@@ -58,6 +58,7 @@ describe('self-learning memory', () => {
     });
 
     expect(memory.retrieve('sort by amount', 'Orders')).toBeUndefined();
+    expect(memory.retrieve('sort by amount', 'Orders', 0)).toBeUndefined();
   });
 
   it('replays a record once it has accumulated successes', () => {
