@@ -212,7 +212,10 @@ describe('ExcelAgentOrchestrator', () => {
       workbook: codeWorkbook,
       sheetName: 'Worksheet',
       history: [
-        { role: 'user', content: 'can you make this sheet clean and structured so that it can be understandable' },
+        {
+          role: 'user',
+          content: 'can you make this sheet clean and structured so that it can be understandable',
+        },
         { role: 'assistant', content: 'I am ready to perform...' },
       ],
     });

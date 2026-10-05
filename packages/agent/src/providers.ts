@@ -39,21 +39,11 @@ export function resolveMaxTokens(provider: ProviderName, requested?: number): nu
 }
 
 export const FALLBACK_MODELS: Record<ProviderName, string[]> = {
-  groq: [
-    'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'qwen/qwen3.8-27b',
-    'allam-2-7b',
-    'llama-3.3-70b-versatile',
-  ],
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
-  openrouter: [
-    'google/gemini-2.0-flash-001',
-    'meta-llama/llama-3.3-70b-instruct',
-    'deepseek/deepseek-chat',
-  ],
-  openai: ['gpt-4o-mini', 'gpt-4o'],
-  custom: ['default'],
+  groq: [],
+  gemini: [],
+  openrouter: [],
+  openai: [],
+  custom: [],
 };
 
 function isTransientStatus(status: number): boolean {
@@ -765,7 +755,11 @@ const ADAPTERS: Record<ProviderName, ProviderAdapter> = {
 };
 
 export function getAdapter(provider: ProviderName): ProviderAdapter {
-  return ADAPTERS[provider] ?? groqAdapter;
+  return ADAPTERS[provider] ?? openRouterAdapter;
+}
+
+export function defaultModelFor(provider: ProviderName): string {
+  return getAdapter(provider).defaultModel;
 }
 
 export function listProviders(): ProviderAdapter[] {

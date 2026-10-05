@@ -14,7 +14,7 @@ import { buildSystemPrompt, parseModelOutput } from './context.js';
 import {
   complete,
   completeStream,
-  FALLBACK_MODELS,
+  defaultModelFor,
   ProviderError,
   throwIfCancelled,
 } from './providers.js';
@@ -235,7 +235,8 @@ export class ExcelAgentOrchestrator {
 
     // Cross-sheet business jobs must resolve fresh bindings and tolerance; one-sheet memory
     // fingerprints cannot authorize replay against a different right-side schema.
-    if (analyzeReconciliationIntent(input.query, input.workbook)) return this.plan(input, sheetName, sheet, trace, activities, emitActivity);
+    if (analyzeReconciliationIntent(input.query, input.workbook))
+      return this.plan(input, sheetName, sheet, trace, activities, emitActivity);
 
     // Layer 2 - Memory: Replay proven learned operation
     const memoryHit = this.memory?.retrieveForWorkbook
@@ -381,12 +382,45 @@ export class ExcelAgentOrchestrator {
       };
     }
 
-    if (!isComplexRequest(effectiveQuery) && isReconciliationRequest(effectiveQuery) && analyzeReconciliationIntent(effectiveQuery, input.workbook)) {
-      if (!heuristic.proposedAction) return { message: heuristic.message, clarification: heuristic.clarification, evidence, source: 'heuristic', trace, activities };
+    if (
+      !isComplexRequest(effectiveQuery) &&
+      isReconciliationRequest(effectiveQuery) &&
+      analyzeReconciliationIntent(effectiveQuery, input.workbook)
+    ) {
+      if (!heuristic.proposedAction)
+        return {
+          message: heuristic.message,
+          clarification: heuristic.clarification,
+          evidence,
+          source: 'heuristic',
+          trace,
+          activities,
+        };
       const guardrail = this.guardrail(input.workbook, heuristic.proposedAction);
-      trace.push({ layer: 'guardrail', summary: guardrail.passed ? 'Reconciliation job verified against both source sheets.' : 'Reconciliation job refused safely.' });
-      emitActivity(guardrail.passed ? 'status' : 'warning', 'Verifier', guardrail.passed ? 'Report bindings verified. Source sheets remain unchanged; review before generating the workbook.' : guardrail.errors.join(' '));
-      return { message: guardrail.passed ? heuristic.message : `I could not safely prepare this reconciliation report. ${guardrail.errors.join(' ')} Nothing was changed.`, action: guardrail.passed ? heuristic.proposedAction : undefined, guardrail, evidence, source: 'heuristic', trace, activities };
+      trace.push({
+        layer: 'guardrail',
+        summary: guardrail.passed
+          ? 'Reconciliation job verified against both source sheets.'
+          : 'Reconciliation job refused safely.',
+      });
+      emitActivity(
+        guardrail.passed ? 'status' : 'warning',
+        'Verifier',
+        guardrail.passed
+          ? 'Report bindings verified. Source sheets remain unchanged; review before generating the workbook.'
+          : guardrail.errors.join(' '),
+      );
+      return {
+        message: guardrail.passed
+          ? heuristic.message
+          : `I could not safely prepare this reconciliation report. ${guardrail.errors.join(' ')} Nothing was changed.`,
+        action: guardrail.passed ? heuristic.proposedAction : undefined,
+        guardrail,
+        evidence,
+        source: 'heuristic',
+        trace,
+        activities,
+      };
     }
 
     // Layer 3.5 - Multi-agent: complex requests are decomposed, executed, and reviewed.
@@ -555,79 +589,48 @@ Execute this workflow:
             : input.query,
       });
 
-      // Build model retry & fallback list
-      const candidateModels = [config.model, ...(FALLBACK_MODELS[config.provider] ?? [])].filter(
-        (m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i,
-      );
-
       let response: ProviderResponse | undefined;
       let lastError: unknown;
-      let usedModel = config.model || candidateModels[0] || 'default';
+      const usedModel = config.model?.trim() || defaultModelFor(config.provider);
 
       const activeMaxTokens =
         config.provider === 'groq'
           ? Math.min(config.maxTokens ?? 8192, 8192)
           : (config.maxTokens ?? 32768);
 
-      for (const candidateModel of candidateModels) {
-        const currentConfig: ProviderConfig = {
-          ...config,
-          model: candidateModel,
-          maxTokens: activeMaxTokens,
-        };
-        try {
-          if (input.callbacks && typeof input.callbacks.onToken === 'function') {
-            response = await completeStream(
-              messages,
-              currentConfig,
-              input.callbacks,
-              this.toolDefinitions,
-            );
-          } else {
-            response = await complete(messages, currentConfig, this.toolDefinitions);
-          }
-          usedModel = candidateModel;
-          break;
-        } catch (err) {
-          lastError = err;
-          const msg = err instanceof Error ? err.message : String(err);
+      const currentConfig: ProviderConfig = {
+        ...config,
+        model: usedModel,
+        maxTokens: activeMaxTokens,
+      };
 
-          // A cancellation is the user saying stop, not a provider problem. It must leave the
-          // turn immediately: falling through to the heuristic candidate would let a Stop
-          // press still hand back an "Apply Changes" card for a request the user abandoned.
-          if (input.config?.signal?.aborted || /cancel(?:led|ed) by caller/i.test(msg)) {
-            emitActivity('warning', 'Conductor', 'Request cancelled; no action was proposed.');
-            trace.push({ layer: 'llm', summary: 'Cancelled by the caller before a decision.' });
-            return {
-              message: 'Cancelled. Nothing was changed.',
-              source: 'fallback',
-              trace,
-              activities,
-            };
-          }
+      try {
+        if (input.callbacks && typeof input.callbacks.onToken === 'function') {
+          response = await completeStream(
+            messages,
+            currentConfig,
+            input.callbacks,
+            this.toolDefinitions,
+          );
+        } else {
+          response = await complete(messages, currentConfig, this.toolDefinitions);
+        }
+      } catch (err) {
+        lastError = err;
+        const msg = err instanceof Error ? err.message : String(err);
 
-          const isQuotaOrModelUnavailable =
-            msg.includes('model_decommissioned') ||
-            msg.includes('not found') ||
-            msg.includes('does not exist') ||
-            msg.includes('rate_limit') ||
-            msg.includes('timed out') ||
-            msg.includes('aborted') ||
-            (err instanceof ProviderError &&
-              (err.status === 404 || err.status === 413 || err.status === 429));
-
-          if (
-            isQuotaOrModelUnavailable &&
-            candidateModel !== candidateModels[candidateModels.length - 1]
-          ) {
-            emitActivity(
-              'status',
-              'Conductor',
-              `Model ${candidateModel} quota/rate limit reached; falling back to alternative model...`,
-            );
-            continue;
-          }
-          break;
+        // A cancellation is the user saying stop, not a provider problem. It must leave the
+        // turn immediately: falling through to the heuristic candidate would let a Stop
+        // press still hand back an "Apply Changes" card for a request the user abandoned.
+        if (input.config?.signal?.aborted || /cancel(?:led|ed) by caller/i.test(msg)) {
+          emitActivity('warning', 'Conductor', 'Request cancelled; no action was proposed.');
+          trace.push({ layer: 'llm', summary: 'Cancelled by the caller before a decision.' });
+          return {
+            message: 'Cancelled. Nothing was changed.',
+            source: 'fallback',
+            trace,
+            activities,
+          };
         }
       }
 
@@ -804,38 +807,40 @@ Execute this workflow:
           if (!executedReadTools) break;
 
           let followUp: ProviderResponse | undefined;
-          for (const fallbackModel of [
-            usedModel,
-            ...candidateModels.filter((m) => m !== usedModel),
-          ]) {
-            try {
-              if (input.callbacks && typeof input.callbacks.onToken === 'function') {
-                followUp = await completeStream(
-                  messages,
-                  { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
-                  input.callbacks,
-                  this.toolDefinitions,
-                );
-              } else {
-                followUp = await complete(
-                  messages,
-                  { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
-                  this.toolDefinitions,
-                );
-              }
-              usedModel = fallbackModel;
-              usage.add(followUp);
-              throwIfCancelled(config.provider, config.signal);
-              break;
-            } catch (err) {
-              throwIfCancelled(config.provider, config.signal);
-              const errMsg = err instanceof Error ? err.message : String(err);
-              emitActivity(
-                'warning',
-                'Data Analyst',
-                `Model ${fallbackModel} temporarily unavailable (${errMsg.slice(0, 80)}); trying alternative model...`,
+          try {
+            if (input.callbacks && typeof input.callbacks.onToken === 'function') {
+              followUp = await completeStream(
+                messages,
+                { ...config, model: usedModel, maxTokens: activeMaxTokens },
+                input.callbacks,
+                this.toolDefinitions,
+              );
+            } else {
+              followUp = await complete(
+                messages,
+                { ...config, model: usedModel, maxTokens: activeMaxTokens },
+                this.toolDefinitions,
               );
             }
+            usage.add(followUp);
+            throwIfCancelled(config.provider, config.signal);
+          } catch (err) {
+            throwIfCancelled(config.provider, config.signal);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            emitActivity('warning', 'Data Analyst', `Model error: ${errMsg}`);
+            return {
+              message: `⚠️ **OpenRouter / Model Error (${usedModel}):** ${errMsg}\n\nPlease check your OpenRouter credits, rate limits, or model ID in **Settings** (top right) so you can fix what happened.`,
+              source: 'llm',
+              trace,
+              activities,
+              telemetry: {
+                provider: config.provider,
+                model: config.model ?? 'unknown',
+                latencyMs: Date.now() - startedAt,
+                ok: false,
+                error: errMsg,
+              },
+            };
           }
 
           if (!followUp) {
@@ -880,40 +885,34 @@ Execute this workflow:
                 'Please proceed immediately without pausing: deliver your complete analytical findings, exact numbers, probabilities, calculations, and final answer directly to the user right now.',
             });
 
-            for (const fallbackModel of [
-              usedModel,
-              ...candidateModels.filter((m) => m !== usedModel),
-            ]) {
-              try {
-                let continuation: ProviderResponse;
-                if (input.callbacks && typeof input.callbacks.onToken === 'function') {
-                  continuation = await completeStream(
-                    messages,
-                    { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
-                    input.callbacks,
-                    this.toolDefinitions,
-                  );
-                } else {
-                  continuation = await complete(
-                    messages,
-                    { ...config, model: fallbackModel, maxTokens: activeMaxTokens },
-                    this.toolDefinitions,
-                  );
-                }
-                usage.add(continuation);
-                throwIfCancelled(config.provider, config.signal);
-                finalResponseContent = continuation.content;
-                currentToolCalls = continuation.toolCalls;
-                if (continuation.thought) {
-                  llmThought = (llmThought ? `${llmThought}\n` : '') + continuation.thought;
-                  input.callbacks?.onThinking?.(`\n${continuation.thought}\n`);
-                }
-                usedModel = fallbackModel;
-                break;
-              } catch {
-                throwIfCancelled(config.provider, config.signal);
-                // Try next model if overloaded
+            try {
+              let continuation: ProviderResponse;
+              if (input.callbacks && typeof input.callbacks.onToken === 'function') {
+                continuation = await completeStream(
+                  messages,
+                  { ...config, model: usedModel, maxTokens: activeMaxTokens },
+                  input.callbacks,
+                  this.toolDefinitions,
+                );
+              } else {
+                continuation = await complete(
+                  messages,
+                  { ...config, model: usedModel, maxTokens: activeMaxTokens },
+                  this.toolDefinitions,
+                );
               }
+              usage.add(continuation);
+              throwIfCancelled(config.provider, config.signal);
+              finalResponseContent = continuation.content;
+              currentToolCalls = continuation.toolCalls;
+              if (continuation.thought) {
+                llmThought = (llmThought ? `${llmThought}\n` : '') + continuation.thought;
+                input.callbacks?.onThinking?.(`\n${continuation.thought}\n`);
+              }
+            } catch (err) {
+              throwIfCancelled(config.provider, config.signal);
+              const errMsg = err instanceof Error ? err.message : String(err);
+              emitActivity('warning', 'Data Analyst', `Continuation error: ${errMsg}`);
             }
           }
         }
@@ -976,10 +975,18 @@ Execute this workflow:
         };
         trace.push({
           layer: 'conductor',
-          summary: `Provider unavailable: ${reason}`,
+          summary: `Model failed: ${reason}`,
           durationMs: telemetry.latencyMs,
         });
-        emitActivity('status', 'Conductor', `Provider error: ${reason}`);
+        emitActivity('warning', 'Conductor', `Model error: ${reason}`);
+
+        return {
+          message: `⚠️ **OpenRouter / Model Error (${usedModel}):** ${reason}\n\nPlease check your OpenRouter credits, rate limits, or model ID in **Settings** (top right) so you can fix what happened.`,
+          source: 'llm',
+          trace,
+          activities,
+          telemetry,
+        };
       }
     }
 
@@ -1021,7 +1028,11 @@ Execute this workflow:
     if (!llmPlan && isComplexRequest(effectiveQuery)) {
       const compositePlan = this.synthesizeCompositePlan(input.workbook, sheetName, effectiveQuery);
       if (compositePlan) {
-        emitActivity('planning', 'Planner', `Formulated ${compositePlan.steps.length}-step deliverable plan.`);
+        emitActivity(
+          'planning',
+          'Planner',
+          `Formulated ${compositePlan.steps.length}-step deliverable plan.`,
+        );
         trace.push({
           layer: 'planner',
           summary: `Synthesized verified ${compositePlan.steps.length}-step deliverable plan: ${compositePlan.title}.`,
@@ -1258,7 +1269,8 @@ Execute this workflow:
       sheets.find((s) => /invoice|bill/i.test(s.name) && s.name !== ordersSheet.name) ??
       sheets.find((s) => s.name !== ordersSheet.name);
 
-    const steps: Array<{ operation: string; args: Record<string, unknown>; description: string }> = [];
+    const steps: Array<{ operation: string; args: Record<string, unknown>; description: string }> =
+      [];
 
     const findCol = (sheet: Sheet, pattern: RegExp): string | undefined => {
       const headerRow = sheet.rows[0] ?? [];
@@ -1301,7 +1313,13 @@ Execute this workflow:
         if (textCols.length > 0) {
           steps.push({
             operation: 'normalize_text',
-            args: { sheet: ordersSheet.name, columns: textCols, trim: true, collapseWhitespace: true, headerRow: 1 },
+            args: {
+              sheet: ordersSheet.name,
+              columns: textCols,
+              trim: true,
+              collapseWhitespace: true,
+              headerRow: 1,
+            },
             description: `Clean ${ordersSheet.name}: normalize and trim whitespace in text columns (${textCols.join(', ')})`,
           });
         }

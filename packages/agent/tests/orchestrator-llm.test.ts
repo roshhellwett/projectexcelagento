@@ -179,7 +179,7 @@ describe('the guardrail is the hard wall', () => {
     expect(decision.action).toBeUndefined();
   });
 
-  it('falls back to the deterministic planner when the model call fails', async () => {
+  it('surfaces the error to the user when the model call fails instead of silent fallback', async () => {
     stubFetch(async () => new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }));
 
     const decision = await orchestrator().decide({
@@ -189,8 +189,9 @@ describe('the guardrail is the hard wall', () => {
       config: LIVE_CONFIG,
     });
 
-    expect(decision.action?.name).toBe('delete_duplicates');
-    expect(decision.source).toBe('heuristic');
+    expect(decision.message).toContain('OpenRouter / Model Error');
+    expect(decision.telemetry?.ok).toBe(false);
+    expect(decision.action).toBeUndefined();
   });
 });
 

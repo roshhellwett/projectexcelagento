@@ -20,13 +20,49 @@ function sampleEnterpriseWorkbook(): Workbook {
             createCell('Region'),
             createCell('Amount'),
           ],
-          [createCell('ORD-101'), createCell('2026-10-01'), createCell('Acme Corp'), createCell('North'), createCell(1200)],
-          [createCell('ORD-102'), createCell('2026-10-02'), createCell('Beta LLC'), createCell('South'), createCell(850)],
-          [createCell('ORD-103'), createCell('2026-10-02'), createCell('Gamma Inc'), createCell('North'), createCell(430)],
-          [createCell('ORD-104'), createCell('2026-10-03'), createCell('Delta Co'), createCell('West'), createCell(950)],
+          [
+            createCell('ORD-101'),
+            createCell('2026-10-01'),
+            createCell('Acme Corp'),
+            createCell('North'),
+            createCell(1200),
+          ],
+          [
+            createCell('ORD-102'),
+            createCell('2026-10-02'),
+            createCell('Beta LLC'),
+            createCell('South'),
+            createCell(850),
+          ],
+          [
+            createCell('ORD-103'),
+            createCell('2026-10-02'),
+            createCell('Gamma Inc'),
+            createCell('North'),
+            createCell(430),
+          ],
+          [
+            createCell('ORD-104'),
+            createCell('2026-10-03'),
+            createCell('Delta Co'),
+            createCell('West'),
+            createCell(950),
+          ],
           // Duplicate row to test cleaning
-          [createCell('ORD-104'), createCell('2026-10-03'), createCell('Delta Co'), createCell('West'), createCell(950)],
-          [createCell('ORD-105'), createCell('2026-10-04'), createCell('Epsilon Ltd'), createCell('East'), createCell(2100)],
+          [
+            createCell('ORD-104'),
+            createCell('2026-10-03'),
+            createCell('Delta Co'),
+            createCell('West'),
+            createCell(950),
+          ],
+          [
+            createCell('ORD-105'),
+            createCell('2026-10-04'),
+            createCell('Epsilon Ltd'),
+            createCell('East'),
+            createCell(2100),
+          ],
         ],
       },
       {
@@ -104,9 +140,15 @@ describe('North Star: Autonomous AI Analyst delivering finished Excel work', () 
     expect(ordersSheet.rows.length).toBe(6);
 
     // Reconciled sheets with discrepancies flagged
-    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Summary'))).toBe(true);
-    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Exceptions'))).toBe(true);
-    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Matched'))).toBe(true);
+    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Summary'))).toBe(
+      true,
+    );
+    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Exceptions'))).toBe(
+      true,
+    );
+    expect(sheetNames.some((n) => n.includes('Reconciliation') && n.includes('Matched'))).toBe(
+      true,
+    );
 
     // Regional performance summary generated
     expect(sheetNames).toContain('Regional Performance');
@@ -136,7 +178,8 @@ describe('North Star: Autonomous AI Analyst delivering finished Excel work', () 
                   message: {
                     content: JSON.stringify({
                       title: 'Monthly Sales Report & Reconciliation Deliverable',
-                      description: 'Clean orders, reconcile against invoices, flag discrepancies, and summarize regional performance.',
+                      description:
+                        'Clean orders, reconcile against invoices, flag discrepancies, and summarize regional performance.',
                       steps: [
                         {
                           operation: 'delete_duplicates',
@@ -155,7 +198,8 @@ describe('North Star: Autonomous AI Analyst delivering finished Excel work', () 
                             tolerance: 0,
                             reportPrefix: 'Sales Reconciliation',
                           },
-                          description: 'Reconcile Orders against Invoices and extract discrepancy exceptions',
+                          description:
+                            'Reconcile Orders against Invoices and extract discrepancy exceptions',
                         },
                         {
                           operation: 'group_and_summarize',
@@ -195,7 +239,8 @@ describe('North Star: Autonomous AI Analyst delivering finished Excel work', () 
             choices: [
               {
                 message: {
-                  content: 'Workbook contains Orders (6 orders, regions North/South/West/East) and Invoices (4 billed). One duplicate detected in Orders.',
+                  content:
+                    'Workbook contains Orders (6 orders, regions North/South/West/East) and Invoices (4 billed). One duplicate detected in Orders.',
                 },
               },
             ],

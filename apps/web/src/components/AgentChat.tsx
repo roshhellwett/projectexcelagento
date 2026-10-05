@@ -150,9 +150,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   }, [messages.length, messages[messages.length - 1]?.text, isProcessing, reducedMotion]);
 
   // BYOK setup state
-  const [setupProvider, setSetupProvider] = useState<ProviderName>('groq');
   const [setupKey, setSetupKey] = useState('');
-  const [setupBaseUrl, setSetupBaseUrl] = useState('');
   const [showKeyText, setShowKeyText] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
 
@@ -179,11 +177,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleActivateKey = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!setupKey.trim() && setupProvider !== 'custom') return;
+    if (!setupKey.trim()) return;
     onSaveApiKey(
-      setupProvider,
+      'openrouter',
       setupKey.trim() || 'local-no-key',
-      setupBaseUrl.trim() || undefined,
     );
   };
 
@@ -387,88 +384,36 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               <form onSubmit={handleActivateKey} className="byok-gate-form">
                 <div className="form-group">
                   <span className="form-label" id="byok-provider-label">
-                    Select AI Provider
+                    AI Provider
                   </span>
                   <div
-                    className="provider-chips"
-                    role="group"
-                    aria-labelledby="byok-provider-label"
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-                      gap: '4px',
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                     }}
                   >
-                    <button
-                      type="button"
-                      aria-pressed={setupProvider === 'groq'}
-                      className={`provider-chip ${setupProvider === 'groq' ? 'selected' : ''}`}
-                      onClick={() => setSetupProvider('groq')}
-                    >
-                      Groq
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={setupProvider === 'gemini'}
-                      className={`provider-chip ${setupProvider === 'gemini' ? 'selected' : ''}`}
-                      onClick={() => setSetupProvider('gemini')}
-                    >
-                      Gemini
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={setupProvider === 'openrouter'}
-                      className={`provider-chip ${setupProvider === 'openrouter' ? 'selected' : ''}`}
-                      onClick={() => setSetupProvider('openrouter')}
-                    >
-                      OpenRouter
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={setupProvider === 'openai'}
-                      className={`provider-chip ${setupProvider === 'openai' ? 'selected' : ''}`}
-                      onClick={() => setSetupProvider('openai')}
-                    >
-                      OpenAI
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={setupProvider === 'custom'}
-                      className={`provider-chip ${setupProvider === 'custom' ? 'selected' : ''}`}
-                      onClick={() => setSetupProvider('custom')}
-                    >
-                      Ollama/Local
-                    </button>
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: 'var(--brand-emerald)',
+                      }}
+                    />
+                    <span>OpenRouter (Multi-Model Gateway)</span>
                   </div>
                 </div>
 
-                {setupProvider === 'custom' && (
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="byok-base-url">
-                      Endpoint Base URL
-                    </label>
-                    <input
-                      id="byok-base-url"
-                      type="text"
-                      className="form-input"
-                      placeholder="http://localhost:11434/v1"
-                      value={setupBaseUrl}
-                      onChange={(e) => setSetupBaseUrl(e.target.value)}
-                    />
-                  </div>
-                )}
-
                 <div className="form-group">
                   <label className="form-label" htmlFor="byok-api-key">
-                    {setupProvider === 'groq'
-                      ? 'Groq API Key (starts with gsk_)'
-                      : setupProvider === 'gemini'
-                        ? 'Google Gemini Key (AIzaSy...)'
-                        : setupProvider === 'openrouter'
-                          ? 'OpenRouter Key (sk-or-...)'
-                          : setupProvider === 'openai'
-                            ? 'OpenAI Key (sk-...)'
-                            : 'API Key (Optional for Ollama)'}
+                    OpenRouter API Key (sk-or-...)
                   </label>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                     <input
@@ -476,20 +421,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       type={showKeyText ? 'text' : 'password'}
                       className="form-input"
                       style={{ width: '100%', paddingRight: '40px' }}
-                      placeholder={
-                        setupProvider === 'groq'
-                          ? 'gsk_...'
-                          : setupProvider === 'gemini'
-                            ? 'AIzaSy...'
-                            : setupProvider === 'openrouter'
-                              ? 'sk-or-...'
-                              : setupProvider === 'openai'
-                                ? 'sk-...'
-                                : 'ollama / none'
-                      }
+                      placeholder="sk-or-v1-..."
                       value={setupKey}
                       onChange={(e) => setSetupKey(e.target.value)}
-                      required={setupProvider !== 'custom'}
+                      required
                     />
                     <button
                       type="button"
@@ -512,7 +447,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   type="submit"
                   className="btn btn-primary"
                   style={{ width: '100%', justifyContent: 'center', marginTop: '4px' }}
-                  disabled={!setupKey.trim() && setupProvider !== 'custom'}
+                  disabled={!setupKey.trim()}
                 >
                   Activate Excel Agent
                 </button>

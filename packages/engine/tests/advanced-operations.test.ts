@@ -626,8 +626,16 @@ describe('advanced operations', () => {
         expect(sheet).toBeDefined();
         expect(sheet?.rows.length).toBe(3);
         expect(sheet?.rows[0]?.map((c) => c.value)).toEqual(['Name', 'Phone', 'City']);
-        expect(sheet?.rows[1]?.map((c) => c.value)).toEqual(['Zenith Realty', '9876543210', 'Kolkata']);
-        expect(sheet?.rows[2]?.map((c) => c.value)).toEqual(['Apex Towers', '9830012345', 'Salt Lake']);
+        expect(sheet?.rows[1]?.map((c) => c.value)).toEqual([
+          'Zenith Realty',
+          '9876543210',
+          'Kolkata',
+        ]);
+        expect(sheet?.rows[2]?.map((c) => c.value)).toEqual([
+          'Apex Towers',
+          '9830012345',
+          'Salt Lake',
+        ]);
       }
     });
   });
@@ -720,4 +728,3 @@ describe('advanced operations', () => {
     });
   });
 });
-

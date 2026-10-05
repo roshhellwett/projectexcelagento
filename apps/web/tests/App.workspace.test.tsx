@@ -240,13 +240,13 @@ describe('BYOK settings modal', () => {
     expect(card).not.toBeNull();
     expect(within(card).getByText(/Settings - Model Keys/i)).toBeInTheDocument();
 
-    await user.type(within(card).getByPlaceholderText(/gsk_/i), 'gsk_test_123456');
+    await user.type(within(card).getByPlaceholderText(/sk-or/i), 'sk-or-test-123456');
     await user.click(within(card).getByRole('button', { name: /Save Preferences/i }));
 
     await waitFor(() =>
-      expect(localStorage.getItem('excel_agent_settings_v2')).toContain('gsk_test_123456'),
+      expect(localStorage.getItem('excel_agent_settings_v2')).toContain('sk-or-test-123456'),
     );
-    expect(await screen.findByText('GROQ ACTIVE')).toBeInTheDocument();
+    expect(await screen.findByText('OPENROUTER ACTIVE')).toBeInTheDocument();
     // The modal auto-closes after a successful save.
     await waitFor(() => expect(document.querySelector('.modal-card')).toBeNull(), {
       timeout: 3000,
@@ -276,7 +276,7 @@ describe('BYOK settings modal', () => {
       }),
     );
 
-    await user.type(within(card).getByPlaceholderText(/gsk_/i), 'gsk_test_123456');
+    await user.type(within(card).getByPlaceholderText(/sk-or/i), 'sk-or-test-123456');
     await user.click(within(card).getByRole('button', { name: /Test Connection/i }));
 
     expect(await within(card).findByText(/Could not reach the provider/i)).toBeInTheDocument();

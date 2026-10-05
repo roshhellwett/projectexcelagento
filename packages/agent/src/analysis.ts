@@ -1656,8 +1656,7 @@ export function analyzeSpreadsheetIntentAndData(
         columns.find((c) => otherCols.some((oc) => oc.cleanName === c.cleanName)) || columns[0]!;
       const keyColOther =
         otherCols.find((oc) => oc.cleanName === keyColCurrent.cleanName) || otherCols[0]!;
-      const valColOther =
-        otherCols.find((oc) => oc.letter !== keyColOther.letter) || otherCols[0]!;
+      const valColOther = otherCols.find((oc) => oc.letter !== keyColOther.letter) || otherCols[0]!;
 
       return {
         message: `I've prepared a **Cross-Sheet Join** between **${currentSheet.name}** and **${otherSheet.name}**:\n\n• **Key Match**: \`${keyColCurrent.rawName}\` (${keyColCurrent.letter}) = \`${keyColOther.rawName}\` (${keyColOther.letter})\n• **Appended Column**: \`${valColOther.rawName}\`\n• **Join Strategy**: Left Join (retains all records in ${currentSheet.name})\n\nClick **Apply Changes** to merge the tables.`,
@@ -1961,9 +1960,7 @@ export function analyzeSpreadsheetIntentAndData(
         numCols[0] ||
         columns[0]!;
       const costCol =
-        columns.find((c) => /cost|cogs|expense/i.test(c.cleanName)) ||
-        numCols[1] ||
-        columns[1]!;
+        columns.find((c) => /cost|cogs|expense/i.test(c.cleanName)) || numCols[1] || columns[1]!;
 
       const isAction =
         /\b(?:add|insert|create|compute|calculate|put)\b/i.test(q) &&
@@ -2593,109 +2590,109 @@ export function analyzeSpreadsheetIntentAndData(
 
     // Check if query matches a column and either has a number or a categorical value
     let targetColForFilter = resolveColumn(q, columns);
-  let targetValue: string | number | undefined = undefined;
+    let targetValue: string | number | undefined = undefined;
 
-  if (targetColForFilter) {
-    if (numInQuery && numInQuery[1]) {
-      targetValue = Number(numInQuery[1]);
-    } else {
-      // Check if any distinct value in this column is mentioned in the query
-      for (const [distinctVal] of targetColForFilter.distinct) {
-        if (q.includes(distinctVal.toLowerCase())) {
-          targetValue = distinctVal;
-          break;
-        }
-      }
-    }
-  }
-
-  // Fallback: search across all columns' distinct values
-  if (!targetColForFilter || targetValue === undefined) {
-    const candidate = findFilterCandidateInSheet(raw, columns, currentSheet);
-    if (candidate) {
-      targetColForFilter = candidate.column;
-      targetValue = candidate.value;
-      if (candidate.operator) operatorGuess = candidate.operator;
-    }
-  }
-
-  if (targetColForFilter && targetValue !== undefined) {
-    // Find matching rows in sheet
-    const matchingRowIndices: number[] = [];
-    const sampleMatches: string[] = [];
-
-    for (let r = 1; r < currentSheet.rows.length; r++) {
-      const row = currentSheet.rows[r];
-      const cell = row?.[targetColForFilter.index];
-      const rawVal = cell?.value;
-      const numVal =
-        typeof rawVal === 'number'
-          ? rawVal
-          : Number(
-              String(rawVal ?? '')
-                .replace(/,/g, '')
-                .trim(),
-            );
-      const strVal = String(rawVal ?? '')
-        .trim()
-        .toLowerCase();
-
-      let isMatch = false;
-      if (operatorGuess === 'equals') {
-        if (typeof targetValue === 'number') {
-          isMatch = numVal === targetValue || strVal === String(targetValue);
-        } else {
-          const expectedStr = String(targetValue).toLowerCase();
-          isMatch = strVal === expectedStr || strVal.includes(expectedStr);
-        }
-      } else if (operatorGuess === 'gt' && typeof targetValue === 'number') {
-        isMatch = !isNaN(numVal) && numVal > targetValue;
-      } else if (operatorGuess === 'lt' && typeof targetValue === 'number') {
-        isMatch = !isNaN(numVal) && numVal < targetValue;
-      }
-
-      if (isMatch) {
-        matchingRowIndices.push(r + 1); // 1-indexed for display
-        if (sampleMatches.length < 5) {
-          // Build a quick summary of this row
-          const details: string[] = [];
-          for (let c = 0; c < Math.min(6, columns.length); c++) {
-            if (
-              c !== targetColForFilter.index &&
-              row?.[c]?.value !== null &&
-              row?.[c]?.value !== undefined
-            ) {
-              const hName = columns[c]?.rawName || `Col ${indexToColumn(c)}`;
-              details.push(`${hName}: \`${row[c]?.value}\``);
-            }
+    if (targetColForFilter) {
+      if (numInQuery && numInQuery[1]) {
+        targetValue = Number(numInQuery[1]);
+      } else {
+        // Check if any distinct value in this column is mentioned in the query
+        for (const [distinctVal] of targetColForFilter.distinct) {
+          if (q.includes(distinctVal.toLowerCase())) {
+            targetValue = distinctVal;
+            break;
           }
-          sampleMatches.push(`• **Row ${r + 1}:** ${details.slice(0, 3).join(' | ')}`);
         }
       }
     }
 
-    const count = matchingRowIndices.length;
-    if (count > 0) {
-      return {
-        message: `I analyzed all **${dataRowsCount} rows** in **${currentSheet.name}**.\n\nFound **${count} matching record(s)** where **${targetColForFilter.rawName}** is **${targetValue}**:\n\n${sampleMatches.join('\n')}${count > 5 ? `\n• *...and ${count - 5} more rows (${matchingRowIndices.slice(5).join(', ')})*` : ''}\n\nI've prepared a **filter operation** to isolate these ${count} rows on your grid. Review the preview card below and click **Apply Changes** to filter the view!`,
-        proposedAction: {
-          name: 'filter_rows',
-          args: {
-            sheet: currentSheet.name,
-            column: targetColForFilter.letter,
-            operator:
-              operatorGuess === 'equals' &&
-              typeof targetValue === 'string' &&
-              !targetColForFilter.distinct.has(String(targetValue))
-                ? 'contains'
-                : operatorGuess,
-            value: targetValue,
-            headerRow: 1,
+    // Fallback: search across all columns' distinct values
+    if (!targetColForFilter || targetValue === undefined) {
+      const candidate = findFilterCandidateInSheet(raw, columns, currentSheet);
+      if (candidate) {
+        targetColForFilter = candidate.column;
+        targetValue = candidate.value;
+        if (candidate.operator) operatorGuess = candidate.operator;
+      }
+    }
+
+    if (targetColForFilter && targetValue !== undefined) {
+      // Find matching rows in sheet
+      const matchingRowIndices: number[] = [];
+      const sampleMatches: string[] = [];
+
+      for (let r = 1; r < currentSheet.rows.length; r++) {
+        const row = currentSheet.rows[r];
+        const cell = row?.[targetColForFilter.index];
+        const rawVal = cell?.value;
+        const numVal =
+          typeof rawVal === 'number'
+            ? rawVal
+            : Number(
+                String(rawVal ?? '')
+                  .replace(/,/g, '')
+                  .trim(),
+              );
+        const strVal = String(rawVal ?? '')
+          .trim()
+          .toLowerCase();
+
+        let isMatch = false;
+        if (operatorGuess === 'equals') {
+          if (typeof targetValue === 'number') {
+            isMatch = numVal === targetValue || strVal === String(targetValue);
+          } else {
+            const expectedStr = String(targetValue).toLowerCase();
+            isMatch = strVal === expectedStr || strVal.includes(expectedStr);
+          }
+        } else if (operatorGuess === 'gt' && typeof targetValue === 'number') {
+          isMatch = !isNaN(numVal) && numVal > targetValue;
+        } else if (operatorGuess === 'lt' && typeof targetValue === 'number') {
+          isMatch = !isNaN(numVal) && numVal < targetValue;
+        }
+
+        if (isMatch) {
+          matchingRowIndices.push(r + 1); // 1-indexed for display
+          if (sampleMatches.length < 5) {
+            // Build a quick summary of this row
+            const details: string[] = [];
+            for (let c = 0; c < Math.min(6, columns.length); c++) {
+              if (
+                c !== targetColForFilter.index &&
+                row?.[c]?.value !== null &&
+                row?.[c]?.value !== undefined
+              ) {
+                const hName = columns[c]?.rawName || `Col ${indexToColumn(c)}`;
+                details.push(`${hName}: \`${row[c]?.value}\``);
+              }
+            }
+            sampleMatches.push(`• **Row ${r + 1}:** ${details.slice(0, 3).join(' | ')}`);
+          }
+        }
+      }
+
+      const count = matchingRowIndices.length;
+      if (count > 0) {
+        return {
+          message: `I analyzed all **${dataRowsCount} rows** in **${currentSheet.name}**.\n\nFound **${count} matching record(s)** where **${targetColForFilter.rawName}** is **${targetValue}**:\n\n${sampleMatches.join('\n')}${count > 5 ? `\n• *...and ${count - 5} more rows (${matchingRowIndices.slice(5).join(', ')})*` : ''}\n\nI've prepared a **filter operation** to isolate these ${count} rows on your grid. Review the preview card below and click **Apply Changes** to filter the view!`,
+          proposedAction: {
+            name: 'filter_rows',
+            args: {
+              sheet: currentSheet.name,
+              column: targetColForFilter.letter,
+              operator:
+                operatorGuess === 'equals' &&
+                typeof targetValue === 'string' &&
+                !targetColForFilter.distinct.has(String(targetValue))
+                  ? 'contains'
+                  : operatorGuess,
+              value: targetValue,
+              headerRow: 1,
+            },
+            explanation: `Filter rows where ${targetColForFilter.rawName} (${targetColForFilter.letter}) ${operatorGuess} "${targetValue}" (${count} matching rows).`,
+            category: 'filter',
           },
-          explanation: `Filter rows where ${targetColForFilter.rawName} (${targetColForFilter.letter}) ${operatorGuess} "${targetValue}" (${count} matching rows).`,
-          category: 'filter',
-        },
-      };
+        };
       } else {
         const isExplicitFilterQuery =
           /\b(?:filter|find|search|isolate|where|show\s+only|list\s+out|which\s+rows|rows\s+with|records\s+with)\b/i.test(

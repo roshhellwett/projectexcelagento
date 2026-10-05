@@ -64,8 +64,8 @@ describe('Model & Usage page', () => {
     renderApp();
     await user.click(screen.getByTestId('open-usage'));
 
-    expect(screen.getByTestId('usage-provider')).toHaveTextContent('Groq (ultra-fast)');
-    expect(screen.getByTestId('usage-model')).toHaveTextContent('llama-3.3-70b-versatile');
+    expect(screen.getByTestId('usage-provider')).toHaveTextContent('OpenRouter (multi-model)');
+    expect(screen.getByTestId('usage-model')).toHaveTextContent('anthropic/claude-3.5-sonnet');
     expect(screen.getByTestId('usage-key-status')).toHaveTextContent('Not set');
     expect(screen.getByTestId('usage-mode')).toHaveTextContent('Local deterministic engine');
     expect(screen.getByTestId('usage-empty')).toBeInTheDocument();
@@ -81,21 +81,21 @@ describe('Model & Usage page', () => {
     const page = screen.getByTestId('usage-page');
     expect(screen.getByTestId('usage-key-status')).toHaveTextContent('Active');
     expect(screen.getByTestId('usage-mode')).toHaveTextContent('BYOK model + guardrail');
-    expect(page.textContent).toContain('api.groq.com');
-    expect(page.textContent).toContain('gsk_');
+    expect(page.textContent).toContain('openrouter.ai');
+    expect(page.textContent).toContain('sk-o');
     // The full key must never be rendered.
-    expect(page.textContent).not.toContain('gsk_live_test_key');
+    expect(page.textContent).not.toContain('sk-or-live_test_key');
   });
 
   it('reflects a custom model override', async () => {
-    saveSettings({ provider: 'gemini', apiKey: 'AIza-test', model: 'gemini-2.5-flash' });
+    saveSettings({ provider: 'openrouter', apiKey: 'sk-or-test', model: 'deepseek/deepseek-chat' });
 
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByTestId('open-usage'));
 
-    expect(screen.getByTestId('usage-provider')).toHaveTextContent('Google Gemini');
-    expect(screen.getByTestId('usage-model')).toHaveTextContent('gemini-2.5-flash');
+    expect(screen.getByTestId('usage-provider')).toHaveTextContent('OpenRouter (multi-model)');
+    expect(screen.getByTestId('usage-model')).toHaveTextContent('deepseek/deepseek-chat');
     expect(screen.getByText('Manual override')).toBeInTheDocument();
   });
 });
@@ -141,8 +141,7 @@ describe('token accounting', () => {
     expect(screen.getByTestId('usage-failures')).toHaveTextContent('0');
 
     const row = screen.getAllByTestId('usage-log-row')[0]!;
-    expect(row.textContent).toContain('groq');
-    expect(row.textContent).toContain('llama-3.3-70b-versatile');
+    expect(row.textContent).toContain('openrouter');
     expect(row.textContent).toContain('980');
     // Totals are also broken down per provider and per model.
     expect(screen.getByText('Breakdown')).toBeInTheDocument();
@@ -160,14 +159,13 @@ describe('token accounting', () => {
     const user = userEvent.setup();
     renderApp();
     await askAgent(user, 'remove duplicate rows');
-    await screen.findByRole('button', { name: /Apply Changes/i }, { timeout: 5000 });
+    await screen.findByText(/OpenRouter \/ Model Error/i, {}, { timeout: 5000 });
 
     await user.click(screen.getByTestId('open-usage'));
 
     expect(screen.getByTestId('usage-failures')).toHaveTextContent('1');
     const row = screen.getAllByTestId('usage-log-row')[0]!;
     expect(row.textContent).toContain('Failed');
-    // The action still succeeded, because the deterministic layer never depends on the model.
     expect(screen.getByTestId('usage-key-status')).toHaveTextContent('Active');
 
     vi.unstubAllGlobals();

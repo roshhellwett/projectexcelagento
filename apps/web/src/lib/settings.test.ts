@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_OPENROUTER_MODEL,
   PROVIDER_LABELS,
   clearSettings,
   defaultModelFor,
@@ -20,73 +21,102 @@ beforeEach(() => {
 });
 
 describe('settings store', () => {
-  it('returns Groq with no key when nothing is stored', () => {
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
-  });
-
-  it('round-trips a saved configuration, including a model override', () => {
-    saveSettings({ provider: 'gemini', apiKey: 'AIza-key', model: 'gemini-2.5-flash' });
-
+  it('returns OpenRouter with default model when nothing is stored', () => {
     expect(loadSettings()).toEqual({
-      provider: 'gemini',
-      apiKey: 'AIza-key',
-      model: 'gemini-2.5-flash',
+      provider: 'openrouter',
+      apiKey: '',
+      model: DEFAULT_OPENROUTER_MODEL,
     });
   });
 
-  it('omits the model field when no override is configured', () => {
-    saveSettings({ provider: 'groq', apiKey: 'gsk_x' });
+  it('round-trips a saved configuration, including a model override', () => {
+    saveSettings({
+      provider: 'openrouter',
+      apiKey: 'sk-or-key',
+      model: 'deepseek/deepseek-chat',
+    });
+
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: 'sk-or-key',
+      model: 'deepseek/deepseek-chat',
+    });
+  });
+
+  it('defaults to Claude 3.5 Sonnet when no model is explicitly provided', () => {
+    saveSettings({ provider: 'openrouter', apiKey: 'sk-or-x' });
 
     const loaded = loadSettings();
-    expect(loaded.model).toBeUndefined();
-    expect(loaded).toEqual({ provider: 'groq', apiKey: 'gsk_x' });
+    expect(loaded.model).toBe(DEFAULT_OPENROUTER_MODEL);
+    expect(loaded).toEqual({
+      provider: 'openrouter',
+      apiKey: 'sk-or-x',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
   });
 
   it('clears mirrored legacy keys instead of duplicating the secret', () => {
-    localStorage.setItem(LEGACY_KEY, 'gsk_legacy');
-    localStorage.setItem(LEGACY_PROVIDER, 'groq');
+    localStorage.setItem(LEGACY_KEY, 'sk-or-legacy');
+    localStorage.setItem(LEGACY_PROVIDER, 'openrouter');
 
-    saveSettings({ provider: 'openrouter', apiKey: 'sk-or-x' });
+    saveSettings({ provider: 'openrouter', apiKey: 'sk-or-new' });
 
     expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_PROVIDER)).toBeNull();
-    expect(loadSettings()).toEqual({ provider: 'openrouter', apiKey: 'sk-or-x' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: 'sk-or-new',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
   });
 
-  it('migrates a legacy single-key configuration', () => {
-    localStorage.setItem(LEGACY_KEY, 'gsk_legacy');
-    localStorage.setItem(LEGACY_PROVIDER, 'gemini');
+  it('migrates a legacy single-key configuration to openrouter', () => {
+    localStorage.setItem(LEGACY_KEY, 'sk-or-legacy');
+    localStorage.setItem(LEGACY_PROVIDER, 'groq');
 
-    expect(loadSettings()).toEqual({ provider: 'gemini', apiKey: 'gsk_legacy' });
-  });
-
-  it('ignores an unknown legacy provider instead of trusting it', () => {
-    localStorage.setItem(LEGACY_KEY, 'gsk_legacy');
-    localStorage.setItem(LEGACY_PROVIDER, 'not-a-provider');
-
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: 'sk-or-legacy',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
   });
 
   it('survives corrupt or structurally invalid stored settings', () => {
     localStorage.setItem(SETTINGS_KEY, '{broken json');
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: '',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
 
     // Present provider but no apiKey is not a usable configuration; fall through.
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ provider: 'gemini' }));
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: '',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
 
     localStorage.setItem(SETTINGS_KEY, 'null');
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: '',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
   });
 
   it('clears every key it owns', () => {
-    saveSettings({ provider: 'groq', apiKey: 'gsk_x' });
+    saveSettings({ provider: 'openrouter', apiKey: 'sk-or-x' });
     clearSettings();
 
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_PROVIDER)).toBeNull();
-    expect(loadSettings()).toEqual({ provider: 'groq', apiKey: '' });
+    expect(loadSettings()).toEqual({
+      provider: 'openrouter',
+      apiKey: '',
+      model: DEFAULT_OPENROUTER_MODEL,
+    });
   });
 });
 
@@ -101,15 +131,12 @@ describe('key and provider helpers', () => {
   });
 
   it('treats a real key as active', () => {
-    expect(isDemoKey('gsk_1234567890')).toBe(false);
-    expect(isDemoKey('  AIzaSyReal  ')).toBe(false);
+    expect(isDemoKey('sk-or-1234567890')).toBe(false);
+    expect(isDemoKey('  sk-or-real  ')).toBe(false);
   });
 
-  it('exposes a default model and label for every provider', () => {
-    for (const provider of ['groq', 'openrouter', 'gemini'] as const) {
-      expect(defaultModelFor(provider).length).toBeGreaterThan(0);
-      expect(PROVIDER_LABELS[provider].length).toBeGreaterThan(0);
-    }
-    expect(defaultModelFor('groq')).toBe('llama-3.3-70b-versatile');
+  it('exposes a default model and label for openrouter', () => {
+    expect(defaultModelFor('openrouter')).toBe(DEFAULT_OPENROUTER_MODEL);
+    expect(PROVIDER_LABELS['openrouter'].length).toBeGreaterThan(0);
   });
 });

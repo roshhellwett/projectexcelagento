@@ -68,11 +68,11 @@ export async function askAgent(user: UserEvent, prompt: string): Promise<void> {
 }
 
 export function enterDemoMode(): void {
-  saveSettings({ provider: 'groq', apiKey: 'demo-local-mode' });
+  saveSettings({ provider: 'openrouter', apiKey: 'demo-local-mode' });
 }
 
 export function enterLiveMode(): void {
-  saveSettings({ provider: 'groq', apiKey: 'gsk_live_test_key' });
+  saveSettings({ provider: 'openrouter', apiKey: 'sk-or-live_test_key' });
 }
 
 export function fileInput(container: HTMLElement): HTMLInputElement {

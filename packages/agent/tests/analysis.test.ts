@@ -472,9 +472,7 @@ describe('row horizontal aggregation analysis', () => {
         },
         {
           name: 'Zenith_Leads_Template',
-          rows: [
-            [createCell('#'), createCell('Company'), createCell('Phone')],
-          ],
+          rows: [[createCell('#'), createCell('Company'), createCell('Phone')]],
         },
       ],
     };
@@ -586,4 +584,3 @@ describe('row horizontal aggregation analysis', () => {
     ]);
   });
 });
-

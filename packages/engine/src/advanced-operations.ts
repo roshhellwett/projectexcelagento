@@ -904,17 +904,29 @@ export const lookupMergeOperation = withFormulaStructureSafety<LookupMergeArgs>(
 // 6. CLEAN TO NEW SHEET (clean_to_new_sheet)
 // ============================================================================
 
-export const cleanToNewSheetArgsSchema = z.object({
-  sheet: z.string().trim().min(1),
-  targetSheet: z.string().trim().min(1),
-  /** 1-based row index of the header in the source. Detected automatically when omitted. */
-  headerRow: z.number().int().min(1).optional(),
-  trim: z.boolean().default(true),
-  collapseWhitespace: z.boolean().default(true),
-  dropEmptyRows: z.boolean().default(true),
-  dropEmptyColumns: z.boolean().default(true),
-  coerceNumbers: z.boolean().default(true),
-});
+export const cleanToNewSheetArgsSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'object' && val !== null) {
+      const rec = val as Record<string, unknown>;
+      const sheet = rec.sheet ?? rec.sheetName ?? rec.sourceSheet;
+      const targetSheet =
+        rec.targetSheet ?? rec.targetSheetName ?? rec.newSheet ?? rec.destinationSheet;
+      return { ...rec, ...(sheet ? { sheet } : {}), ...(targetSheet ? { targetSheet } : {}) };
+    }
+    return val;
+  },
+  z.object({
+    sheet: z.string().trim().min(1),
+    targetSheet: z.string().trim().min(1),
+    /** 1-based row index of the header in the source. Detected automatically when omitted. */
+    headerRow: z.number().int().min(1).optional(),
+    trim: z.boolean().default(true),
+    collapseWhitespace: z.boolean().default(true),
+    dropEmptyRows: z.boolean().default(true),
+    dropEmptyColumns: z.boolean().default(true),
+    coerceNumbers: z.boolean().default(true),
+  }),
+);
 export type CleanToNewSheetArgs = z.infer<typeof cleanToNewSheetArgsSchema>;
 
 function cellIsBlank(cell: Cell | undefined): boolean {
@@ -974,7 +986,8 @@ function buildCleanedRows(sourceRows: Cell[][], args: CleanToNewSheetArgs): Cell
       const nonBlank = row.filter((cell) => !cellIsBlank(cell));
       if (nonBlank.length === 0) return false;
       // Section banners like "Cash Flow statement" float alone in one cell — drop them ONLY in wide multi-column tables (> 2 columns).
-      if (totalCols > 2 && nonBlank.length === 1 && typeof nonBlank[0]!.value === 'string') return false;
+      if (totalCols > 2 && nonBlank.length === 1 && typeof nonBlank[0]!.value === 'string')
+        return false;
       return true;
     });
   }
@@ -1333,17 +1346,28 @@ export const filterToNewSheetOperation = withFormulaStructureSafety<FilterToNewS
 // 9. CREATE SHEET (create_sheet)
 // ============================================================================
 
-export const createSheetArgsSchema = z.object({
-  sheetName: z.string().trim().min(1),
-  headers: z.array(z.string()).optional(),
-  rows: z.array(z.array(cellValueSchema)).optional(),
-});
+export const createSheetArgsSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'object' && val !== null) {
+      const rec = val as Record<string, unknown>;
+      const sheetName = rec.sheetName ?? rec.sheet;
+      return { ...rec, ...(sheetName ? { sheetName } : {}) };
+    }
+    return val;
+  },
+  z.object({
+    sheetName: z.string().trim().min(1),
+    headers: z.array(z.string()).optional(),
+    rows: z.array(z.array(cellValueSchema)).optional(),
+  }),
+);
 export type CreateSheetArgs = z.infer<typeof createSheetArgsSchema>;
 
 function createSheetTarget(workbook: Workbook, args: CreateSheetArgs): CellRange[] {
   const name = uniqueSheetName(workbook, args.sheetName);
   const headerCols = args.headers?.length ?? 1;
-  const rowCols = args.rows && args.rows.length > 0 ? Math.max(...args.rows.map((r) => r.length)) : 1;
+  const rowCols =
+    args.rows && args.rows.length > 0 ? Math.max(...args.rows.map((r) => r.length)) : 1;
   const colCount = Math.max(1, headerCols, rowCols);
   const totalRows = (args.headers && args.headers.length > 0 ? 1 : 0) + (args.rows?.length ?? 0);
   return [
@@ -1472,10 +1496,21 @@ export const appendRowsOperation: Operation<AppendRowsArgs> = {
 // 10. DUPLICATE SHEET (duplicate_sheet)
 // ============================================================================
 
-export const duplicateSheetArgsSchema = z.object({
-  sheet: z.string().trim().min(1),
-  targetSheet: z.string().trim().min(1),
-});
+export const duplicateSheetArgsSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'object' && val !== null) {
+      const rec = val as Record<string, unknown>;
+      const sheet = rec.sheet ?? rec.sheetName ?? rec.sourceSheet;
+      const targetSheet = rec.targetSheet ?? rec.targetSheetName ?? rec.newSheet;
+      return { ...rec, ...(sheet ? { sheet } : {}), ...(targetSheet ? { targetSheet } : {}) };
+    }
+    return val;
+  },
+  z.object({
+    sheet: z.string().trim().min(1),
+    targetSheet: z.string().trim().min(1),
+  }),
+);
 export type DuplicateSheetArgs = z.infer<typeof duplicateSheetArgsSchema>;
 
 function duplicateSheetTarget(workbook: Workbook, args: DuplicateSheetArgs): CellRange[] {
@@ -1536,9 +1571,19 @@ export const duplicateSheetOperation: Operation<DuplicateSheetArgs> = {
 // 11. DELETE SHEET (delete_sheet)
 // ============================================================================
 
-export const deleteSheetArgsSchema = z.object({
-  sheet: z.string().trim().min(1),
-});
+export const deleteSheetArgsSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'object' && val !== null) {
+      const rec = val as Record<string, unknown>;
+      const sheet = rec.sheet ?? rec.sheetName;
+      return { ...rec, ...(sheet ? { sheet } : {}) };
+    }
+    return val;
+  },
+  z.object({
+    sheet: z.string().trim().min(1),
+  }),
+);
 export type DeleteSheetArgs = z.infer<typeof deleteSheetArgsSchema>;
 
 function deleteSheetTarget(workbook: Workbook, args: DeleteSheetArgs): CellRange[] {

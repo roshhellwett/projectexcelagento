@@ -686,6 +686,9 @@ export const App: React.FC<{
     if (prev) {
       markWorkbookEdited();
       setWorkbook(prev);
+      setActiveSheetName((curr) =>
+        prev.sheets.some((s) => s.name === curr) ? curr : prev.sheets[0]?.name || '',
+      );
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
       syncMissionHistory();
@@ -697,6 +700,9 @@ export const App: React.FC<{
     if (next) {
       markWorkbookEdited();
       setWorkbook(next);
+      setActiveSheetName((curr) =>
+        next.sheets.some((s) => s.name === curr) ? curr : next.sheets[0]?.name || '',
+      );
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
       syncMissionHistory();
@@ -708,6 +714,9 @@ export const App: React.FC<{
       const restored = historyStack.stepBack(position);
       markWorkbookEdited();
       setWorkbook(restored);
+      setActiveSheetName((curr) =>
+        restored.sheets.some((s) => s.name === curr) ? curr : restored.sheets[0]?.name || '',
+      );
       setRecentChangedCells(new Set());
       setHistoryRevision((r) => r + 1);
       syncMissionHistory();

@@ -59,7 +59,9 @@ export function buildSheetContext(sheet: Sheet, sampleSize = 10): string {
     sampleProfiles.forEach((profile, columnIndex) => {
       const value = row[columnIndex]?.value;
       record[`${profile.letter}_${sanitizeUntrusted(profile.rawName, 50)}`] =
-        typeof value === 'number' || typeof value === 'boolean' ? value : sanitizeUntrusted(value, 200);
+        typeof value === 'number' || typeof value === 'boolean'
+          ? value
+          : sanitizeUntrusted(value, 200);
     });
     return record;
   });
