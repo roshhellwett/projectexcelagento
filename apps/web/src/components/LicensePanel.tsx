@@ -88,6 +88,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
   const [notice, setNotice] = useState('');
   const [activating, setActivating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
   const deviceId = status?.deviceId || getInstallId();
   const state = stateCopy(status?.state);
   const canEnterActivationKey =
@@ -106,6 +107,16 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
       setNotice('Copy was blocked by the browser. Select the ID manually.');
+    }
+  };
+
+  const copyKeyText = async (textToCopy: string) => {
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setKeyCopied(true);
+      window.setTimeout(() => setKeyCopied(false), 1600);
+    } catch {
+      setNotice('Copy was blocked by the browser. Select the key manually.');
     }
   };
 
@@ -190,15 +201,15 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 <dd>{status?.email || 'Waiting for account session…'}</dd>
               </div>
               <div>
-                <dt>Installation ID</dt>
+                <dt>Unique Device ID</dt>
                 <dd className="license-device-value">
                   <code>{deviceId}</code>
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon btn-sm"
                     onClick={() => void copyDeviceId()}
-                    aria-label="Copy installation ID"
-                    title="Copy installation ID"
+                    aria-label="Copy unique device ID"
+                    title="Copy unique device ID"
                   >
                     {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
                   </button>
@@ -218,9 +229,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
               </div>
             </dl>
             <p className="license-muted">
-              This is a stable browser installation identifier, not an immutable hardware
-              fingerprint. Clearing browser storage or using a different browser can create a new
-              installation and may require support verification.
+              Hardware-derived Unique Device ID (HWID) based on CPU cores, GPU WebGL rendering, and
+              display characteristics. Remains identical across all browsers and private browsing
+              sessions on this machine. If you lose your email access, support verifies this ID to
+              recover and restore your license.
             </p>
           </article>
 
@@ -246,12 +258,84 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 <dd>{formatDate(status?.license?.expiresAt || status?.trialExpiresAt)}</dd>
               </div>
             </dl>
+
+            {status?.license?.rawKey && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  background: 'var(--color-bg-secondary, rgba(255,255,255,0.04))',
+                  borderRadius: '8px',
+                  border: '1px solid var(--color-border, rgba(255,255,255,0.08))',
+                }}
+              >
+                <span
+                  className="studio-eyebrow"
+                  style={{ display: 'block', marginBottom: '0.35rem' }}
+                >
+                  YOUR ACTIVATION KEY
+                </span>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}
+                >
+                  <code style={{ fontSize: '0.85rem', wordBreak: 'break-all', fontWeight: 600 }}>
+                    {status.license.rawKey}
+                  </code>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void copyKeyText(status.license!.rawKey!)}
+                    style={{
+                      padding: '0.2rem 0.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                    }}
+                  >
+                    {keyCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+                    {keyCopied ? 'Copied' : 'Copy Key'}
+                  </button>
+                </div>
+                <small className="license-muted" style={{ display: 'block', marginTop: '0.25rem' }}>
+                  Linked to your Google account and Unique Device ID. Save this for recovery.
+                </small>
+              </div>
+            )}
+
+            {status && status.daysRemaining <= 0 && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                }}
+              >
+                <strong style={{ display: 'block', color: '#f87171', marginBottom: '0.25rem' }}>
+                  Evaluation Expired
+                </strong>
+                <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                  Your 30-day access has ended. Contact{' '}
+                  <a
+                    href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
+                    style={{ textDecoration: 'underline' }}
+                  >
+                    zenithprojects@icloud.com
+                  </a>{' '}
+                  with your Unique Device ID (<code>{deviceId}</code>) to add days or purchase
+                  extended access.
+                </p>
+              </div>
+            )}
+
             {canEnterActivationKey && (
               <form
                 className="license-activate-form"
                 onSubmit={(event) => void handleActivate(event)}
+                style={{ marginTop: '1rem' }}
               >
-                <label htmlFor="license-key">Activation key</label>
+                <label htmlFor="license-key">Enter new activation key</label>
                 <div className="license-key-row">
                   <input
                     id="license-key"
@@ -273,10 +357,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 </div>
               </form>
             )}
-            <p className="license-muted">
+            <p className="license-muted" style={{ marginTop: '0.75rem' }}>
               Need a paid key, a duration change, or a recovery transfer? Contact{' '}
               <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and include
-              your verified email and installation ID.
+              your verified email and Unique Device ID.
             </p>
           </article>
         </section>

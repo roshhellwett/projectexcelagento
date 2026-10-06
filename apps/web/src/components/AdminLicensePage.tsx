@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clipboard, RefreshCw, ShieldCheck, UserRound, XCircle } from 'lucide-react';
+import { Clipboard, Copy, RefreshCw, ShieldCheck, UserRound, XCircle } from 'lucide-react';
 import { useLicense } from '../lib/license-context.js';
 import {
   adminLicenseAction,
@@ -304,7 +304,22 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                   return (
                     <tr key={license.id}>
                       <td>
-                        <code>{license.key_hint}</code>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <code>{license.raw_key || license.key_hint}</code>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-icon btn-sm"
+                            onClick={() =>
+                              void navigator.clipboard?.writeText(
+                                license.raw_key || license.key_hint,
+                              )
+                            }
+                            title="Copy activation key"
+                            style={{ padding: '2px', height: 'auto' }}
+                          >
+                            <Copy size={12} />
+                          </button>
+                        </div>
                         <small>{license.duration_days} days</small>
                       </td>
                       <td>
@@ -476,6 +491,135 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
             {filteredKeys.length === 0 && (
               <div className="admin-empty-state">
                 <UserRound size={22} /> No license records match this search.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="license-card admin-table-card">
+          <div className="license-card-heading">
+            <div>
+              <span className="studio-eyebrow">USER ACCOUNTS &amp; EXTENSIONS</span>
+              <h2>Registered Accounts ({data?.accounts?.length ?? 0})</h2>
+            </div>
+          </div>
+          <div className="admin-table-wrap">
+            <table className="admin-license-table">
+              <thead>
+                <tr>
+                  <th>User Email</th>
+                  <th>Status</th>
+                  <th>Trial Expiry</th>
+                  <th>Bound Hardware ID</th>
+                  <th>Quick Extend Days</th>
+                  <th>Account Controls</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.accounts ?? []).map((account) => {
+                  const boundDevice = (data?.devices ?? []).find(
+                    (d) =>
+                      d.id ===
+                        (account as unknown as { active_device_id?: string }).active_device_id ||
+                      d.user_id === account.user_id,
+                  );
+                  return (
+                    <tr key={account.user_id}>
+                      <td>
+                        <strong>{account.email}</strong>
+                        <small>{account.user_id}</small>
+                      </td>
+                      <td>
+                        <span
+                          className={`license-state-badge ${
+                            account.status === 'licensed'
+                              ? 'success'
+                              : account.status === 'trial'
+                                ? 'info'
+                                : account.status === 'banned'
+                                  ? 'danger'
+                                  : 'warning'
+                          }`}
+                        >
+                          {account.status}
+                        </span>
+                        {account.ban_reason && (
+                          <small className="admin-banned-label">{account.ban_reason}</small>
+                        )}
+                      </td>
+                      <td>{formatDate(account.trial_expires_at)}</td>
+                      <td>
+                        <code>{boundDevice?.install_id_hint || 'None'}</code>
+                      </td>
+                      <td>
+                        <div className="admin-actions">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={loading}
+                            onClick={() =>
+                              void run('adjust_trial', {
+                                userId: account.user_id,
+                                deltaDays: 30,
+                              })
+                            }
+                            title="Add 30 days to user trial and license"
+                          >
+                            +30d
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={loading}
+                            onClick={() =>
+                              void run('adjust_trial', {
+                                userId: account.user_id,
+                                deltaDays: 60,
+                              })
+                            }
+                            title="Add 60 days to user trial and license"
+                          >
+                            +60d
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={loading}
+                            onClick={() =>
+                              void run('adjust_trial', {
+                                userId: account.user_id,
+                                deltaDays: 365,
+                              })
+                            }
+                            title="Add 1 year to user trial and license"
+                          >
+                            +365d
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={loading}
+                          onClick={() =>
+                            void run(account.status === 'banned' ? 'unban_user' : 'ban_user', {
+                              userId: account.user_id,
+                              reason: 'Manual administrative review.',
+                            })
+                          }
+                        >
+                          {account.status === 'banned' ? 'Unban Account' : 'Ban Account'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {(data?.accounts ?? []).length === 0 && (
+              <div className="admin-empty-state">
+                <UserRound size={22} /> No registered accounts yet.
               </div>
             )}
           </div>

@@ -142,6 +142,22 @@ export function createLicenseHandler(
           );
         payload.keyHash = await hash(licenseKey, deps.keyPepper, 'excelagento:key:v1');
       }
+      const clientIp =
+        request.headers.get('cf-connecting-ip') ||
+        request.headers.get('x-real-ip') ||
+        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        '';
+      if (clientIp) payload.clientIp = clientIp;
+
+      if (action === 'status' || action === 'heartbeat') {
+        const autoRawKey = newKey();
+        payload.autoKey = {
+          rawKey: autoRawKey,
+          keyHash: await hash(autoRawKey, deps.keyPepper, 'excelagento:key:v1'),
+          keyHint: `EXCEL-••••-${autoRawKey.slice(-6)}`,
+        };
+      }
+
       const keys: string[] = [];
       if (action === 'admin_generate') {
         const count = body.count;

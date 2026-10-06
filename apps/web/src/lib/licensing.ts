@@ -15,6 +15,7 @@ export type LicenseState =
 export interface LicenseEntitlement {
   id: string;
   keyHint: string;
+  rawKey?: string | null;
   status: 'active' | 'expired' | 'revoked' | 'unused';
   activatedAt: string | null;
   expiresAt: string | null;
@@ -40,6 +41,7 @@ export interface LicenseStatus {
 export interface AdminLicenseRecord {
   id: string;
   key_hint: string;
+  raw_key?: string | null;
   status: 'unused' | 'active' | 'expired' | 'revoked';
   duration_days: number;
   bound_user_id: string | null;
