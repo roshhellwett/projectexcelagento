@@ -172,6 +172,10 @@ hosts the app talks to).
 2. Keep the project root at the repository root - `vercel.json` handles the rest.
 3. Deploy. No environment variables are required.
 
+The official deployment's optional server-authoritative account activation system is documented in
+[`docs/LICENSING.md`](docs/LICENSING.md). It uses Supabase Edge Functions and must be deployed with
+server-only peppers and service-role secrets; the static browser bundle never receives those values.
+
 ## Bring Your Own Key
 
 ExcelAgento never ships or proxies a shared key. Users paste their own provider key; it is

@@ -1,0 +1,6 @@
+project_id = "fsepapdadtrlddkyqqxu"
+
+[functions.license]
+# The handler verifies every bearer token with Supabase Auth. This also supports
+# modern publishable keys, which the legacy gateway JWT check cannot validate.
+verify_jwt = false

@@ -40,6 +40,8 @@ import { AuthProvider, useAuth } from './lib/auth-context.js';
 import { LandingPage } from './components/LandingPage.js';
 import { AuthPage } from './components/AuthPage.js';
 import { AuthCallbackPage } from './components/AuthCallbackPage.js';
+import { LicensePanel } from './components/LicensePanel.js';
+import { AdminLicensePage } from './components/AdminLicensePage.js';
 
 import {
   createSampleWorkbook,
@@ -95,6 +97,7 @@ import {
   type MissionStore,
 } from './lib/missions.js';
 import { useMissionLedger } from './lib/use-mission-ledger.js';
+import { LicenseProvider, useLicense } from './lib/license-context.js';
 import { executeMissionMutation } from './lib/mission-execution.js';
 import {
   workspaceRecoveryStore,
@@ -116,9 +119,19 @@ interface WorkbookReplacement {
 
 type WorkspaceDecision = { kind: 'replace'; replacement: WorkbookReplacement } | { kind: 'clear' };
 
-/** Top-level pages. The views are URL-addressable via `#/landing`, `#/auth`, `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
+/** Top-level pages. The views are URL-addressable via hash routes. */
 export type WorkspaceView =
-  'workspace' | 'landing' | 'auth' | 'missions' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
+  | 'workspace'
+  | 'landing'
+  | 'auth'
+  | 'account'
+  | 'admin'
+  | 'missions'
+  | 'usage'
+  | 'agents'
+  | 'privacy'
+  | 'terms'
+  | 'docs';
 
 /** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
 function describeDelimiter(delimiter: string): string {
@@ -143,6 +156,8 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
     if (clean === 'signup' || clean === 'register') return { view: 'auth', authMode: 'signup' };
     if (clean === 'forgot-password') return { view: 'auth', authMode: 'reset' };
     if (clean === 'verify-email') return { view: 'auth', authMode: 'verify' };
+    if (clean === 'account' || clean === 'activation') return { view: 'account' };
+    if (clean === 'admin' || clean === 'license-admin') return { view: 'admin' };
     if (clean === 'missions') return { view: 'missions' };
     if (clean === 'usage') return { view: 'usage' };
     if (clean === 'agents') return { view: 'agents' };
@@ -171,6 +186,7 @@ const AppWorkspace: React.FC<{
   initialView,
 }) => {
   const { user, loading: authLoading, callback: authCallback, dismissCallback } = useAuth();
+  const { status: licenseStatus, loading: licenseLoading, error: licenseError } = useLicense();
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
   const [baselineWorkbook, setBaselineWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
@@ -2144,7 +2160,13 @@ const AppWorkspace: React.FC<{
   // mission history, and model usage are account-gated so there is one unambiguous entry point.
   // The test bootstrap intentionally opens the workspace directly so the existing engine/UI
   // coverage can exercise workbook behavior without depending on a remote auth service.
-  const protectedView = view === 'workspace' || view === 'missions' || view === 'usage';
+  const protectedView =
+    view === 'workspace' ||
+    view === 'missions' ||
+    view === 'usage' ||
+    view === 'account' ||
+    view === 'admin';
+  const licenseGatedView = view === 'workspace' || view === 'missions' || view === 'usage';
   const isTestMode = import.meta.env.MODE === 'test';
   if (authCallback) {
     return (
@@ -2200,6 +2222,43 @@ const AppWorkspace: React.FC<{
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
+  }
+
+  if (protectedView && !isTestMode && user && licenseLoading) {
+    return (
+      <div className="app-container app-page-scroll auth-gate-loading">
+        <div className="auth-gate-loading-card" role="status" aria-live="polite">
+          <span className="auth-gate-loading-mark">
+            <img src="/excel-agent-logo.svg" alt="" />
+          </span>
+          <strong>Checking activation access</strong>
+          <span>Verifying your account and installation…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (licenseGatedView && !isTestMode && user && (!licenseStatus?.canUse || licenseError)) {
+    return (
+      <LicensePanel
+        locked
+        onBack={() => navigate('landing')}
+        onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+      />
+    );
+  }
+
+  if (view === 'account') {
+    return (
+      <LicensePanel
+        onBack={() => navigate('workspace')}
+        onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+      />
+    );
+  }
+
+  if (view === 'admin') {
+    return <AdminLicensePage onBack={() => navigate('workspace')} />;
   }
 
   // Durable mission control: prepared tasks and applied receipts survive navigation and refresh.
@@ -2442,6 +2501,9 @@ const AppWorkspace: React.FC<{
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           onOpenLanding={() => navigate('landing')}
           onOpenAuth={openAuth}
+          onOpenAccount={() => navigate('account')}
+          onOpenAdmin={() => navigate('admin')}
+          isAdmin={licenseStatus?.isAdmin}
           checkpointStatus={checkpointStatus}
           checkpointLabel={
             checkpointClearing ? 'Deleting checkpoint…' : checkpointLabel[checkpointStatus]
@@ -2796,7 +2858,9 @@ export const App: React.FC<{
 }> = (props) => {
   return (
     <AuthProvider>
-      <AppWorkspace {...props} />
+      <LicenseProvider>
+        <AppWorkspace {...props} />
+      </LicenseProvider>
     </AuthProvider>
   );
 };

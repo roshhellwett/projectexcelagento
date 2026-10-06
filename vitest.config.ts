@@ -25,6 +25,7 @@ export default defineConfig({
       'apps/*/tests/**/*.test.{ts,tsx}',
       'apps/*/src/**/*.test.{ts,tsx}',
       'apps/*/src/**/**/*.test.{ts,tsx}',
+      'supabase/functions/**/*.test.ts',
     ],
   },
 });

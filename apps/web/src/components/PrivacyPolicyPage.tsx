@@ -214,6 +214,43 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
         </section>
 
         <section className="legal-section">
+          <h2>4A. Account activation, device identity and licensing data</h2>
+          <p>
+            The official ExcelAgento deployment uses Supabase authentication and a
+            server-authoritative activation service. When you use an authenticated deployment, the
+            service processes your verified account email, a random installation identifier stored
+            in this browser, activation and expiry timestamps, license status, and security/audit
+            events needed to enforce access.
+          </p>
+          <ul>
+            <li>
+              The installation identifier is a random UUID. ExcelAgento does not collect WebGL,
+              canvas, font, or other invasive hardware fingerprints.
+            </li>
+            <li>
+              The server stores a keyed hash of the identifier and a short display hint; it does not
+              store the raw identifier as a device fingerprint.
+            </li>
+            <li>
+              Activation keys are sent to the licensing service over HTTPS and stored server-side
+              only as keyed hashes. Administrative generation returns a plaintext key once so the
+              operator can deliver it to the purchaser.
+            </li>
+            <li>
+              Device resets, transfers, extensions, revocations and bans are recorded in an
+              administrator audit trail. Recovery is handled manually through{' '}
+              <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> after account
+              and device ownership verification.
+            </li>
+          </ul>
+          <p>
+            Clearing browser storage, using a different browser, or private browsing can create a
+            new installation identifier. A browser identifier is not an immutable hardware identity
+            and should not be treated as one.
+          </p>
+        </section>
+
+        <section className="legal-section">
           <h2>5. Rights of Data Principals under Indian DPDP Act 2023</h2>
           <p>
             Every citizen and individual whose data is processed has statutory rights guaranteed
@@ -316,6 +353,10 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             We utilize standard web browser local storage solely for functional state preservation:
           </p>
           <ul>
+            <li>
+              <code>excelagento_install_id_v1</code>: A random, origin-scoped browser installation
+              identifier used by the official activation service. It is not a hardware fingerprint.
+            </li>
             <li>
               <code>excel_agent_settings_v2</code>: Stores your chosen provider, model, and BYOK
               credentials in origin-scoped browser storage; it is not an encrypted secret vault.

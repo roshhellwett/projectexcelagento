@@ -104,6 +104,9 @@ interface TopNavProps {
   hasApiKey?: boolean;
   onOpenLanding?: () => void;
   onOpenAuth?: (mode?: 'signin' | 'signup') => void;
+  onOpenAccount?: () => void;
+  onOpenAdmin?: () => void;
+  isAdmin?: boolean;
 }
 
 const FIXTURES = [
@@ -204,15 +207,32 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
           <ThemeToggle />
           <SoundToggle />
           {user ? (
-            <div className="studio-user-badge" title={user.email ?? 'Signed-in workspace account'}>
-              <span className="studio-user-avatar">
-                {profile?.full_name
-                  ? profile.full_name.charAt(0).toUpperCase()
-                  : (user.email?.charAt(0).toUpperCase() ?? 'U')}
-              </span>
-              <span className="studio-user-name">
-                {profile?.full_name || user.email?.split('@')[0]}
-              </span>
+            <div className="studio-header-account-actions">
+              <button
+                type="button"
+                className="studio-user-badge account-trigger"
+                title="Open account and activation details"
+                onClick={props.onOpenAccount}
+              >
+                <span className="studio-user-avatar">
+                  {profile?.full_name
+                    ? profile.full_name.charAt(0).toUpperCase()
+                    : (user.email?.charAt(0).toUpperCase() ?? 'U')}
+                </span>
+                <span className="studio-user-name">
+                  {profile?.full_name || user.email?.split('@')[0]}
+                </span>
+              </button>
+              {props.isAdmin && props.onOpenAdmin && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={props.onOpenAdmin}
+                  title="Open licensing admin console"
+                >
+                  Admin
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm btn-icon"

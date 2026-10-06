@@ -158,7 +158,24 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
         </section>
 
         <section className="legal-section">
-          <h2>8. Contact &amp; Governance</h2>
+          <h2>8. Official deployment activation</h2>
+          <p>
+            The official hosted deployment may provide a 30-day evaluation followed by device-bound
+            activation. Access state is determined by the server, not by editable browser storage.
+            Purchased keys are issued through{' '}
+            <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and are bound
+            to the verified account and installation at first activation.
+          </p>
+          <p>
+            Administrative transfers, device recovery, expiry changes, revocations and suspensions
+            require ownership verification and are recorded in an operational audit trail. Because
+            ExcelAgento is open source and browser-delivered, this licensing control protects the
+            official deployment; a separately operated fork may choose different access rules.
+          </p>
+        </section>
+
+        <section className="legal-section">
+          <h2>9. Contact &amp; Governance</h2>
           <p>For questions regarding these Terms or open-source licensing:</p>
           <p>
             <strong>Zenith Open Source Projects Hub:</strong>{' '}
