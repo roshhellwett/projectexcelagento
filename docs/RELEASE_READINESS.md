@@ -119,6 +119,11 @@ predictor. Outlier detection reports observations without deleting them.
    No API key or backend database is needed for the tested local workflows.
 7. **Broader data science:** multivariate models, hypothesis testing, forecasting, model
    training/validation, notebook execution, and chart/dashboard authoring remain product work.
+8. **Official licensing deployment:** the Supabase licensing schema and Edge Function are in the
+   repository, but production access depends on applying both licensing migrations, setting the
+   server-only peppers and `APP_ORIGIN`, deploying the function, and bootstrapping the first admin.
+   The static SPA cannot prove that the remote Supabase project has those settings; verify them with a
+   real production sign-in and an admin key-generation/activation smoke test.
 
 The production bundle can be deployed to Vercel for a scoped pilot. Public general availability
 should follow real-browser validation, deployment-specific provider verification, and

@@ -14,4 +14,10 @@ describe('deployment authentication connectivity', () => {
       expect(connections?.split(/\s+/)).toContain('https://fsepapdadtrlddkyqqxu.supabase.co');
     });
   }
+
+  it('loads the theme bootstrap from a CSP-allowed same-origin script', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    expect(html).toContain('<script src="/theme-bootstrap.js"></script>');
+    expect(html).not.toContain('<script>\n      // Set the saved or preferred theme');
+  });
 });

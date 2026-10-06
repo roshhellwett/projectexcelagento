@@ -19,7 +19,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) => {
-  const { status, loading: licenseLoading, refresh } = useLicense();
+  const { status, loading: licenseLoading, error: licenseError, refresh } = useLicense();
   const [data, setData] = useState<AdminLicenseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -131,7 +131,8 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
       <div className="app-container app-page-scroll license-page">
         <main className="license-shell admin-license-shell">
           <div className="license-alert danger" role="alert">
-            <XCircle size={17} /> Administrator access is required.
+            <XCircle size={17} />
+            {licenseError || 'Administrator access is required.'}
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
             <button type="button" className="btn btn-secondary" onClick={() => void refresh()}>

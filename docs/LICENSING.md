@@ -19,12 +19,17 @@ storage is treated as an installation signal rather than an immutable hardware i
 
 ## Supabase deployment
 
-Apply the migration with the Supabase CLI or the SQL editor, then deploy the Edge Function:
+Apply both migrations with the Supabase CLI or the SQL editor, then deploy the Edge Function:
 
 ```bash
 supabase db push
 supabase functions deploy license --project-ref fsepapdadtrlddkyqqxu
 ```
+
+If `20261006000000_create_license_system.sql` was already run manually, run
+`20261007000000_harden_license_verification.sql` as an upgrade before redeploying the function.
+It fixes active-key device reset/rebinding, adds shared-read verification concurrency, and preserves
+the existing administrative records.
 
 Supabase injects `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` into deployed Edge Functions.
 Set the remaining deployment secrets with the Supabase secret store. Do not put any of them in
