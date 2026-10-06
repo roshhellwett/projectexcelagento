@@ -51,9 +51,9 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
           ExcelAgento <span className="text-emerald">Documentation</span>
         </h1>
         <p className="docs-subtitle">
-          The autonomous multi-agent spreadsheet engine by Zenith Open Source Projects. Designed for
-          high-precision numerical analysis, zero-remote-storage data privacy, and deterministic
-          client-side execution.
+          The open-source spreadsheet workspace by Zenith Open Source Projects. It combines
+          browser-local workbook operations with an optional bring-your-own-key reasoning layer,
+          reviewable previews, and reversible history.
         </p>
 
         {/* Tab Navigation */}
@@ -106,12 +106,13 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
               <div className="docs-card">
                 <div className="docs-card-header">
                   <Cpu className="text-emerald" size={20} />
-                  <h3>100% Client-Side Runtime</h3>
+                  <h3>Browser-local workbook runtime</h3>
                 </div>
                 <p>
-                  Spreadsheet files (.xlsx, .xls, .csv) are parsed directly in the browser via
-                  WebAssembly. Mutations execute in HTML5 Web Workers, guaranteeing that your
-                  proprietary spreadsheets never touch third-party servers.
+                  Spreadsheet files (.xlsx, .xls, .csv) are parsed in the browser. Workbook
+                  transformations, deterministic analysis, checkpoints, and history stay in the
+                  local app. When you connect a provider, the request and bounded context may be
+                  sent directly to that provider.
                 </p>
               </div>
 
@@ -121,9 +122,9 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
                   <h3>Deterministic Math Core</h3>
                 </div>
                 <p>
-                  Arithmetic calculations (CAGR, Margins, Ratios, Sums, Standard Deviations) are
-                  computed by an exact 64-bit numerical engine rather than raw LLM token completion,
-                  preventing arithmetic hallucinations.
+                  Supported calculations and statistics are computed by the engine rather than raw
+                  LLM token completion. The workspace reports exclusions, unsupported formulas, and
+                  undefined results instead of inventing values.
                 </p>
               </div>
 
@@ -145,8 +146,9 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
                   <h3>In-Browser Local Neural Memory</h3>
                 </div>
                 <p>
-                  Context is retained across turns in working session memory and grounded 100% in
-                  browser local storage with 0ms latency, zero external network roundtrips, and complete data privacy.
+                  Verified action associations and working session context are kept in browser-local
+                  storage. Provider requests remain separate from local memory and are visible in
+                  the Model &amp; Usage ledger when a key is configured.
                 </p>
               </div>
             </div>
@@ -353,12 +355,12 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
                 diff previews.
               </li>
               <li>
-                <strong>Cortex Memory Engine:</strong> 100% in-browser continuous learning and working
-                session memory with 0ms latency.
+                <strong>Cortex Memory Engine:</strong> Browser-local verified action memory and
+                working session context.
               </li>
               <li>
-                <strong>Valkyrie Transformer:</strong> Non-blocking Web Worker execution on 100k+
-                rows.
+                <strong>Valkyrie Transformer:</strong> Worker-assisted parsing and export where
+                available, with local engine transformations and a fallback path.
               </li>
               <li>
                 <strong>Scout Knowledge Agent:</strong> Autonomous formula synthesis (XLOOKUP,

@@ -262,7 +262,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
     if (msg.plan) {
       parts.push(
-        `\n[Planner & Sentinel] Formulated execution plan "${msg.plan.title}" (${msg.plan.steps.length} verified operations). Invariants 100% verified.`,
+        `\n[Planner & Verifier] Formulated execution plan "${msg.plan.title}" (${msg.plan.steps.length} verified operations). Engine invariants passed.`,
       );
     }
 

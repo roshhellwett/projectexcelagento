@@ -36,7 +36,7 @@ import { AnalystBriefing } from './components/AnalystBriefing.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 import { generateWorkbookStudy } from './lib/workbook-study.js';
-import { AuthProvider } from './lib/auth-context.js';
+import { AuthProvider, useAuth } from './lib/auth-context.js';
 import { LandingPage } from './components/LandingPage.js';
 import { AuthPage } from './components/AuthPage.js';
 
@@ -117,15 +117,7 @@ type WorkspaceDecision = { kind: 'replace'; replacement: WorkbookReplacement } |
 
 /** Top-level pages. The views are URL-addressable via `#/landing`, `#/auth`, `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
 export type WorkspaceView =
-  | 'workspace'
-  | 'landing'
-  | 'auth'
-  | 'missions'
-  | 'usage'
-  | 'agents'
-  | 'privacy'
-  | 'terms'
-  | 'docs';
+  'workspace' | 'landing' | 'auth' | 'missions' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
 
 /** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
 function describeDelimiter(delimiter: string): string {
@@ -147,8 +139,7 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
     if (clean === 'landing') return { view: 'landing' };
     if (clean === 'auth' || clean === 'login' || clean === 'signin')
       return { view: 'auth', authMode: 'signin' };
-    if (clean === 'signup' || clean === 'register')
-      return { view: 'auth', authMode: 'signup' };
+    if (clean === 'signup' || clean === 'register') return { view: 'auth', authMode: 'signup' };
     if (clean === 'missions') return { view: 'missions' };
     if (clean === 'usage') return { view: 'usage' };
     if (clean === 'agents') return { view: 'agents' };
@@ -176,6 +167,7 @@ const AppWorkspace: React.FC<{
   missionRepository = missionStore,
   initialView,
 }) => {
+  const { user, loading: authLoading } = useAuth();
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
   const [baselineWorkbook, setBaselineWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
@@ -2131,6 +2123,40 @@ const AppWorkspace: React.FC<{
         ? 'Your current edits are in memory. Export to keep them; only the last successful checkpoint can be restored.'
         : 'Local checkpoints stay in this browser. They do not replace an exported workbook.';
 
+  // The public overview and documentation remain readable without an account. Workbook access,
+  // mission history, and model usage are account-gated so there is one unambiguous entry point.
+  // The test bootstrap intentionally opens the workspace directly so the existing engine/UI
+  // coverage can exercise workbook behavior without depending on a remote auth service.
+  const protectedView = view === 'workspace' || view === 'missions' || view === 'usage';
+  const isTestMode = import.meta.env.MODE === 'test';
+  if (protectedView && !isTestMode && authLoading) {
+    return (
+      <div className="app-container app-page-scroll auth-gate-loading">
+        <div className="auth-gate-loading-card" role="status" aria-live="polite">
+          <span className="auth-gate-loading-mark">
+            <img src="/excel-agent-logo.svg" alt="" />
+          </span>
+          <strong>Checking workspace access</strong>
+          <span>Preparing your account session…</span>
+        </div>
+      </div>
+    );
+  }
+  if (protectedView && !isTestMode && !user) {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Authentication Page">
+          <AuthPage
+            initialMode="signin"
+            onSuccess={() => navigate(view)}
+            onNavigateBack={() => navigate('landing')}
+          />
+        </ErrorBoundary>
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   // Durable mission control: prepared tasks and applied receipts survive navigation and refresh.
   if (view === 'missions') {
     return (
@@ -2204,7 +2230,14 @@ const AppWorkspace: React.FC<{
       <div className="app-container app-page-scroll">
         <ErrorBoundary variant="panel" label="Landing Page">
           <LandingPage
-            onLaunchWorkspace={() => navigate('workspace')}
+            onLaunchWorkspace={() => {
+              if (user) {
+                navigate('workspace');
+              } else {
+                setAuthInitialMode('signup');
+                navigate('auth');
+              }
+            }}
             onOpenAuth={(mode) => {
               setAuthInitialMode(mode ?? 'signin');
               navigate('auth');
@@ -2228,7 +2261,7 @@ const AppWorkspace: React.FC<{
           <AuthPage
             initialMode={authInitialMode}
             onSuccess={() => navigate('workspace')}
-            onNavigateBack={() => navigate('workspace')}
+            onNavigateBack={() => navigate('landing')}
           />
         </ErrorBoundary>
 

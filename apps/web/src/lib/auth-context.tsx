@@ -7,12 +7,6 @@ export interface UserProfile {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
-  tier: 'free' | 'pro' | 'enterprise';
-  subscription_status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete';
-  subscription_id: string | null;
-  current_period_end: string | null;
-  credits_used: number;
-  credits_limit: number;
   created_at: string;
   updated_at: string;
 }
@@ -23,8 +17,15 @@ interface AuthContextValue {
   profile: UserProfile | null;
   loading: boolean;
   error: string | null;
-  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; authenticated?: boolean; error?: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName?: string,
+  ) => Promise<{ success: boolean; authenticated?: boolean; error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   refreshProfile: () => Promise<void>;
@@ -49,18 +50,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (profileErr) {
         console.warn('Failed to load profile from Supabase:', profileErr.message);
-        // Fallback default free tier profile
+        // Keep the workspace usable when the optional profile row is unavailable.
         setProfile({
           id: userId,
           email: userEmail || '',
           full_name: null,
           avatar_url: null,
-          tier: 'free',
-          subscription_status: 'active',
-          subscription_id: null,
-          current_period_end: null,
-          credits_used: 0,
-          credits_limit: 50,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -76,12 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: userEmail || '',
           full_name: null,
           avatar_url: null,
-          tier: 'free',
-          subscription_status: 'active',
-          subscription_id: null,
-          current_period_end: null,
-          credits_used: 0,
-          credits_limit: 50,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -101,36 +90,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let mounted = true;
 
     // Check active session on initial load
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      if (!mounted) return;
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-      if (currentSession?.user) {
-        void fetchProfile(currentSession.user.id, currentSession.user.email);
-      }
-      setLoading(false);
-    }).catch(() => {
-      if (mounted) setLoading(false);
-    });
-
-    // Listen for auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: currentSession } }) => {
         if (!mounted) return;
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        if (newSession?.user) {
-          void fetchProfile(newSession.user.id, newSession.user.email);
-        } else {
-          setProfile(null);
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        if (currentSession?.user) {
+          void fetchProfile(currentSession.user.id, currentSession.user.email);
         }
         setLoading(false);
-      },
-    );
+      })
+      .catch(() => {
+        if (mounted) setLoading(false);
+      });
+
+    // Listen for auth state changes (login, logout, token refresh)
+    const {
+      data: { subscription: authListener },
+    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      if (!mounted) return;
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
+      if (newSession?.user) {
+        void fetchProfile(newSession.user.id, newSession.user.email);
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    });
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      authListener.unsubscribe();
     };
   }, [fetchProfile]);
 
@@ -152,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(data.session);
         await fetchProfile(data.user.id, data.user.email);
       }
-      return { success: true };
+      return { success: true, authenticated: Boolean(data.session) };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to sign in';
       setError(msg);
@@ -183,7 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(data.session);
         await fetchProfile(data.user.id, data.user.email);
       }
-      return { success: true };
+      return { success: true, authenticated: Boolean(data.session) };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create account';
       setError(msg);

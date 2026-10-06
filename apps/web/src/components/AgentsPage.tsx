@@ -119,7 +119,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       id: 'aegis',
       name: 'Aegis Guardrail',
       codename: 'AEGIS-SHIELD // INVARIANT KEEPER',
-      role: 'Enterprise Invariant Verifier & Safety Gatekeeper',
+      role: 'Invariant Verifier & Safety Gatekeeper',
       clearance: 'Level 5 (Security & Schema Gatekeeper)',
       icon: <ShieldCheck className="agent-icon" size={26} />,
       accentColor: '#ec4899',
@@ -154,17 +154,17 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       id: 'cortex',
       name: 'Cortex Memory Engine',
       codename: 'CORTEX-NEURAL // COLLECTIVE BRAIN',
-      role: 'Verified Action Memory & 100% In-Browser Local Storage',
+      role: 'Verified Action Memory & Browser-local Storage',
       clearance: 'Level 4 (Neural State & Continuity)',
       icon: <Cpu className="agent-icon" size={26} />,
       accentColor: '#8b5cf6',
       status: 'ACTIVE',
       description:
-        'Verified action associations and multi-turn working memory are kept 100% locally in-browser with 0ms latency. Zero external database network hops, zero cloud round-trips, and zero latency overhead during active reasoning turns.',
+        'Verified action associations and multi-turn working memory are kept in browser-local storage. Provider requests are separate from this local memory and are recorded in the usage ledger when configured.',
       responsibilities: [
         'Multi-turn conversational session context and working step tracking',
         'Continuous learning from user feedback and successful operations',
-        '100% private in-browser local storage with instant 0ms retrieval',
+        'Browser-local storage with session continuity',
         'Strict tab-isolated ephemeral working scratchpad memory',
       ],
       capabilities: [
@@ -176,7 +176,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
       ],
       metrics: [
         { label: 'Local patterns', value: String(cloud.syncedCount) },
-        { label: 'Engine mode', value: '100% Local (0ms)' },
+        { label: 'Engine mode', value: 'Browser-local' },
         { label: 'Learning', value: 'Verified associations' },
       ],
       samplePrompts: [
@@ -341,7 +341,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
             className={`filter-pill ${selectedFilter === 'safety' ? 'active' : ''}`}
             onClick={() => setSelectedFilter('safety')}
           >
-            Enterprise Safety
+            Safety verification
           </button>
           <button
             className={`filter-pill ${selectedFilter === 'data' ? 'active' : ''}`}

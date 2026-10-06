@@ -204,10 +204,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
           <ThemeToggle />
           <SoundToggle />
           {user ? (
-            <div
-              className="studio-user-badge"
-              title={`${user.email} (${profile?.tier?.toUpperCase() ?? 'FREE'} Tier)`}
-            >
+            <div className="studio-user-badge" title={user.email ?? 'Signed-in workspace account'}>
               <span className="studio-user-avatar">
                 {profile?.full_name
                   ? profile.full_name.charAt(0).toUpperCase()
@@ -215,9 +212,6 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
               </span>
               <span className="studio-user-name">
                 {profile?.full_name || user.email?.split('@')[0]}
-              </span>
-              <span className="studio-tier-tag">
-                {profile?.tier?.toUpperCase() ?? 'FREE'}
               </span>
               <button
                 type="button"

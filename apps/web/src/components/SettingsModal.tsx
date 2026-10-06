@@ -124,7 +124,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${trimmedKey}`,
-          'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://excelagento.local',
+          'HTTP-Referer':
+            typeof window !== 'undefined' ? window.location.origin : 'https://excelagento.local',
           'X-Title': 'ExcelAgento Connection Test',
         },
         body: JSON.stringify({
@@ -152,7 +153,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   properties: {
                     sheet: { type: 'string', description: 'The target worksheet name' },
                     column: { type: 'string', description: 'The column letter or header name' },
-                    targetFormat: { type: 'string', description: 'Target date format, e.g. YYYY-MM-DD' },
+                    targetFormat: {
+                      type: 'string',
+                      description: 'Target date format, e.g. YYYY-MM-DD',
+                    },
                   },
                   required: ['sheet', 'column', 'targetFormat'],
                 },
@@ -178,11 +182,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (res.status === 401) {
           advice = 'Authentication failed (HTTP 401). Verify your API key at openrouter.ai/keys.';
         } else if (res.status === 402) {
-          advice = 'Insufficient credits (HTTP 402). Your OpenRouter account requires credits. Top up at openrouter.ai/credits.';
+          advice =
+            'Insufficient credits (HTTP 402). Your OpenRouter account requires credits. Top up at openrouter.ai/credits.';
         } else if (res.status === 404) {
           advice = `Model not found (HTTP 404). OpenRouter cannot find "${trimmedModel}". Verify the slug at openrouter.ai/models.`;
         } else if (res.status === 429) {
-          advice = 'Rate limit or quota reached (HTTP 429). The model is temporarily throttled or credits exhausted.';
+          advice =
+            'Rate limit or quota reached (HTTP 429). The model is temporarily throttled or credits exhausted.';
         }
 
         setTestStatus({
@@ -223,8 +229,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
       const toolEngagementOk = Boolean(
         formatDatesCall &&
-          parsedArgs &&
-          (parsedArgs.sheet || parsedArgs.column || parsedArgs.targetFormat),
+        parsedArgs &&
+        (parsedArgs.sheet || parsedArgs.column || parsedArgs.targetFormat),
       );
 
       if (toolEngagementOk) {
@@ -235,7 +241,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setTestStatus({
           testing: false,
           ok: true,
-          message: 'Full Excel Agent Capability Verified! Model successfully engaged with Excel function calling.',
+          message:
+            'Full Excel Agent Capability Verified! Model successfully engaged with Excel function calling.',
           diagnostics: {
             authOk: true,
             modelReachable: true,
@@ -243,11 +250,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             latencyMs,
             tokensUsed: totalTokens,
             toolCallSummary: argSummary,
-            advice: 'Model is responsive and supports tool calling for autonomous spreadsheet tasks.',
+            advice:
+              'Model is responsive and supports tool calling for autonomous spreadsheet tasks.',
           },
         });
       } else {
-        const textPreview = message?.content ? `"${message.content.slice(0, 100)}…"` : 'No response text';
+        const textPreview = message?.content
+          ? `"${message.content.slice(0, 100)}…"`
+          : 'No response text';
         setTestStatus({
           testing: false,
           ok: false,
@@ -309,10 +319,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="modal-body">
           <div className="settings-note">
-            <strong>Enterprise-Grade, Privacy-Preserving Architecture</strong>
+            <strong>Browser-local engine with explicit provider context</strong>
             Excel operations run deterministically inside your browser via{' '}
-            <code>@excel-agent/engine</code>. Only minimal structural column profiles are sent to
-            the AI reasoning model. Your spreadsheet data stays on your machine.
+            <code>@excel-agent/engine</code>. When a key is active, the prompt and the bounded
+            workbook context needed for that request may be sent directly to the provider you
+            selected. ExcelAgento does not use a shared model key or remote workbook storage.
           </div>
 
           <div className="form-group">
@@ -329,7 +340,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <option value="openrouter">OpenRouter (multi-model gateway)</option>
             </select>
             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              OpenRouter is the exclusive provider for ExcelAgento. Access Claude 3.5 Sonnet, DeepSeek V3, Gemini 2.5 Pro, Llama 3.3, and 300+ models with one key.
+              OpenRouter is the exclusive provider for ExcelAgento. Access Claude 3.5 Sonnet,
+              DeepSeek V3, Gemini 2.5 Pro, Llama 3.3, and 300+ models with one key.
             </div>
           </div>
 
@@ -370,9 +382,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               placeholder="e.g. anthropic/claude-3.5-sonnet"
             />
             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
-              Enter any OpenRouter model slug. Model fallback is disabled; your specified model is strictly used, and any errors or limit issues will be surfaced directly so you can address them.
+              Enter any OpenRouter model slug. Model fallback is disabled; your specified model is
+              strictly used, and any errors or limit issues will be surfaced directly so you can
+              address them.
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px',
+                marginTop: '8px',
+                alignItems: 'center',
+              }}
+            >
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Suggestions:</span>
               {SUGGESTED_OPENROUTER_MODELS.map((item) => (
                 <button
@@ -384,8 +406,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     padding: '2px 8px',
                     height: 'auto',
                     borderRadius: '12px',
-                    background: model === item.id ? 'var(--primary-subtle, rgba(16, 185, 129, 0.15))' : 'rgba(255, 255, 255, 0.05)',
-                    border: model === item.id ? '1px solid var(--primary)' : '1px solid rgba(255, 255, 255, 0.1)',
+                    background:
+                      model === item.id
+                        ? 'var(--primary-subtle, rgba(16, 185, 129, 0.15))'
+                        : 'rgba(255, 255, 255, 0.05)',
+                    border:
+                      model === item.id
+                        ? '1px solid var(--primary)'
+                        : '1px solid rgba(255, 255, 255, 0.1)',
                   }}
                   onClick={() => setModel(item.id)}
                 >
@@ -433,11 +461,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   padding: '10px 12px',
                   borderRadius: '6px',
                   fontSize: '12px',
-                  background: testStatus.ok ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
+                  background: testStatus.ok
+                    ? 'rgba(16, 185, 129, 0.08)'
+                    : 'rgba(244, 63, 94, 0.08)',
                   border: `1px solid ${testStatus.ok ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)'}`,
                 }}
               >
-                <div style={{ fontWeight: 600, marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: '6px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                  }}
+                >
                   <span>Diagnostic Health Check</span>
                   {testStatus.diagnostics.latencyMs !== undefined && (
                     <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
@@ -445,29 +482,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   )}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: '6px',
+                    marginBottom: '8px',
+                  }}
+                >
                   <div>
                     API Auth:{' '}
                     <strong>{testStatus.diagnostics.authOk ? '✓ Passed' : '✗ Failed'}</strong>
                   </div>
                   <div>
                     Model Reachable:{' '}
-                    <strong>{testStatus.diagnostics.modelReachable ? '✓ Passed' : '✗ Failed'}</strong>
+                    <strong>
+                      {testStatus.diagnostics.modelReachable ? '✓ Passed' : '✗ Failed'}
+                    </strong>
                   </div>
                   <div>
                     Excel Tool Calling:{' '}
-                    <strong style={{ color: testStatus.diagnostics.toolEngagementOk ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>
+                    <strong
+                      style={{
+                        color: testStatus.diagnostics.toolEngagementOk
+                          ? 'var(--accent-emerald)'
+                          : 'var(--accent-rose)',
+                      }}
+                    >
                       {testStatus.diagnostics.toolEngagementOk ? '✓ Verified' : '✗ Not Engaging'}
                     </strong>
                   </div>
                 </div>
                 {testStatus.diagnostics.toolCallSummary && (
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <div
+                    style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}
+                  >
                     Invoked Tool: <code>{testStatus.diagnostics.toolCallSummary}</code>
                   </div>
                 )}
                 {testStatus.diagnostics.advice && (
-                  <div style={{ fontSize: '11px', color: testStatus.ok ? 'var(--text-muted)' : 'var(--accent-rose)' }}>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: testStatus.ok ? 'var(--text-muted)' : 'var(--accent-rose)',
+                    }}
+                  >
                     {testStatus.diagnostics.advice}
                   </div>
                 )}
