@@ -1443,11 +1443,12 @@
 
 .product-page {
   min-height: 100%;
+  flex: 0 0 auto;
   position: relative;
   isolation: isolate;
   background: var(--bg-canvas);
   color: var(--text-main);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .product-page-grid,
@@ -2316,10 +2317,12 @@
 
 .auth-page {
   min-height: 100%;
+  flex: 0 0 auto;
   position: relative;
   isolation: isolate;
   background: var(--bg-canvas);
   color: var(--text-main);
+  overflow: visible;
 }
 .auth-page-grid {
   opacity: 0.45;
@@ -2919,6 +2922,16 @@
   place-items: center;
   min-height: 100%;
   background: var(--bg-canvas);
+}
+
+/* Public and auth routes share the fixed app shell with the studio. The shell
+   owns scrolling while these surfaces are allowed to grow beyond one viewport. */
+.app-container.app-page-scroll {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
 }
 
 .auth-gate-loading-card {
