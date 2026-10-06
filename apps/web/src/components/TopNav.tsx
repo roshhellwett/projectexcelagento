@@ -18,8 +18,11 @@ import {
   ClipboardCheck,
   BookOpen,
   ChevronRight,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
+import { isSoundEnabled, setSoundEnabled } from '../lib/sound-effects.js';
 import type { CheckpointStatus } from '../lib/workspace-recovery.js';
 
 export function ThemeToggle() {
@@ -34,8 +37,32 @@ export function ThemeToggle() {
       aria-label={label}
       aria-pressed={theme === 'dark'}
       data-testid="theme-toggle"
+      data-sound="toggle"
     >
       {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+    </button>
+  );
+}
+
+export function SoundToggle() {
+  const [enabled, setEnabled] = useState(isSoundEnabled);
+  const label = enabled ? 'Mute interface sounds' : 'Enable interface sounds';
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm btn-icon"
+      onClick={() => {
+        const next = !enabled;
+        setSoundEnabled(next);
+        setEnabled(next);
+      }}
+      title={label}
+      aria-label={label}
+      aria-pressed={enabled}
+      data-sound="toggle"
+      data-testid="sound-toggle"
+    >
+      {enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
     </button>
   );
 }
@@ -142,6 +169,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             className="btn btn-secondary"
             onClick={() => fileInput.current?.click()}
             title="Upload Excel or CSV file"
+            data-sound="click"
           >
             <Upload size={15} />
             <span>Upload File</span>
@@ -151,17 +179,20 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             className="btn btn-primary"
             onClick={props.onExport}
             title="Export current workbook to .xlsx"
+            data-sound="click"
           >
             <Download size={15} />
             <span>Export .xlsx</span>
           </button>
           <ThemeToggle />
+          <SoundToggle />
           <button
             type="button"
             className="btn btn-ghost btn-icon"
             onClick={props.onOpenSettings}
             aria-label="API Keys & Settings"
             title="API Keys & Settings"
+            data-sound="click"
           >
             <Settings size={17} />
           </button>
@@ -179,6 +210,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             className="btn btn-ghost btn-icon"
             onClick={props.onUndo}
             disabled={!props.canUndo}
+            data-sound="click"
             aria-label="Undo"
             title="Undo (Ctrl+Z)"
           >
@@ -189,6 +221,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             className="btn btn-ghost btn-icon"
             onClick={props.onRedo}
             disabled={!props.canRedo}
+            data-sound="click"
             aria-label="Redo"
             title="Redo (Ctrl+Y)"
           >
@@ -215,6 +248,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             onClick={props.onReset}
             aria-label="Reset workbook"
             title="Reset to initial workbook"
+            data-sound="click"
           >
             <RotateCcw size={14} />
           </button>

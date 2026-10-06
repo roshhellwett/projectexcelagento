@@ -371,6 +371,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               type="button"
               className="btn btn-primary studio-start-button"
               onClick={handleDemoKey}
+              data-sound="success"
             >
               <Sparkles size={16} />
               Try the local agent — no key needed
@@ -525,8 +526,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           )}
           {/* Autonomous Agent Swarm HUD - Live Real Swarm Execution */}
           {(() => {
-            const lastMessage = messages.at(-1);
-            const latestAssistantMsg = lastMessage?.sender === 'assistant' ? lastMessage : null;
+            const latestAssistantMsg =
+              messages
+                .slice()
+                .reverse()
+                .find((m) => m.sender === 'assistant') ?? null;
 
             const currentActivities = latestAssistantMsg?.activities || [];
             const latestActivity =
@@ -556,6 +560,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 agent.includes('sentinel') ||
                 agent.includes('guardrail') ||
                 agent.includes('critic') ||
+                agent.includes('verifier') ||
                 type === 'guardrail_check' ||
                 summary.includes('invariant') ||
                 summary.includes('reviewing')
@@ -597,11 +602,27 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   a.includes('sentinel') ||
                   a.includes('guardrail') ||
                   a.includes('critic') ||
-                  act.type === 'guardrail_check'
+                  a.includes('verifier') ||
+                  act.type === 'guardrail_check' ||
+                  s.includes('invariant')
                 )
                   contributedAgents.add('sentinel');
-                if (a.includes('engine') || a.includes('memory') || act.type === 'tool_call')
+                if (
+                  a.includes('engine') ||
+                  a.includes('memory') ||
+                  act.type === 'tool_call' ||
+                  s.includes('executing') ||
+                  s.includes('applying')
+                )
                   contributedAgents.add('engine');
+              }
+              // If a plan or action exists on the message, Sentinel verified it
+              if (latestAssistantMsg?.plan || latestAssistantMsg?.proposedAction) {
+                contributedAgents.add('sentinel');
+              }
+              // If applied or confirmed receipt exists, Engine executed it
+              if (latestAssistantMsg?.status === 'applied' || latestAssistantMsg?.receipt) {
+                contributedAgents.add('engine');
               }
             }
 
@@ -650,9 +671,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                     />
                     <div className="node-info">
                       <span className="node-label">Conductor</span>
-                      {activeSwarmNode === 'conductor' && (
+                      {activeSwarmNode === 'conductor' ? (
                         <span className="node-live-status">Orchestrating</span>
-                      )}
+                      ) : contributedAgents.has('conductor') ? (
+                        <span className="node-live-status node-done">Planned ✓</span>
+                      ) : null}
                     </div>
                   </div>
                   <div
@@ -673,9 +696,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                     />
                     <div className="node-info">
                       <span className="node-label">Scientist</span>
-                      {activeSwarmNode === 'scientist' && (
+                      {activeSwarmNode === 'scientist' ? (
                         <span className="node-live-status">Profiling</span>
-                      )}
+                      ) : contributedAgents.has('scientist') ? (
+                        <span className="node-live-status node-done">Profiled ✓</span>
+                      ) : null}
                     </div>
                   </div>
                   <div
@@ -696,9 +721,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                     />
                     <div className="node-info">
                       <span className="node-label">Sentinel</span>
-                      {activeSwarmNode === 'sentinel' && (
+                      {activeSwarmNode === 'sentinel' ? (
                         <span className="node-live-status">Verifying</span>
-                      )}
+                      ) : contributedAgents.has('sentinel') ? (
+                        <span className="node-live-status node-done">Verified ✓</span>
+                      ) : null}
                     </div>
                   </div>
                   <div
@@ -719,9 +746,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                     />
                     <div className="node-info">
                       <span className="node-label">Engine</span>
-                      {activeSwarmNode === 'engine' && (
+                      {activeSwarmNode === 'engine' ? (
                         <span className="node-live-status">Executing</span>
-                      )}
+                      ) : contributedAgents.has('engine') ? (
+                        <span className="node-live-status node-done">Applied ✓</span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1164,6 +1193,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                   className="btn btn-primary btn-sm"
                                   onClick={() => onApplyPlan(msg.id, msg.plan!)}
                                   disabled={isProcessing}
+                                  data-sound="click"
                                 >
                                   Apply All {msg.plan.steps.length} Steps
                                 </button>
@@ -1260,6 +1290,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                               className="btn btn-primary btn-sm"
                               onClick={() => onApplyAction(msg.id, msg.proposedAction!)}
                               disabled={isProcessing}
+                              data-sound="click"
                             >
                               Apply Changes
                             </button>
@@ -1304,6 +1335,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                     : onApplyAction(msg.id, msg.proposedAction!, true)
                                 }
                                 disabled={isProcessing}
+                                data-sound="click"
                               >
                                 Yes, apply this change
                               </button>
@@ -1311,6 +1343,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 className="btn btn-ghost btn-sm"
                                 onClick={() => onCancelAction?.(msg.id)}
                                 disabled={isProcessing}
+                                data-sound="click"
                               >
                                 Cancel
                               </button>
@@ -1327,6 +1360,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 className="btn btn-secondary btn-sm"
                                 onClick={onUndoLast}
                                 title="Revert the changes made by this step"
+                                data-sound="click"
                               >
                                 <RotateCcw size={12} />
                                 <span>Undo this step</span>
@@ -1376,6 +1410,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   key={workflow.id}
                   onClick={() => handleSuggestionClick(workflow.prompt)}
                   disabled={isProcessing || (!hasApiKey && !offlineMode)}
+                  data-sound="send"
                 >
                   {workflow.title}
                 </button>
@@ -1428,11 +1463,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 className="btn btn-primary btn-sm studio-send-button"
                 aria-label="Send"
                 disabled={!inputText.trim() || isProcessing || (!hasApiKey && !offlineMode)}
+                data-sound="send"
               >
                 <ArrowUp size={16} />
               </button>
               {isProcessing && onStop && (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={onStop}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={onStop}
+                  data-sound="click"
+                >
                   <Square size={12} />
                   Stop
                 </button>

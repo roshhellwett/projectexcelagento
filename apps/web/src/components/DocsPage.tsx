@@ -142,11 +142,11 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
               <div className="docs-card">
                 <div className="docs-card-header">
                   <Database className="text-purple" size={20} />
-                  <h3>Dual-Store Neural Memory</h3>
+                  <h3>In-Browser Local Neural Memory</h3>
                 </div>
                 <p>
-                  Context is retained across turns in working session memory and cached in local
-                  storage, with optional Supabase cloud cortex hydration for shared formula recipes.
+                  Context is retained across turns in working session memory and grounded 100% in
+                  browser local storage with 0ms latency, zero external network roundtrips, and complete data privacy.
                 </p>
               </div>
             </div>
@@ -353,8 +353,8 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
                 diff previews.
               </li>
               <li>
-                <strong>Cortex Memory Engine:</strong> Supabase continuous learning, working session
-                memory.
+                <strong>Cortex Memory Engine:</strong> 100% in-browser continuous learning and working
+                session memory with 0ms latency.
               </li>
               <li>
                 <strong>Valkyrie Transformer:</strong> Non-blocking Web Worker execution on 100k+

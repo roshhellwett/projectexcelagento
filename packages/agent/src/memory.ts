@@ -254,6 +254,10 @@ function nextId(): string {
 
 export class InMemoryMemoryStore implements MemoryStore {
   private records: MemoryRecord[] = [];
+  private workingSteps = new Map<
+    string,
+    Array<{ stepType: string; payload: Record<string, unknown>; createdAt: number; expiresAt?: number }>
+  >();
 
   private readonly maxRecords: number;
 
@@ -364,6 +368,46 @@ export class InMemoryMemoryStore implements MemoryStore {
 
   clear(): void {
     this.records = [];
+    this.workingSteps.clear();
+  }
+
+  async saveWorkingMemory(
+    sessionId: string,
+    stepType: string,
+    payload: Record<string, unknown>,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return false;
+    const key = sessionId.trim();
+    const existing = this.workingSteps.get(key) || [];
+    const now = Date.now();
+    const active = existing.filter((item) => !item.expiresAt || item.expiresAt > now);
+    active.push({
+      stepType,
+      payload,
+      createdAt: now,
+      expiresAt: typeof ttlSeconds === 'number' && ttlSeconds > 0 ? now + ttlSeconds * 1000 : undefined,
+    });
+    this.workingSteps.set(key, active.slice(-60));
+    return true;
+  }
+
+  async clearWorkingMemory(sessionId: string): Promise<boolean> {
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return false;
+    this.workingSteps.delete(sessionId.trim());
+    return true;
+  }
+
+  async getWorkingMemory(sessionId: string): Promise<Array<{ step_type: string; stepType: string; payload: Record<string, unknown> }>> {
+    if (!sessionId || typeof sessionId !== 'string' || !sessionId.trim()) return [];
+    const existing = this.workingSteps.get(sessionId.trim()) || [];
+    const now = Date.now();
+    const active = existing.filter((item) => !item.expiresAt || item.expiresAt > now);
+    return active.map((item) => ({
+      step_type: item.stepType,
+      stepType: item.stepType,
+      payload: item.payload,
+    }));
   }
 
   toJSON(): string {

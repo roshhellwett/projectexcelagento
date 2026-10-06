@@ -2858,3 +2858,404 @@
     flex-wrap: wrap;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Responsive hardening
+   The studio is the primary shell. These rules keep its hierarchy intact when
+   space gets tight instead of shrinking every control until it is ambiguous.
+   -------------------------------------------------------------------------- */
+.workbench {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workbench .studio-header-main,
+.workbench .studio-toolbar,
+.workbench .studio-workspace,
+.workbench .studio-layout,
+.workbench .studio-data-area,
+.workbench .studio-stage-content {
+  min-width: 0;
+}
+
+.workbench .studio-brand > span:last-child,
+.workbench .studio-file-copy,
+.workbench .studio-breadcrumb,
+.workbench .studio-stage-heading > div {
+  min-width: 0;
+}
+
+.workbench .studio-command-trigger,
+.workbench .studio-header-actions,
+.workbench .studio-toolbar-tools,
+.workbench .studio-resource-nav {
+  flex-shrink: 1;
+}
+
+.workbench .studio-command-trigger:hover,
+.workbench .studio-filter-input:focus-within,
+.workbench .studio-find:focus-within {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+}
+
+.workbench .studio-command-trigger,
+.workbench .studio-find,
+.workbench .studio-filter-input {
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.workbench .studio-command-trigger:focus-visible {
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-emerald) 12%, transparent);
+}
+
+@media (max-width: 1100px) {
+  .workbench .studio-header-main {
+    gap: 12px;
+  }
+  .workbench .studio-file-badge,
+  .workbench .file-meta-sheet {
+    display: none;
+  }
+  .workbench .studio-file-copy {
+    max-width: 190px;
+  }
+  .workbench .studio-header-actions {
+    gap: 5px;
+  }
+  .workbench .studio-header-actions .btn {
+    padding-inline: 9px;
+  }
+}
+
+@media (max-width: 900px) {
+  .workbench .studio-header-main {
+    align-items: center;
+  }
+  .workbench .studio-header-actions {
+    margin-left: auto;
+  }
+  .workbench .studio-toolbar {
+    min-height: 40px;
+  }
+  .workbench .studio-workspace {
+    min-height: 0;
+  }
+  .workbench .studio-stage-content {
+    overflow: hidden;
+  }
+  .workbench .studio-data-area,
+  .workbench .studio-agent-area {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .workbench .studio-header-main {
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+  .workbench .studio-brand {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 18px;
+  }
+  .workbench .studio-brand small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench .studio-header-actions {
+    flex: 0 0 auto;
+  }
+  .workbench .studio-header-actions .btn {
+    min-width: 30px;
+    padding-inline: 7px;
+  }
+  .workbench .studio-toolbar {
+    min-height: 38px;
+    padding-inline: 7px;
+    gap: 2px;
+    overflow: hidden;
+  }
+  .workbench .studio-undo-group,
+  .workbench .studio-toolbar-tools,
+  .workbench .studio-resource-nav {
+    flex-shrink: 0;
+  }
+  .workbench .studio-undo-group .btn-icon,
+  .workbench .studio-resource-nav .btn,
+  .workbench .studio-toolbar-tools .btn {
+    width: 29px;
+    min-width: 29px;
+    padding-inline: 0;
+  }
+  .workbench .studio-undo-group .btn-sm:not(.btn-icon) {
+    width: 29px;
+    min-width: 29px;
+    padding-inline: 0;
+  }
+  .workbench .studio-undo-group .btn-sm:not(.btn-icon) span {
+    display: none;
+  }
+  .workbench .studio-resource-nav {
+    margin-left: auto;
+  }
+  .workbench .studio-checkpoint-status {
+    display: none;
+  }
+  .workbench .studio-workspace {
+    padding: 7px 7px 7px 6px;
+    gap: 7px;
+  }
+  .workbench .studio-rail {
+    flex-basis: 44px;
+  }
+  .workbench .studio-stage-heading {
+    padding-bottom: 10px;
+  }
+  .workbench .studio-stage-heading h1 {
+    max-width: 45vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench .studio-mobile-tabs {
+    width: 100%;
+    align-self: stretch;
+    justify-content: stretch;
+  }
+  .workbench .studio-mobile-tabs button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .workbench .studio-agent-area .agent-panel {
+    border-radius: 11px;
+  }
+  .workbench .studio-insights-stack {
+    padding-bottom: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .workbench .studio-brand {
+    font-size: 16px;
+  }
+  .workbench .studio-brand-mark {
+    width: 28px;
+    height: 30px;
+  }
+  .workbench .studio-brand small,
+  .workbench .studio-header-actions .btn-secondary,
+  .workbench .studio-header-actions .btn-primary {
+    display: none;
+  }
+  .workbench .studio-header-actions .btn-icon {
+    width: 28px;
+    min-width: 28px;
+  }
+  .workbench .studio-rail {
+    flex-basis: 40px;
+  }
+  .workbench .studio-rail-item {
+    min-height: 52px;
+  }
+  .workbench .studio-stage-heading h1 {
+    max-width: 42vw;
+    font-size: 18px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Finishing pass: stronger hierarchy, quieter chrome, clearer state changes.
+   The personality comes from the green paper tint and rail; the data surface
+   stays deliberately calm so the workbook remains the hero.
+   -------------------------------------------------------------------------- */
+.workbench.app-container {
+  background-color: var(--bg-canvas);
+  background-image:
+    radial-gradient(
+      circle at 8% 0%,
+      color-mix(in srgb, var(--studio-tint) 78%, transparent),
+      transparent 31%
+    ),
+    radial-gradient(
+      circle at 92% 100%,
+      color-mix(in srgb, var(--studio-blue-tint) 55%, transparent),
+      transparent 28%
+    );
+}
+
+.workbench .studio-header {
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--border-strong) 55%, transparent),
+    0 10px 28px color-mix(in srgb, var(--primary) 4%, transparent);
+}
+
+.workbench .studio-header-main {
+  background: linear-gradient(
+    180deg,
+    var(--bg-surface),
+    color-mix(in srgb, var(--bg-surface) 92%, var(--studio-tint))
+  );
+}
+
+.workbench .studio-brand-mark {
+  box-shadow:
+    inset 0 1px 0 #ffffff80,
+    0 3px 10px color-mix(in srgb, var(--brand-emerald) 10%, transparent);
+}
+
+.workbench .studio-command-trigger {
+  min-height: 36px;
+  box-shadow: inset 0 1px 0 #ffffff66;
+}
+
+.workbench .studio-toolbar {
+  background: color-mix(in srgb, var(--bg-surface) 80%, var(--bg-elevated));
+}
+
+.workbench .studio-rail {
+  box-shadow:
+    0 10px 30px #173b2d1c,
+    inset 0 1px 0 #ffffff12;
+}
+
+.workbench .studio-rail-item {
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workbench .studio-rail-item:hover {
+  transform: translateY(-1px);
+}
+
+.workbench .studio-stage-heading {
+  min-height: 56px;
+}
+
+.workbench .studio-stage-heading h1 {
+  color: var(--text-main);
+  font-weight: 550;
+}
+
+.workbench .studio-stage-content {
+  animation: studio-surface-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.workbench .grid-panel,
+.workbench .studio-agent-area .agent-panel,
+.workbench .workflow-card,
+.workbench .insights-card,
+.workbench .insights-metric {
+  box-shadow:
+    0 1px 2px #20342b08,
+    0 10px 28px #20342b08;
+}
+
+.workbench .grid-panel,
+.workbench .studio-agent-area .agent-panel {
+  border-color: color-mix(in srgb, var(--border-strong) 74%, var(--border-main));
+}
+
+.workbench .formula-bar {
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
+}
+
+.workbench .spreadsheet-table th,
+.workbench .spreadsheet-table td {
+  height: 34px;
+}
+
+.workbench .spreadsheet-table .data-cell:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-emerald) 28%, transparent);
+}
+
+.workbench .spreadsheet-table .data-cell.selected {
+  box-shadow:
+    inset 0 0 0 2px var(--brand-emerald),
+    0 0 0 1px var(--bg-surface);
+}
+
+.workbench .sheet-tabs-bar {
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
+}
+
+.workbench .agent-header {
+  background: linear-gradient(
+    135deg,
+    var(--bg-surface),
+    color-mix(in srgb, var(--studio-tint) 54%, var(--bg-surface))
+  );
+}
+
+.workbench .agent-status-indicator {
+  box-shadow:
+    inset 0 1px 0 #ffffff80,
+    0 4px 12px color-mix(in srgb, var(--brand-emerald) 10%, transparent);
+}
+
+.workbench .assistant-card {
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workbench .assistant-card:hover {
+  transform: translateY(-1px);
+}
+
+.workbench .chat-input-bar {
+  box-shadow:
+    0 8px 20px #20342b0a,
+    inset 0 1px 0 #ffffff80;
+}
+
+.workbench .studio-shortcut-list button,
+.workbench .studio-mobile-tabs button {
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workbench .studio-shortcut-list button:hover:not(:disabled),
+.workbench .studio-mobile-tabs button:hover:not([aria-pressed='true']) {
+  transform: translateY(-1px);
+}
+
+.workbench .toast {
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+}
+
+@keyframes studio-surface-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench .studio-stage-content,
+  .workbench .studio-rail-item:hover,
+  .workbench .assistant-card:hover,
+  .workbench .studio-shortcut-list button:hover:not(:disabled),
+  .workbench .studio-mobile-tabs button:hover:not([aria-pressed='true']) {
+    animation: none;
+    transform: none;
+  }
+}

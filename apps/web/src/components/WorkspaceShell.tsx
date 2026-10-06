@@ -74,6 +74,7 @@ export function WorkspaceShell({
                 setMobilePanel('data');
               }}
               title={label}
+              data-sound="toggle"
             >
               {view === id && (
                 <motion.span
@@ -112,6 +113,7 @@ export function WorkspaceShell({
             type="button"
             aria-pressed={mobilePanel === 'data'}
             onClick={() => setMobilePanel('data')}
+            data-sound="toggle"
           >
             <Table2 size={15} />
             Workbook
@@ -123,6 +125,7 @@ export function WorkspaceShell({
               setMobilePanel('agent');
               setAgentVisible(true);
             }}
+            data-sound="toggle"
           >
             <Sparkles size={15} />
             Agent {isProcessing && <span className="studio-status-dot busy" />}
@@ -147,6 +150,7 @@ export function WorkspaceShell({
               aria-expanded={agentVisible}
               aria-controls="studio-agent-area"
               title={agentVisible ? 'Focus on workbook' : 'Show agent'}
+              data-sound="toggle"
             >
               {agentVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
               <span>{agentVisible ? 'Focus mode' : 'Show agent'}</span>
@@ -215,6 +219,7 @@ export function WorkspaceShell({
             type="button"
             className="studio-agent-reopen"
             onClick={() => setAgentVisible(true)}
+            data-sound="toggle"
           >
             <Sparkles size={19} />
             <span>Agent</span>

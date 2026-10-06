@@ -1,12 +1,7 @@
-import { SupabaseMemoryStore, createOrchestrator } from '@excel-agent/agent';
+import { createMemoryStore, createOrchestrator } from '@excel-agent/agent';
 import { createOperationRegistry } from '@excel-agent/engine';
 
 const MEMORY_KEY = 'excel_agent_memory_v1';
-
-const SUPABASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
-const SUPABASE_KEY =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
 
 function storage(): Storage | undefined {
   try {
@@ -25,32 +20,22 @@ function readMemory(): string | undefined {
 }
 
 /**
- * Single shared runtime for the workspace: one engine registry, one dual-store Supabase
- * self-learning memory (with 100MB ephemeral scratchpad and 400MB collective cortex),
+ * Single shared runtime for the workspace: one engine registry, one 100% in-browser local
+ * self-learning memory (0ms latency, zero external network calls, total data privacy),
  * and one multi-layer orchestrator.
  */
 export const registry = createOperationRegistry();
 
-const isTestMode =
-  typeof import.meta !== 'undefined' &&
-  (import.meta.env?.MODE === 'test' || Boolean(import.meta.env?.VITEST));
-
 export const cloudMemoryConfig = {
-  url: SUPABASE_URL,
-  apiKey: SUPABASE_KEY,
-  enabled: !isTestMode && Boolean(SUPABASE_URL && SUPABASE_KEY),
-  timeoutMs: 2500,
+  url: '',
+  apiKey: '',
+  enabled: false,
+  timeoutMs: 0,
   minConfidence: 0.5,
 };
 
-export const memory = new SupabaseMemoryStore(cloudMemoryConfig);
-
-// Preload any existing browser local storage into the local hot-cache
-const localCache = readMemory();
-if (localCache) {
-  // Loading preserves verified outcomes and does not re-publish saved records to the cloud.
-  memory.load(localCache);
-}
+// Initialize 100% in-browser local memory from localStorage
+export const memory = createMemoryStore(readMemory());
 
 export const orchestrator = createOrchestrator({ registry, memory });
 
@@ -76,19 +61,9 @@ export function learnedActionCount(): number {
 }
 
 export async function initCloudMemory(onUpdate?: (count: number) => void): Promise<number> {
-  try {
-    const loaded = await memory.hydrateFromCloud();
-    if (loaded > 0) {
-      persistMemory();
-    }
-    const total = learnedActionCount();
-    onUpdate?.(total);
-    return total;
-  } catch {
-    const total = learnedActionCount();
-    onUpdate?.(total);
-    return total;
-  }
+  const total = learnedActionCount();
+  onUpdate?.(total);
+  return total;
 }
 
 export function getMemoryEntries() {
@@ -96,7 +71,12 @@ export function getMemoryEntries() {
 }
 
 export function getMemoryCloudStatus() {
-  return memory.getCloudStatus();
+  return {
+    enabled: false,
+    url: '',
+    syncedCount: memory.entries().length,
+    minConfidence: 0.5,
+  };
 }
 
 export { getTabSessionId, clearCurrentTabWorkingMemory } from './session';

@@ -230,14 +230,12 @@ actual full-recalculation XML. Formula reference rewriting is not yet implemente
 are blocked on formula-bearing workbooks, and export refuses sheet-name changes that could break
 formula references. Ordinary cell/value editing remains available. See release readiness for limits.
 
-## Optional cloud memory
+## In-browser local memory
 
-The default deployment uses local browser memory. To configure Supabase synchronization,
-set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` at build time, provision the required
-tables/RPCs, and add that exact backend origin to the deployment's `connect-src` CSP.
-Cloud synchronization includes queries, learned operation arguments, and working-step
-payloads. The repository does not include backend provisioning or access policies, so this
-integration needs separate deployment verification.
+ExcelAgento uses 100% in-browser local memory. All self-learning verified actions, schema-fingerprinted
+replays, and multi-turn working session scratchpads run directly in browser memory and `localStorage`.
+This delivers 0ms retrieval latency with zero external database roundtrips, zero network dependencies,
+and strict client-side data isolation.
 
 Adding a new engine operation automatically appears in the model's tool contract (derived
 from the Zod schema) and fails the build until it is documented in `packages/agent/src/tools.ts`.

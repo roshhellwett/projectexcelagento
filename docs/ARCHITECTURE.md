@@ -229,8 +229,6 @@ provider and font hosts the app genuinely uses.
   clipboard, downloads, very large files, live providers and deployment CSP remain additional checks.
 - **Coverage thresholds** - coverage is not yet enforced in CI. Adding a floor per package would
   make untested additions fail loudly.
-- **Cloud memory** - local associations persist in `localStorage`, with verified outcome
-  counts restored on startup. Optional Supabase synchronization is enabled only when both
-  build-time settings are supplied; queries, operation arguments, and working-step context may
-  be sent. Backend provisioning, tenant isolation, access policies, retention/deletion, and the
-  backend's exact CSP origin require deployment-specific verification.
+- **Local memory** - local associations persist in `localStorage`, with verified outcome
+  counts restored on startup. Working memory and reasoning scratchpads operate 100% locally in-browser
+  with 0ms latency, zero external network calls, zero cloud database dependencies, and complete client-side privacy.

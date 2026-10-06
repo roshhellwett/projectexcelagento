@@ -693,6 +693,11 @@ export async function runMultiAgentTurn(
   }
 
   // ---- Stage 5: Verification of every step ----------------------------------
+  activityEvent(
+    'guardrail_check',
+    'Sentinel',
+    `Verifying ${finalPlan.steps.length} operation(s) against mathematical invariants...`,
+  );
   const registry = deps.registry ?? createOperationRegistry();
   const verifiedSteps: ExecutionPlanStep[] = [];
   const failures: string[] = [];

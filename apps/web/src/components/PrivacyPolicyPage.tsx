@@ -165,18 +165,16 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           <div className="legal-callout">
             <CheckCircle2 size={16} className="callout-icon text-emerald" />
             <div>
-              <strong>Local does not mean nothing is shared:</strong> connected models receive your
-              prompt, recent conversation, workbook profiles and examples, plus requested read-tool
-              results that may contain actual values, formulas, headers and rows. Optional cloud
-              memory sends queries, operation arguments and working-step context to the deployment
-              backend.
+              <strong>Local execution and in-browser memory:</strong> connected models only receive
+              your prompt, recent conversation, workbook profiles and examples when you provide an AI key.
+              All agent working scratchpad steps, learned patterns, and session history remain 100% in
+              your local browser with zero cloud database persistence.
             </div>
           </div>
           <p>
             Spreadsheet files (.xlsx, .xls, .csv) use a client-side JavaScript codec. The local
-            engine is separate from model inference. Optional Supabase integration is disabled
-            unless configured by the deployment; backend provisioning, isolation, deletion and
-            retention policies are not included or verified here.
+            engine is separate from model inference. Agent memory is grounded 100% in local browser
+            storage with zero external database dependencies.
           </p>
         </section>
 

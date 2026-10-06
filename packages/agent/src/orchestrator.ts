@@ -514,7 +514,7 @@ export class ExcelAgentOrchestrator {
             if (memorySummary) {
               messages.push({
                 role: 'system',
-                content: `Working session memory from Supabase (context across previous turns in this session):\n${memorySummary}`,
+                content: `Working session memory (context across previous turns in this session):\n${memorySummary}`,
               });
             }
           }
@@ -819,6 +819,11 @@ You MUST:
                 input.callbacks?.onThinking?.(
                   `[Sentinel] Verifying ${plan.steps.length} operation(s) against mathematical invariants and schema safety...\n`,
                 );
+                emitActivity(
+                  'guardrail_check',
+                  'Sentinel',
+                  `Verifying ${plan.steps.length} operation(s) against mathematical invariants and schema safety...`,
+                );
               }
               resolved = true;
               break;
@@ -828,8 +833,8 @@ You MUST:
             if (this.registry.get(fnName)) {
               emitActivity(
                 'guardrail_check',
-                'Guardrail',
-                `Validating proposed operation "${fnName}"...`,
+                'Sentinel',
+                `Validating proposed operation "${fnName}" against engine invariants...`,
               );
               input.callbacks?.onThinking?.(
                 `\n[Sentinel] Validating proposed operation "${fnName}" against engine invariants...\n`,
@@ -1045,8 +1050,8 @@ You MUST:
     if (llmPlan) {
       emitActivity(
         'guardrail_check',
-        'Guardrail',
-        `Verifying plan: ${llmPlan.steps.length} steps...`,
+        'Sentinel',
+        `Verifying plan: ${llmPlan.steps.length} operation(s) against mathematical invariants...`,
       );
       const failedSteps = llmPlan.steps.filter((s) => s.status === 'error').length;
       this.saveWorkingStep(input, 'plan_prepared', {
@@ -1153,7 +1158,7 @@ You MUST:
           continue;
         }
 
-        emitActivity('status', 'Guardrail', `Approved operation "${candidate.name}".`);
+        emitActivity('guardrail_check', 'Sentinel', `Approved operation "${candidate.name}" - invariants verified.`);
         const isLlmCandidate = llmAction !== undefined && candidate === llmAction;
         this.saveWorkingStep(input, 'decision_approved', {
           action: candidate.name,

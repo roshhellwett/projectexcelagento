@@ -35,7 +35,6 @@ import { MissionControlPage } from './components/MissionControlPage.js';
 import { AnalystBriefing } from './components/AnalystBriefing.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
-import { KeyRound, Sparkles } from 'lucide-react';
 import { generateWorkbookStudy } from './lib/workbook-study.js';
 
 import {
@@ -1428,16 +1427,57 @@ export const App: React.FC<{
         status: 'executing',
         stage: 'Staging verified changes in a private workbook…',
       });
+    const engineExecId = `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-engine`;
+    const engineStartActivity: AgentActivityEvent = {
+      id: engineExecId,
+      type: 'tool_call',
+      agent: 'Engine',
+      summary: `Executing ${steps.length} operation(s) in deterministic engine...`,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              activities: [...(m.activities || []), engineStartActivity],
+            }
+          : m,
+      ),
+    );
     try {
       const result = await executeMissionMutation(
         { workbook, steps, confirmed },
         {
           signal: controller.signal,
           onProgress: (event) => {
-            if (!controller.signal.aborted && source.missionId)
-              updateMission(source.missionId, {
-                stage: `Step ${event.index + 1}/${steps.length}: ${event.phase} ${steps[event.index]?.operation ?? 'operation'}`,
-              });
+            if (!controller.signal.aborted) {
+              if (source.missionId)
+                updateMission(source.missionId, {
+                  stage: `Step ${event.index + 1}/${steps.length}: ${event.phase} ${steps[event.index]?.operation ?? 'operation'}`,
+                });
+              const stepOp = steps[event.index]?.operation ?? 'operation';
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.id !== messageId) return m;
+                  const acts = m.activities || [];
+                  const lastAct = acts[acts.length - 1];
+                  if (lastAct && lastAct.id === engineExecId) {
+                    return {
+                      ...m,
+                      activities: [
+                        ...acts.slice(0, -1),
+                        {
+                          ...lastAct,
+                          summary: `Step ${event.index + 1}/${steps.length}: Applying ${stepOp}...`,
+                        },
+                      ],
+                    };
+                  }
+                  return m;
+                }),
+              );
+            }
           },
         },
       );
@@ -1470,6 +1510,26 @@ export const App: React.FC<{
                 : [],
             ),
           ),
+        );
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== messageId) return m;
+            const acts = m.activities || [];
+            const lastAct = acts[acts.length - 1];
+            if (lastAct && lastAct.id === engineExecId) {
+              return {
+                ...m,
+                activities: [
+                  ...acts.slice(0, -1),
+                  {
+                    ...lastAct,
+                    summary: `Successfully applied ${result.steps.length} operation(s). Invariants verified ✓`,
+                  },
+                ],
+              };
+            }
+            return m;
+          }),
         );
       }
       if (!result.ok && result.error.code === 'confirmation-required')
@@ -2364,22 +2424,6 @@ export const App: React.FC<{
           }
         >
           <div className="studio-sheet-view" hidden={studioView !== 'sheet'}>
-            {!hasApiKey && (
-              <div className="workspace-locked-overlay" role="region" aria-label="Setup required">
-                <div className="workspace-locked-modal">
-                  <div className="workspace-locked-icon">
-                    <KeyRound size={28} />
-                  </div>
-                  <h3 className="workspace-locked-title">API Key & Model Setup Required</h3>
-                  <p className="workspace-locked-desc">
-                    To interact with Excel spreadsheets, run agent swarms, and perform AI operations, please enter your OpenRouter API key and model in the sidebar.
-                  </p>
-                  <div className="workspace-locked-badge">
-                    <Sparkles size={14} /> OpenRouter Multi-Model Engine
-                  </div>
-                </div>
-              </div>
-            )}
             {/* Spreadsheet Grid with Drop Zone */}
             <ErrorBoundary variant="panel" label="the grid">
               <SpreadsheetGrid

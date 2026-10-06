@@ -1,4 +1,4 @@
-import { cloudMemoryConfig, memory } from './agent-runtime';
+import { memory } from './agent-runtime';
 
 const SESSION_KEY = 'excel_agent_tab_session_id';
 let fallbackSessionId: string | undefined;
@@ -64,7 +64,7 @@ export function getTabSessionId(): string {
 }
 
 /**
- * Explicitly frees this tab's ephemeral working memory calculations in Supabase.
+ * Explicitly frees this tab's ephemeral working memory calculations in local in-browser memory.
  */
 export async function clearCurrentTabWorkingMemory(): Promise<boolean> {
   const sessionId = getTabSessionId();
@@ -73,30 +73,12 @@ export async function clearCurrentTabWorkingMemory(): Promise<boolean> {
 
 /**
  * Automatically hook into browser lifecycle events (pagehide / beforeunload)
- * to immediately recycle this tab's scratchpad rows from the 100MB pool.
+ * to immediately recycle this tab's ephemeral scratchpad memory locally.
  */
 if (typeof window !== 'undefined') {
   const cleanup = () => {
     try {
-      if (!cloudMemoryConfig.enabled) return;
-      const sessionId = safeSessionStorage()?.getItem(SESSION_KEY);
-      if (!sessionId) return;
-
-      const endpoint = `${cloudMemoryConfig.url.replace(/\/+$/, '')}/rest/v1/agent_working_memory?session_id=eq.${encodeURIComponent(
-        sessionId,
-      )}`;
-
-      // Use keepalive fetch so the deletion request completes even as the browser closes
-      if (typeof fetch === 'function') {
-        void fetch(endpoint, {
-          method: 'DELETE',
-          headers: {
-            apikey: cloudMemoryConfig.apiKey,
-            Authorization: `Bearer ${cloudMemoryConfig.apiKey}`,
-          },
-          keepalive: true,
-        }).catch(() => {});
-      }
+      void clearCurrentTabWorkingMemory();
     } catch {
       // Ignore unload errors
     }

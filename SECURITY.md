@@ -3,8 +3,8 @@
 ## Scope
 
 ExcelAgento processes workbooks in the browser and can send selected context to a model provider
-when a user configures BYOK. The public deployment does not provide a shared API key. Optional
-Supabase memory is deployment-configured and requires its own access and retention review.
+when a user configures BYOK. The public deployment does not provide a shared API key. Agent memory
+is 100% local in-browser with zero external database dependencies.
 
 ## Report a vulnerability
 
@@ -22,5 +22,5 @@ we can, investigate with a reproducible case, and coordinate disclosure for conf
 
 ## Safe disclosure boundaries
 
-Do not test against another person's workbook, API key, provider account, Supabase project, or the
+Do not test against another person's workbook, API key, provider account, or the
 production deployment without explicit authorization. Use local fixtures and synthetic keys.

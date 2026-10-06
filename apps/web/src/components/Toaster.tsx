@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { playUiSound } from '../lib/sound-effects.js';
 
 export type ToastKind = 'success' | 'error' | 'info' | 'warning';
 
@@ -27,6 +28,7 @@ export function useToasts() {
       toastSequence += 1;
       const id = `toast-${Date.now().toString(36)}-${toastSequence.toString(36)}`;
       setToasts((prev) => [...prev.slice(-3), { id, kind, message }]);
+      playUiSound(kind === 'success' ? 'success' : kind === 'error' ? 'error' : 'click');
       setTimeout(() => dismissToast(id), ttlMs);
       return id;
     },

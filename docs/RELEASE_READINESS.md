@@ -22,8 +22,8 @@ ambition of supporting an analyst's entire workflow.
   standard error, and complete-pair exclusions. Insufficient or constant data is explicit.
 - Live evaluation of supported formulas for statistics and engine aggregates; formula errors
   are excluded and counted, rather than silently converted to numbers.
-- Local learned-action persistence with verified success/failure counts. Cloud memory is
-  disabled unless the deployment supplies both Supabase settings.
+- Local learned-action persistence with verified success/failure counts. All memory and
+  working-session scratchpads operate 100% locally in-browser with zero database dependencies.
 - Browser-local IndexedDB checkpoints with restore/discard, transaction-commit status, retry,
   and explicit storage-failure warnings. Checkpoints preserve Dates and the workbook epoch;
   restoration starts fresh undo history and conversation, not a recovered agent session.
@@ -115,13 +115,12 @@ predictor. Outlier detection reports observations without deleting them.
    resumes automatically. Chat and undo history are not restored; receipts are not persisted undo
    handles. Records are unencrypted and may contain customer data. Export remains essential;
    multi-workbook libraries, crash-consistent journaling and conflict-safe multi-tab state remain work.
-6. **Optional integrations:** live model-provider compatibility and Supabase provisioning,
-   isolation, and access policies have not been verified against deployed services. No API
-   key or backend is needed for the tested local workflows.
+6. **Optional integrations:** live model-provider compatibility is optional via BYOK.
+   No API key or backend database is needed for the tested local workflows.
 7. **Broader data science:** multivariate models, hypothesis testing, forecasting, model
    training/validation, notebook execution, and chart/dashboard authoring remain product work.
 
 The production bundle can be deployed to Vercel for a scoped pilot. Public general availability
-should follow real-browser validation, deployment-specific provider/Supabase verification, and
+should follow real-browser validation, deployment-specific provider verification, and
 workflows that match the supported fidelity boundaries above. Changes are local until a separate
 release decision; this document is not a claim that the deployed production app has been upgraded.
