@@ -112,8 +112,24 @@ interface LicenseResponse {
 
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('license', { body });
-  if (error)
-    throw new LicenseServiceError(error.message || 'The licensing service could not be reached.');
+  if (error) {
+    let message = error.message || 'The licensing service could not be reached.';
+    let code: string | undefined;
+    if (
+      'context' in error &&
+      error.context &&
+      typeof (error.context as Response).json === 'function'
+    ) {
+      try {
+        const errorJson = (await (error.context as Response).clone().json()) as LicenseResponse;
+        if (errorJson?.error) message = errorJson.error;
+        if (errorJson?.code) code = errorJson.code;
+      } catch {
+        // Use default error message
+      }
+    }
+    throw new LicenseServiceError(message, code);
+  }
   const payload = (data ?? {}) as T & LicenseResponse;
   if (payload.error) throw new LicenseServiceError(payload.error, payload.code);
   return payload as T;

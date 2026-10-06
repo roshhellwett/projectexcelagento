@@ -19,7 +19,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) => {
-  const { status } = useLicense();
+  const { status, loading: licenseLoading, refresh } = useLicense();
   const [data, setData] = useState<AdminLicenseData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -114,6 +114,18 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
     setTransfer(null);
   };
 
+  if (licenseLoading && !status) {
+    return (
+      <div className="app-container app-page-scroll license-page">
+        <main className="license-shell admin-license-shell">
+          <div className="license-alert info" role="status">
+            <RefreshCw size={17} className="animate-spin" /> Verifying administrator access…
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (!status?.isAdmin) {
     return (
       <div className="app-container app-page-scroll license-page">
@@ -121,9 +133,14 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
           <div className="license-alert danger" role="alert">
             <XCircle size={17} /> Administrator access is required.
           </div>
-          <button type="button" className="btn btn-secondary" onClick={onBack}>
-            Return to workspace
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => void refresh()}>
+              <RefreshCw size={14} /> Retry verification
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onBack}>
+              Return to workspace
+            </button>
+          </div>
         </main>
       </div>
     );

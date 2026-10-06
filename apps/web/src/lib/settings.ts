@@ -26,7 +26,9 @@ const DEFAULT_MODELS = {
 } as const satisfies Record<ProviderName, string>;
 
 export function defaultModelFor(provider: ProviderName): string {
-  return provider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : (DEFAULT_MODELS[provider] ?? DEFAULT_OPENROUTER_MODEL);
+  return provider === 'openrouter'
+    ? DEFAULT_OPENROUTER_MODEL
+    : (DEFAULT_MODELS[provider] ?? DEFAULT_OPENROUTER_MODEL);
 }
 
 export const PROVIDER_LABELS = {

@@ -541,10 +541,7 @@ function openAiCompatibleAdapter(
                   chunkChars += delta.content.length;
                 }
                 const thoughtToken =
-                  delta.reasoning ??
-                  delta.reasoning_content ??
-                  delta.thought ??
-                  delta.thinking;
+                  delta.reasoning ?? delta.reasoning_content ?? delta.thought ?? delta.thinking;
                 if (thoughtToken) {
                   fullThought += thoughtToken;
                   callbacks.onThinking?.(thoughtToken);

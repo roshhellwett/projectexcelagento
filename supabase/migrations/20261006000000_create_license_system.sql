@@ -91,7 +91,7 @@ create trigger license_events_immutable before update or delete on public.licens
 revoke all on function public.reject_license_audit_mutation() from public, anon, authenticated;
 
 create function public.license_command(p_actor_id uuid, p_action text, p_payload jsonb default '{}')
-returns jsonb language plpgsql set search_path = public, pg_temp as $$
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_user auth.users%rowtype;
   v_target auth.users%rowtype;
@@ -300,11 +300,16 @@ begin
     return jsonb_build_object('error', 'This installation belongs to another account. Contact support for recovery.', 'code', 'DEVICE_BOUND', 'httpStatus', 409);
   end if;
   if v_device.id is null then
-    if v_account.user_id is not null and v_account.active_device_id is not null then
+    if v_account.user_id is not null and v_account.active_device_id is not null
+       and not exists (select 1 from public.license_admins where user_id = p_actor_id) then
       return jsonb_build_object('error', 'Your account is bound to another installation. Contact support for a device transfer.', 'code', 'DEVICE_MISMATCH', 'httpStatus', 409);
     end if;
     insert into public.license_devices(user_id, install_id_hash, install_id_hint)
       values (p_actor_id, p_payload->>'installHash', p_payload->>'installHint') returning * into v_device;
+    if exists (select 1 from public.license_admins where user_id = p_actor_id) then
+      update public.license_accounts set active_device_id = v_device.id where user_id = p_actor_id;
+      v_account.active_device_id := v_device.id;
+    end if;
   end if;
   if v_account.user_id is null then
     insert into public.license_accounts(user_id, email, active_device_id) values (p_actor_id, lower(v_user.email), v_device.id) returning * into v_account;
@@ -314,7 +319,8 @@ begin
     v_account.active_device_id := v_device.id;
   end if;
   v_state := case when v_account.banned_at is not null then 'banned' when v_device.status = 'banned' then 'device_banned'
-    when v_device.status = 'retired' or v_account.active_device_id <> v_device.id then 'device_mismatch' else null end;
+    when (v_device.status = 'retired' or v_account.active_device_id <> v_device.id)
+         and not exists (select 1 from public.license_admins where user_id = p_actor_id) then 'device_mismatch' else null end;
   if p_action = 'activate' and v_state is not null then return jsonb_build_object('error', 'Account or device access is suspended or mismatched.', 'code', upper(v_state), 'httpStatus', 403); end if;
   update public.license_devices set last_seen_at = now() where id = v_device.id;
   update public.license_accounts set email = lower(v_user.email) where user_id = p_actor_id;

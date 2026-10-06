@@ -1,5 +1,4 @@
-import type { Sheet } from '@excel-agent/engine';
-import { indexToColumn } from '@excel-agent/engine';
+import { indexToColumn, type Sheet } from '@excel-agent/engine';
 
 export type SelectionKind = 'cell' | 'row' | 'column';
 

@@ -62,7 +62,7 @@ export function createLicenseHandler(
   const origin = deps.origin.replace(/\/$/, '');
   return async (request) => {
     const reqOrigin = request.headers.get('Origin');
-    const allowOrigin = origin === '*' ? (reqOrigin || '*') : origin;
+    const allowOrigin = origin === '*' ? reqOrigin || '*' : origin;
     const respond = (body: Record<string, unknown>, status = 200) =>
       new Response(JSON.stringify(body), {
         status,
@@ -163,10 +163,14 @@ export function createLicenseHandler(
         ...(keys.length ? { keys } : {}),
         ...(!action.startsWith('admin_') ? { deviceId: installId } : {}),
       });
-    } catch {
+    } catch (err) {
+      console.error('License handler caught error:', err);
       return respond(
         {
-          error: 'The activation service could not verify access. Please retry.',
+          error:
+            err instanceof Error
+              ? `Service error: ${err.message}`
+              : 'The activation service could not verify access. Please retry.',
           code: 'SERVICE_UNAVAILABLE',
         },
         503,

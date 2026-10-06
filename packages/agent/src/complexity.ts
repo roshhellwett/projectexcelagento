@@ -64,7 +64,9 @@ export function isComplexRequest(query: string): boolean {
   if (COMPLEX_SIGNALS.some((signal) => lower.includes(signal))) return true;
   if (
     query.length > 140 &&
-    /\b(clean|merge|join|group|pivot|aggregate|transfer|migrate|populate|extract|consolidate|combine)\b/i.test(query)
+    /\b(clean|merge|join|group|pivot|aggregate|transfer|migrate|populate|extract|consolidate|combine)\b/i.test(
+      query,
+    )
   )
     return true;
   return false;

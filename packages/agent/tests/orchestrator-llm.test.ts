@@ -357,25 +357,26 @@ describe('privacy and token discipline', () => {
       ],
     };
 
-    stubFetch(async () =>
-      new Response(
-        JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content:
-                  "You're completely right. This worksheet contains Python source code for `zenith_leads.py` rather than a tabular dataset, so running a cleaning operation simply duplicated the script lines.",
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    "You're completely right. This worksheet contains Python source code for `zenith_leads.py` rather than a tabular dataset, so running a cleaning operation simply duplicated the script lines.",
+                },
+                finish_reason: 'stop',
               },
-              finish_reason: 'stop',
-            },
-          ],
-          usage: { prompt_tokens: 500, completion_tokens: 45, total_tokens: 545 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+            ],
+            usage: { prompt_tokens: 500, completion_tokens: 45, total_tokens: 545 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
     );
 
     const decision = await orchestrator().decide({
@@ -393,7 +394,7 @@ describe('privacy and token discipline', () => {
   });
 
   it('triggers data population workflow when user asks in Hindi/Hinglish ("data daal isme") on empty structured table', async () => {
-    let capturedBody: any;
+    let capturedBody: { messages?: Array<{ role?: string; content?: string }> } = {};
     stubFetch(async (_url, init) => {
       capturedBody = JSON.parse(init?.body as string);
       return new Response(
@@ -415,7 +416,18 @@ describe('privacy and token discipline', () => {
                       arguments: JSON.stringify({
                         sheet: 'Worksheet_Structured',
                         rows: [
-                          [1, 'Zenith Realty', 'Kolkata', 'Real Estate', '+91 9876543210', 'info@zenith.com', 'zenith.com', 'High', 'Active', 'Lead generation system'],
+                          [
+                            1,
+                            'Zenith Realty',
+                            'Kolkata',
+                            'Real Estate',
+                            '+91 9876543210',
+                            'info@zenith.com',
+                            'zenith.com',
+                            'High',
+                            'Active',
+                            'Lead generation system',
+                          ],
                         ],
                       }),
                     },
@@ -467,8 +479,10 @@ describe('privacy and token discipline', () => {
     });
 
     // Check system prompt included Data Population directive
-    const systemMsg = capturedBody.messages.find((m: any) =>
-      typeof m.content === 'string' && m.content.includes('Data Population & Extraction Directive'),
+    const systemMsg = capturedBody.messages?.find(
+      (m: { content?: string }) =>
+        typeof m.content === 'string' &&
+        m.content.includes('Data Population & Extraction Directive'),
     );
     expect(systemMsg).toBeDefined();
     expect(systemMsg.content).toContain('Source Sheet: "Worksheet"');
@@ -482,24 +496,25 @@ describe('privacy and token discipline', () => {
   });
 
   it('never outputs the robotic heuristic prompt recommendations when model responds', async () => {
-    stubFetch(async () =>
-      new Response(
-        JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: 'I have inspected your sheet and I am ready to process your query.',
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: 'I have inspected your sheet and I am ready to process your query.',
+                },
+                finish_reason: 'stop',
               },
-              finish_reason: 'stop',
-            },
-          ],
-          usage: { prompt_tokens: 300, completion_tokens: 20, total_tokens: 320 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+            ],
+            usage: { prompt_tokens: 300, completion_tokens: 20, total_tokens: 320 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
     );
 
     const emptySheetWorkbook: Workbook = {
@@ -518,9 +533,9 @@ describe('privacy and token discipline', () => {
       config: LIVE_CONFIG,
     });
 
-    expect(decision.message).not.toContain('Tell me what transformation or analysis you would like to run');
+    expect(decision.message).not.toContain(
+      'Tell me what transformation or analysis you would like to run',
+    );
     expect(decision.message).toContain('I have inspected your sheet');
   });
 });
-
-

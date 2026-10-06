@@ -9,12 +9,25 @@
   "scripts": {
     "dev": "pnpm --filter @excel-agent/web dev",
     "build": "pnpm --filter @excel-agent/web build && node -e \"import('node:fs').then(fs => fs.cpSync('apps/web/dist', 'dist', { recursive: true }))\"",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "evals": "vitest run packages/evals",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check",
+    "validate": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --max-warnings=0 --no-warn-ignored",
+      "prettier --write"
+    ],
+    "*.{json,css,html,md,yaml,yml}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -26,7 +39,9 @@
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "fake-indexeddb": "^6.2.5",
+    "husky": "^9.1.7",
     "jsdom": "^30.1.1",
+    "lint-staged": "^17.6.0",
     "prettier": "^3.9.9",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",

@@ -119,10 +119,7 @@ export const LiveThinkingProgressBar: React.FC<LiveThinkingProgressBarProps> = (
 
       {/* Progress Bar Track & Shimmer Fill */}
       <div className="live-thinking-progress-track">
-        <div
-          className="live-thinking-progress-fill"
-          style={{ width: `${progressPercent}%` }}
-        />
+        <div className="live-thinking-progress-fill" style={{ width: `${progressPercent}%` }} />
       </div>
 
       {/* Sub-detail description */}

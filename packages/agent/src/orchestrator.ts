@@ -475,7 +475,6 @@ export class ExcelAgentOrchestrator {
         : input.config
       : input.config;
 
-
     // Layer 4 - LLM Conductor & Specialists
     if (config && !isDemoKey(config.apiKey) && sheet) {
       const startedAt = Date.now();
@@ -1158,7 +1157,11 @@ You MUST:
           continue;
         }
 
-        emitActivity('guardrail_check', 'Sentinel', `Approved operation "${candidate.name}" - invariants verified.`);
+        emitActivity(
+          'guardrail_check',
+          'Sentinel',
+          `Approved operation "${candidate.name}" - invariants verified.`,
+        );
         const isLlmCandidate = llmAction !== undefined && candidate === llmAction;
         this.saveWorkingStep(input, 'decision_approved', {
           action: candidate.name,
@@ -1214,9 +1217,9 @@ You MUST:
       llmMessage?.trim() ||
       llmThought?.trim() ||
       (modelResponded
-        ? (sheet
-            ? `I examined **${sheet.name}** for your request ("${input.query}"). No automated modifications were verified. You can ask me to combine sheets, clean data, add formulas, or extract specific rows.`
-            : `How can I help you with your spreadsheet?`)
+        ? sheet
+          ? `I examined **${sheet.name}** for your request ("${input.query}"). No automated modifications were verified. You can ask me to combine sheets, clean data, add formulas, or extract specific rows.`
+          : `How can I help you with your spreadsheet?`
         : heuristic.message);
     this.saveWorkingStep(input, 'turn_completed', {
       source: llmMessage ? 'llm' : 'heuristic',
@@ -1347,8 +1350,11 @@ You MUST:
 
     if (isConsolidation) {
       const targetSheetName = 'Consolidated_Data';
-      const steps: Array<{ operation: string; args: Record<string, unknown>; description: string }> =
-        [];
+      const steps: Array<{
+        operation: string;
+        args: Record<string, unknown>;
+        description: string;
+      }> = [];
       if (!sheets.some((s) => s.name === targetSheetName)) {
         steps.push({
           operation: 'create_sheet',
