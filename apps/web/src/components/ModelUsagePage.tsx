@@ -14,6 +14,7 @@ import {
   isDemoKey,
   type AgentSettings,
 } from '../lib/settings.js';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 export interface ModelUsagePageProps {
   settings: AgentSettings;
@@ -80,7 +81,11 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
   const recent = [...entries].reverse().slice(0, 50);
 
   return (
-    <div className="usage-page docs-page" data-testid="usage-page">
+    <div
+      className="usage-page docs-page resource-page resource-page-usage"
+      data-testid="usage-page"
+    >
+      <ResourcePageChrome current="usage" onBack={onBack} />
       {/* Unified Top Bar with Zenith OS Branding */}
       <div className="docs-top-bar">
         <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
@@ -373,6 +378,7 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
         turn; missing usage is shown as unknown, not free. Failed upstream calls may incur costs the
         provider does not report. See the Privacy page before working with sensitive data.
       </section>
+      <ResourcePageFooter current="usage" />
     </div>
   );
 };

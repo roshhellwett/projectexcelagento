@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase-client.js';
+import { authErrorMessage } from './auth-errors.js';
 
 export interface UserProfile {
   id: string;
@@ -135,18 +136,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (authErr) {
-        setError(authErr.message);
-        return { success: false, error: authErr.message };
+        const message = authErrorMessage(authErr, 'Failed to sign in');
+        setError(message);
+        return { success: false, error: message };
       }
 
-      if (data.user) {
-        setUser(data.user);
+      if (data.session) {
+        setUser(data.session.user);
         setSession(data.session);
-        await fetchProfile(data.user.id, data.user.email);
+        void fetchProfile(data.session.user.id, data.session.user.email);
       }
       return { success: true, authenticated: Boolean(data.session) };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to sign in';
+      const msg = authErrorMessage(err, 'Failed to sign in');
       setError(msg);
       return { success: false, error: msg };
     }
@@ -166,18 +168,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (authErr) {
-        setError(authErr.message);
-        return { success: false, error: authErr.message };
+        const message = authErrorMessage(authErr, 'Failed to create account');
+        setError(message);
+        return { success: false, error: message };
       }
 
-      if (data.user) {
-        setUser(data.user);
+      if (data.session) {
+        setUser(data.session.user);
         setSession(data.session);
-        await fetchProfile(data.user.id, data.user.email);
+        void fetchProfile(data.session.user.id, data.session.user.email);
       }
       return { success: true, authenticated: Boolean(data.session) };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create account';
+      const msg = authErrorMessage(err, 'Failed to create account');
       setError(msg);
       return { success: false, error: msg };
     }
@@ -202,12 +205,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim());
       if (resetErr) {
-        setError(resetErr.message);
-        return { success: false, error: resetErr.message };
+        const message = authErrorMessage(resetErr, 'Password reset failed');
+        setError(message);
+        return { success: false, error: message };
       }
       return { success: true };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Password reset failed';
+      const msg = authErrorMessage(err, 'Password reset failed');
       setError(msg);
       return { success: false, error: msg };
     }

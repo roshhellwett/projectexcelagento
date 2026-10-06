@@ -8,6 +8,7 @@ import {
   ExternalLink,
   CheckCircle2,
 } from 'lucide-react';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 interface PrivacyPolicyPageProps {
   onBack: () => void;
@@ -22,7 +23,8 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
   onClearUsage,
 }) => {
   return (
-    <div className="legal-page" data-testid="privacy-page">
+    <div className="legal-page resource-page resource-page-privacy" data-testid="privacy-page">
+      <ResourcePageChrome current="privacy" onBack={onBack} />
       {/* Top Banner */}
       <div className="legal-top-bar">
         <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
@@ -47,7 +49,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           <Shield size={14} />
           <span>DATA HANDLING · LOCAL AND CONNECTED MODES</span>
         </div>
-        <h1 className="legal-title">Privacy Policy &amp; Data Protection Notice</h1>
+        <h1 className="legal-title">Privacy Policy &amp; Data Flow Notice</h1>
         <p className="legal-effective">
           This page describes the implemented data flows. It is not an independent security audit or
           legal-compliance certification. Deployments and organizations must verify their own
@@ -95,7 +97,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             </p>
           </div>
           <div className="highlight-item">
-            <span className="hl-tag">Private BYOK Architecture</span>
+            <span className="hl-tag">Bring your own key</span>
             <p>
               Inference uses your own API keys (Bring Your Own Key). Keys are stored strictly in
               your browser's origin-scoped storage (`localStorage`) and sent directly over the
@@ -103,7 +105,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             </p>
           </div>
           <div className="highlight-item">
-            <span className="hl-tag">Statutory DPDP Act 2023 Rights</span>
+            <span className="hl-tag">Local data controls</span>
             <p>
               This app provides controls to clear local learned actions, usage logs, mission records
               and workbook checkpoints separately. These controls do not delete provider records or
@@ -165,16 +167,17 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           <div className="legal-callout">
             <CheckCircle2 size={16} className="callout-icon text-emerald" />
             <div>
-              <strong>Local execution and in-browser memory:</strong> connected models only receive
-              your prompt, recent conversation, workbook profiles and examples when you provide an AI key.
-              All agent working scratchpad steps, learned patterns, and session history remain 100% in
-              your local browser with zero cloud database persistence.
+              <strong>Local execution and explicit connected context:</strong> connected models may
+              receive your prompt, recent conversation, workbook profiles, examples and requested
+              read-tool results when you provide an AI key. Browser-local memory stays separate;
+              optional cloud memory is deployment-configured.
             </div>
           </div>
           <p>
             Spreadsheet files (.xlsx, .xls, .csv) use a client-side JavaScript codec. The local
-            engine is separate from model inference. Agent memory is grounded 100% in local browser
-            storage with zero external database dependencies.
+            engine is separate from model inference. Agent memory is browser-local by default;
+            optional cloud memory and provider records are separate services with their own
+            policies.
           </p>
         </section>
 
@@ -254,23 +257,23 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
         </section>
 
         <section className="legal-section">
-          <h2>6. Statutory Grievance Redressal Officer (Rule 3(2) IT Rules 2021)</h2>
+          <h2>6. Support and deployment contacts</h2>
           <p>
-            In accordance with Rule 3(2) of the Information Technology (Intermediary Guidelines and
-            Digital Media Ethics Code) Rules, 2021 and Section 13 of the Digital Personal Data
-            Protection Act, 2023, the details of the designated{' '}
-            <strong>Grievance Redressal Officer</strong> are as follows:
+            This open-source project does not establish a universal data-controller or retention
+            policy for every deployment. For project questions, use the maintainer contact below;
+            organizations operating a deployment should publish their own support and privacy
+            contact details.
           </p>
 
           <div className="grievance-officer-box">
             <div className="go-header">
               <Building size={18} className="text-emerald" />
-              <span>Designated Grievance Redressal Officer</span>
+              <span>Project support contact</span>
             </div>
             <div className="go-details">
               <div className="go-detail-row">
-                <span className="go-label">Designation:</span>
-                <span className="go-val">Grievance Redressal Officer</span>
+                <span className="go-label">Purpose:</span>
+                <span className="go-val">Open-source project questions and maintenance</span>
               </div>
               <div className="go-detail-row">
                 <span className="go-label">Organization:</span>
@@ -296,18 +299,8 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
                 </span>
               </div>
               <div className="go-detail-row">
-                <span className="go-label">Jurisdictional Address:</span>
-                <span className="go-val">
-                  Bengaluru (Bangalore), Karnataka, Republic of India - PIN 560001
-                </span>
-              </div>
-              <div className="go-detail-row">
-                <span className="go-label">Statutory Acknowledgment:</span>
-                <span className="go-val">Within 24 to 48 hours of receipt of notice</span>
-              </div>
-              <div className="go-detail-row">
-                <span className="go-label">Statutory Resolution SLA:</span>
-                <span className="go-val">Within 15 calendar days from the date of receipt</span>
+                <span className="go-label">Deployment policy:</span>
+                <span className="go-val">Set by the organization hosting the app</span>
               </div>
             </div>
           </div>
@@ -405,6 +398,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
           &copy; 2026 Zenith Open Source Projects. All Rights Reserved. Licensed under MIT.
         </p>
       </footer>
+      <ResourcePageFooter current="privacy" />
     </div>
   );
 };

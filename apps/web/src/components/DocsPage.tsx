@@ -9,6 +9,7 @@ import {
   Calculator,
   Database,
 } from 'lucide-react';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 interface DocsPageProps {
   onBack: () => void;
@@ -21,7 +22,8 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
   >('architecture');
 
   return (
-    <div className="docs-page" data-testid="docs-page">
+    <div className="docs-page resource-page resource-page-docs" data-testid="docs-page">
+      <ResourcePageChrome current="docs" onBack={onBack} />
       {/* Top Bar with Zenith OS Branding */}
       <div className="docs-top-bar">
         <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
@@ -387,8 +389,9 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
                 clearing learned memory.
               </li>
               <li>
-                <strong>Statutory Grievance Redressal:</strong> Grievance Officer stationed in
-                Bengaluru, Karnataka, India with 15-day statutory resolution guarantee.
+                <strong>Support:</strong> Deployment operators should publish their own support and
+                data-handling contacts. This project does not claim a universal service-level
+                guarantee.
               </li>
             </ul>
             <p>
@@ -414,6 +417,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({ onBack }) => {
         <span>&bull;</span>
         <a href="#/terms">Terms of Service</a>
       </footer>
+      <ResourcePageFooter current="docs" />
     </div>
   );
 };

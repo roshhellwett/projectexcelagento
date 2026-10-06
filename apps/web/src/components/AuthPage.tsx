@@ -275,9 +275,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </label>
 
               {mode !== 'reset' && (
-                <label className="auth-field">
+                <div className="auth-field">
                   <span className="auth-label-row">
-                    <span className="auth-label">Password</span>
+                    <label className="auth-label" htmlFor="auth-password">
+                      Password
+                    </label>
                     {mode === 'signin' && (
                       <button
                         type="button"
@@ -312,7 +314,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   {mode === 'signup' && (
                     <span className="auth-hint">Use at least 6 characters.</span>
                   )}
-                </label>
+                </div>
               )}
 
               <button type="submit" className="auth-submit-btn" disabled={loading}>

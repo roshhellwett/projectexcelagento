@@ -13,6 +13,7 @@ import {
 import type { MissionRecord } from '../lib/missions.js';
 import type { MissionStorageStatus } from '../lib/use-mission-ledger.js';
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 interface MissionControlPageProps {
   missions: MissionRecord[];
@@ -94,7 +95,8 @@ export function MissionControlPage({
     }
   };
   return (
-    <div className="mission-page" data-testid="mission-page">
+    <div className="mission-page resource-page resource-page-missions" data-testid="mission-page">
+      <ResourcePageChrome current="missions" onBack={onBack} />
       <div className="mission-topbar">
         <button type="button" className="btn btn-secondary btn-sm" onClick={onBack}>
           <ArrowLeft size={14} /> Back to workspace
@@ -408,6 +410,7 @@ export function MissionControlPage({
           </div>
         </div>
       )}
+      <ResourcePageFooter current="missions" />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   Terminal,
   ArrowRight,
 } from 'lucide-react';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 interface AgentProfile {
   id: string;
@@ -282,7 +283,8 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
   });
 
   return (
-    <div className="agents-page" data-testid="agents-page">
+    <div className="agents-page resource-page resource-page-agents" data-testid="agents-page">
+      <ResourcePageChrome current="agents" onBack={onBack} />
       {/* Top Banner with Zenith OS Branding */}
       <div className="agents-top-bar">
         <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
@@ -492,26 +494,7 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
         </div>
       </section>
 
-      {/* Footer Branding */}
-      <footer className="agents-footer">
-        <div className="footer-links">
-          <span>ExcelAgento &copy; 2026</span>
-          <span>•</span>
-          <a
-            href="https://zenithopensourceprojects.vercel.app/os"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Zenith Open Source Projects (zenithopensourceprojects.vercel.app/os)
-          </a>
-          <span>•</span>
-          <a href="#/privacy">Privacy Policy (DPDP 2023)</a>
-          <span>•</span>
-          <a href="#/terms">Terms of Service</a>
-          <span>•</span>
-          <a href="#/docs">Architecture &amp; Docs</a>
-        </div>
-      </footer>
+      <ResourcePageFooter current="agents" />
     </div>
   );
 };

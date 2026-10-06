@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, Scale, Sparkles, ExternalLink, ShieldAlert } from 'lucide-react';
+import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 interface TermsPageProps {
   onBack: () => void;
@@ -7,7 +8,8 @@ interface TermsPageProps {
 
 export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
   return (
-    <div className="legal-page" data-testid="terms-page">
+    <div className="legal-page resource-page resource-page-terms" data-testid="terms-page">
+      <ResourcePageChrome current="terms" onBack={onBack} />
       {/* Top Banner */}
       <div className="legal-top-bar">
         <button className="btn btn-secondary btn-sm" onClick={onBack} title="Return to Workspace">
@@ -30,12 +32,12 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
       <header className="legal-header">
         <div className="legal-badge">
           <Scale size={14} />
-          <span>OPEN SOURCE GOVERNANCE &amp; STATUTORY COMPLIANCE</span>
+          <span>OPEN SOURCE GOVERNANCE &amp; SOFTWARE USE</span>
         </div>
         <h1 className="legal-title">Terms of Service &amp; Open Source Governance</h1>
         <p className="legal-effective">
-          Governed under the Indian Information Technology Act, 2000 &bull; Intermediary Guidelines
-          Rules, 2021 &bull; Open-Source MIT License.
+          Open-source software notice &bull; Review the repository license and your deployment
+          obligations.
         </p>
         <p className="legal-updated">
           Effective Date: October 2026 &bull; Published by Zenith Open Source Projects
@@ -66,12 +68,11 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
         </section>
 
         <section className="legal-section">
-          <h2>2. Permitted Use &amp; Due Diligence (Rule 3(1)(b) IT Rules 2021)</h2>
+          <h2>2. Permitted use and due diligence</h2>
           <p>
-            In compliance with Rule 3(1)(b) of the Information Technology (Intermediary Guidelines
-            and Digital Media Ethics Code) Rules, 2021, you agree not to use ExcelAgento to host,
-            display, upload, modify, publish, transmit, store, update, or share any information
-            that:
+            Use the software only with data and instructions you are authorized to process. Do not
+            use ExcelAgento to host, display, upload, modify, publish, transmit, store, update, or
+            share information that:
           </p>
           <ul>
             <li>Belongs to another person and to which you do not have any right;</li>
@@ -144,16 +145,15 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
         </section>
 
         <section className="legal-section">
-          <h2>7. Governing Law &amp; Dispute Resolution</h2>
+          <h2>7. Deployment responsibility</h2>
           <p>
-            These Terms of Service shall be governed by and construed in accordance with the laws of
-            the <strong>Republic of India</strong>, without regard to its conflict of law
-            principles.
+            The open-source project provides the software; the organization deploying it is
+            responsible for configuring authentication, model providers, retention, access controls,
+            and the laws that apply to its use.
           </p>
           <p>
-            Any disputes arising out of or related to these Terms shall be subject to the exclusive
-            jurisdiction of the competent civil courts situated in{' '}
-            <strong>Bengaluru, Karnataka, India</strong> or <strong>New Delhi, India</strong>.
+            Do not treat this page as legal advice. Review the repository license and obtain
+            deployment-specific legal advice where required.
           </p>
         </section>
 
@@ -183,6 +183,7 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
           &copy; 2026 Zenith Open Source Projects. Licensed under MIT.
         </p>
       </footer>
+      <ResourcePageFooter current="terms" />
     </div>
   );
 };
