@@ -10,6 +10,7 @@
   "dependencies": {
     "@excel-agent/agent": "workspace:*",
     "@excel-agent/engine": "workspace:*",
+    "@supabase/supabase-js": "^2.117.2",
     "@tanstack/react-table": "^9.2.4",
     "@tanstack/react-virtual": "^3.14.13",
     "framer-motion": "^14.0.0",

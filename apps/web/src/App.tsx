@@ -36,6 +36,9 @@ import { AnalystBriefing } from './components/AnalystBriefing.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost, useToasts } from './components/Toaster.js';
 import { generateWorkbookStudy } from './lib/workbook-study.js';
+import { AuthProvider } from './lib/auth-context.js';
+import { LandingPage } from './components/LandingPage.js';
+import { AuthPage } from './components/AuthPage.js';
 
 import {
   createSampleWorkbook,
@@ -112,9 +115,17 @@ interface WorkbookReplacement {
 
 type WorkspaceDecision = { kind: 'replace'; replacement: WorkbookReplacement } | { kind: 'clear' };
 
-/** Top-level pages. The views are URL-addressable via `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
+/** Top-level pages. The views are URL-addressable via `#/landing`, `#/auth`, `#/usage`, `#/agents`, `#/privacy`, `#/terms`, `#/docs`. */
 export type WorkspaceView =
-  'workspace' | 'missions' | 'usage' | 'agents' | 'privacy' | 'terms' | 'docs';
+  | 'workspace'
+  | 'landing'
+  | 'auth'
+  | 'missions'
+  | 'usage'
+  | 'agents'
+  | 'privacy'
+  | 'terms'
+  | 'docs';
 
 /** Renders a detected delimiter in words, since a raw tab character is invisible in a toast. */
 function describeDelimiter(delimiter: string): string {
@@ -125,26 +136,46 @@ function describeDelimiter(delimiter: string): string {
   return delimiter;
 }
 
-function readViewFromHash(): WorkspaceView {
+function readViewFromHash(fallback: WorkspaceView = 'landing'): {
+  view: WorkspaceView;
+  authMode?: 'signin' | 'signup';
+} {
   try {
-    if (typeof window === 'undefined') return 'workspace';
+    if (typeof window === 'undefined') return { view: fallback };
     const clean = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-    if (clean === 'missions') return 'missions';
-    if (clean === 'usage') return 'usage';
-    if (clean === 'agents') return 'agents';
-    if (clean === 'privacy') return 'privacy';
-    if (clean === 'terms') return 'terms';
-    if (clean === 'docs') return 'docs';
-    return 'workspace';
+    if (clean === 'workspace') return { view: 'workspace' };
+    if (clean === 'landing') return { view: 'landing' };
+    if (clean === 'auth' || clean === 'login' || clean === 'signin')
+      return { view: 'auth', authMode: 'signin' };
+    if (clean === 'signup' || clean === 'register')
+      return { view: 'auth', authMode: 'signup' };
+    if (clean === 'missions') return { view: 'missions' };
+    if (clean === 'usage') return { view: 'usage' };
+    if (clean === 'agents') return { view: 'agents' };
+    if (clean === 'privacy') return { view: 'privacy' };
+    if (clean === 'terms') return { view: 'terms' };
+    if (clean === 'docs') return { view: 'docs' };
+    if (clean === '') {
+      if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test') {
+        return { view: 'workspace' };
+      }
+      return { view: 'landing' };
+    }
+    return { view: fallback };
   } catch {
-    return 'workspace';
+    return { view: fallback };
   }
 }
 
-export const App: React.FC<{
+const AppWorkspace: React.FC<{
   recoveryStore?: WorkspaceRecoveryStore;
   missionRepository?: MissionStore;
-}> = ({ recoveryStore = workspaceRecoveryStore, missionRepository = missionStore }) => {
+  initialView?: WorkspaceView;
+}> = ({
+  recoveryStore = workspaceRecoveryStore,
+  missionRepository = missionStore,
+  initialView,
+}) => {
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
   const [baselineWorkbook, setBaselineWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
@@ -301,7 +332,13 @@ export const App: React.FC<{
   const hasApiKey = settings.apiKey.trim().length > 0;
 
   // Separate Model & Usage page, addressable at #/usage.
-  const [view, setView] = useState<WorkspaceView>(() => readViewFromHash());
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => {
+    return readViewFromHash().authMode ?? 'signin';
+  });
+  const [view, setView] = useState<WorkspaceView>(() => {
+    if (initialView) return initialView;
+    return readViewFromHash().view;
+  });
   const [usageEntries, setUsageEntries] = useState<UsageEntry[]>(() => loadUsageLog());
   const [learnedActions, setLearnedActions] = useState(() => learnedActionCount());
   const {
@@ -319,7 +356,11 @@ export const App: React.FC<{
   const [missionBusy, setMissionBusy] = useState(false);
 
   useEffect(() => {
-    const syncView = () => setView(readViewFromHash());
+    const syncView = () => {
+      const parsed = readViewFromHash();
+      setView(parsed.view);
+      if (parsed.authMode) setAuthInitialMode(parsed.authMode);
+    };
     window.addEventListener('hashchange', syncView);
     return () => window.removeEventListener('hashchange', syncView);
   }, []);
@@ -2157,6 +2198,45 @@ export const App: React.FC<{
     );
   }
 
+  // Dedicated Precision Landing Page
+  if (view === 'landing') {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Landing Page">
+          <LandingPage
+            onLaunchWorkspace={() => navigate('workspace')}
+            onOpenAuth={(mode) => {
+              setAuthInitialMode(mode ?? 'signin');
+              navigate('auth');
+            }}
+            onOpenAgents={() => navigate('agents')}
+            onOpenDocs={() => navigate('docs')}
+            onOpenPrivacy={() => navigate('privacy')}
+          />
+        </ErrorBoundary>
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  // Dedicated Supabase Auth Page (Login / Signup)
+  if (view === 'auth') {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Authentication Page">
+          <AuthPage
+            initialMode={authInitialMode}
+            onSuccess={() => navigate('workspace')}
+            onNavigateBack={() => navigate('workspace')}
+          />
+        </ErrorBoundary>
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   // Dedicated Autonomous Multi-Agent Workforce Showcase
   if (view === 'agents') {
     return (
@@ -2286,6 +2366,11 @@ export const App: React.FC<{
           onOpenAgents={() => navigate('agents')}
           onOpenDocs={() => navigate('docs')}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onOpenLanding={() => navigate('landing')}
+          onOpenAuth={(mode) => {
+            setAuthInitialMode(mode ?? 'signin');
+            navigate('auth');
+          }}
           checkpointStatus={checkpointStatus}
           checkpointLabel={
             checkpointClearing ? 'Deleting checkpoint…' : checkpointLabel[checkpointStatus]
@@ -2600,6 +2685,10 @@ export const App: React.FC<{
             </span>
           </div>
           <div className="workspace-footer-right">
+            <button className="footer-link-btn" onClick={() => navigate('landing')}>
+              Product Overview
+            </button>
+            <span className="footer-sep">•</span>
             <button className="footer-link-btn" onClick={() => navigate('agents')}>
               Autonomous Agents
             </button>
@@ -2626,5 +2715,17 @@ export const App: React.FC<{
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </div>
     </MotionConfig>
+  );
+};
+
+export const App: React.FC<{
+  recoveryStore?: WorkspaceRecoveryStore;
+  missionRepository?: MissionStore;
+  initialView?: WorkspaceView;
+}> = (props) => {
+  return (
+    <AuthProvider>
+      <AppWorkspace {...props} />
+    </AuthProvider>
   );
 };

@@ -20,7 +20,11 @@ import {
   ChevronRight,
   Volume2,
   VolumeX,
+  LogIn,
+  LogOut,
+  Home,
 } from 'lucide-react';
+import { useAuth } from '../lib/auth-context.js';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 import { isSoundEnabled, setSoundEnabled } from '../lib/sound-effects.js';
 import type { CheckpointStatus } from '../lib/workspace-recovery.js';
@@ -98,6 +102,8 @@ interface TopNavProps {
   checkpointDetail?: string;
   onClearCheckpoint?: () => void;
   hasApiKey?: boolean;
+  onOpenLanding?: () => void;
+  onOpenAuth?: (mode?: 'signin' | 'signup') => void;
 }
 
 const FIXTURES = [
@@ -115,12 +121,23 @@ const FIXTURES = [
 ] as const;
 
 export const TopNav: React.FC<TopNavProps> = (props) => {
+  const { user, profile, signOut } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   return (
     <header className="studio-header">
       <div className="studio-header-main">
-        <a className="studio-brand" href="#" aria-label="ExcelAgento workspace">
+        <a
+          className="studio-brand"
+          href="#/landing"
+          onClick={(e) => {
+            if (props.onOpenLanding) {
+              e.preventDefault();
+              props.onOpenLanding();
+            }
+          }}
+          aria-label="ExcelAgento workspace"
+        >
           <span className="studio-brand-mark" aria-hidden="true">
             <img src="/excel-agent-logo.svg" alt="" />
           </span>
@@ -186,6 +203,43 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
           </button>
           <ThemeToggle />
           <SoundToggle />
+          {user ? (
+            <div
+              className="studio-user-badge"
+              title={`${user.email} (${profile?.tier?.toUpperCase() ?? 'FREE'} Tier)`}
+            >
+              <span className="studio-user-avatar">
+                {profile?.full_name
+                  ? profile.full_name.charAt(0).toUpperCase()
+                  : (user.email?.charAt(0).toUpperCase() ?? 'U')}
+              </span>
+              <span className="studio-user-name">
+                {profile?.full_name || user.email?.split('@')[0]}
+              </span>
+              <span className="studio-tier-tag">
+                {profile?.tier?.toUpperCase() ?? 'FREE'}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-icon"
+                onClick={() => void signOut()}
+                title="Sign Out"
+                aria-label="Sign Out"
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm studio-auth-trigger"
+              onClick={() => props.onOpenAuth?.('signin')}
+              title="Sign In with Supabase"
+            >
+              <LogIn size={14} />
+              <span>Sign In</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-ghost btn-icon"
@@ -318,6 +372,18 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
           )}
         </div>
         <nav className="studio-resource-nav" aria-label="Resources">
+          {props.onOpenLanding && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={props.onOpenLanding}
+              data-testid="open-landing"
+              title="Product overview & landing page"
+            >
+              <Home size={15} />
+              <span>Overview</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
