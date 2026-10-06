@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { readAuthCallback } from './auth-redirect.js';
 
 const SUPABASE_PROJECT_ID = 'fsepapdadtrlddkyqqxu';
 const DEFAULT_SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
@@ -11,6 +12,9 @@ export const SUPABASE_URL =
 export const SUPABASE_ANON_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   DEFAULT_SUPABASE_ANON_KEY;
+
+export const initialAuthCallback =
+  typeof window === 'undefined' ? null : readAuthCallback(window.location.href);
 
 /**
  * Shared Supabase Client configured for account authentication and profiles.

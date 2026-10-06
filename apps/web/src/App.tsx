@@ -39,6 +39,7 @@ import { generateWorkbookStudy } from './lib/workbook-study.js';
 import { AuthProvider, useAuth } from './lib/auth-context.js';
 import { LandingPage } from './components/LandingPage.js';
 import { AuthPage } from './components/AuthPage.js';
+import { AuthCallbackPage } from './components/AuthCallbackPage.js';
 
 import {
   createSampleWorkbook,
@@ -130,7 +131,7 @@ function describeDelimiter(delimiter: string): string {
 
 function readViewFromHash(fallback: WorkspaceView = 'landing'): {
   view: WorkspaceView;
-  authMode?: 'signin' | 'signup';
+  authMode?: 'signin' | 'signup' | 'reset' | 'verify';
 } {
   try {
     if (typeof window === 'undefined') return { view: fallback };
@@ -140,6 +141,8 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
     if (clean === 'auth' || clean === 'login' || clean === 'signin')
       return { view: 'auth', authMode: 'signin' };
     if (clean === 'signup' || clean === 'register') return { view: 'auth', authMode: 'signup' };
+    if (clean === 'forgot-password') return { view: 'auth', authMode: 'reset' };
+    if (clean === 'verify-email') return { view: 'auth', authMode: 'verify' };
     if (clean === 'missions') return { view: 'missions' };
     if (clean === 'usage') return { view: 'usage' };
     if (clean === 'agents') return { view: 'agents' };
@@ -167,7 +170,7 @@ const AppWorkspace: React.FC<{
   missionRepository = missionStore,
   initialView,
 }) => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, callback: authCallback, dismissCallback } = useAuth();
   const [workbook, setWorkbook] = useState<Workbook>(initialWorkbook);
   const [baselineWorkbook, setBaselineWorkbook] = useState<Workbook>(initialWorkbook);
   const [activeSheetName, setActiveSheetName] = useState<string>(
@@ -324,9 +327,11 @@ const AppWorkspace: React.FC<{
   const hasApiKey = settings.apiKey.trim().length > 0;
 
   // Separate Model & Usage page, addressable at #/usage.
-  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>(() => {
-    return readViewFromHash().authMode ?? 'signin';
-  });
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset' | 'verify'>(
+    () => {
+      return readViewFromHash().authMode ?? 'signin';
+    },
+  );
   const [view, setView] = useState<WorkspaceView>(() => {
     if (initialView) return initialView;
     return readViewFromHash().view;
@@ -366,10 +371,22 @@ const AppWorkspace: React.FC<{
   const navigate = useCallback((next: WorkspaceView) => {
     setView(next);
     try {
-      window.location.hash = next === 'workspace' ? '' : `#/${next}`;
+      window.location.hash = `#/${next}`;
     } catch {
       // Hash updates are best-effort; the in-memory view state still switches.
     }
+  }, []);
+
+  const openAuth = useCallback((mode: 'signin' | 'signup' | 'reset' | 'verify' = 'signin') => {
+    setAuthInitialMode(mode);
+    setView('auth');
+    const route = {
+      signin: 'auth',
+      signup: 'signup',
+      reset: 'forgot-password',
+      verify: 'verify-email',
+    }[mode];
+    window.location.hash = `#/${route}`;
   }, []);
 
   const handleForgetLearned = () => {
@@ -2129,6 +2146,34 @@ const AppWorkspace: React.FC<{
   // coverage can exercise workbook behavior without depending on a remote auth service.
   const protectedView = view === 'workspace' || view === 'missions' || view === 'usage';
   const isTestMode = import.meta.env.MODE === 'test';
+  if (authCallback) {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Email confirmation">
+          <AuthCallbackPage
+            callback={authCallback}
+            onContinue={() => {
+              dismissCallback();
+              navigate('workspace');
+            }}
+            onSignIn={() => {
+              dismissCallback();
+              openAuth('signin');
+            }}
+            onRequestRecovery={() => {
+              dismissCallback();
+              openAuth('reset');
+            }}
+            onRequestVerification={() => {
+              dismissCallback();
+              openAuth('verify');
+            }}
+          />
+        </ErrorBoundary>
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
   if (protectedView && !isTestMode && authLoading) {
     return (
       <div className="app-container app-page-scroll auth-gate-loading">
@@ -2234,14 +2279,10 @@ const AppWorkspace: React.FC<{
               if (user) {
                 navigate('workspace');
               } else {
-                setAuthInitialMode('signup');
-                navigate('auth');
+                openAuth('signup');
               }
             }}
-            onOpenAuth={(mode) => {
-              setAuthInitialMode(mode ?? 'signin');
-              navigate('auth');
-            }}
+            onOpenAuth={openAuth}
             onOpenAgents={() => navigate('agents')}
             onOpenDocs={() => navigate('docs')}
             onOpenPrivacy={() => navigate('privacy')}
@@ -2400,10 +2441,7 @@ const AppWorkspace: React.FC<{
           onOpenDocs={() => navigate('docs')}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           onOpenLanding={() => navigate('landing')}
-          onOpenAuth={(mode) => {
-            setAuthInitialMode(mode ?? 'signin');
-            navigate('auth');
-          }}
+          onOpenAuth={openAuth}
           checkpointStatus={checkpointStatus}
           checkpointLabel={
             checkpointClearing ? 'Deleting checkpoint…' : checkpointLabel[checkpointStatus]

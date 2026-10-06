@@ -1,7 +1,12 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from './supabase-client.js';
+import { initialAuthCallback, supabase } from './supabase-client.js';
 import { authErrorMessage } from './auth-errors.js';
+import {
+  authEmailRedirectUrl,
+  clearAuthCallbackUrl,
+  type AuthCallbackInfo,
+} from './auth-redirect.js';
 
 export interface UserProfile {
   id: string;
@@ -18,6 +23,8 @@ interface AuthContextValue {
   profile: UserProfile | null;
   loading: boolean;
   error: string | null;
+  callback: AuthCallbackInfo | null;
+  dismissCallback: () => void;
   signIn: (
     email: string,
     password: string,
@@ -29,6 +36,8 @@ interface AuthContextValue {
   ) => Promise<{ success: boolean; authenticated?: boolean; error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  resendConfirmation: (email: string) => Promise<{ success: boolean; error?: string }>;
+  updatePassword: (password: string) => Promise<{ success: boolean; error?: string }>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -40,6 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [callback, setCallback] = useState<AuthCallbackInfo | null>(initialAuthCallback);
 
   const fetchProfile = useCallback(async (userId: string, userEmail?: string) => {
     try {
@@ -93,23 +103,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Check active session on initial load
     supabase.auth
       .getSession()
-      .then(({ data: { session: currentSession } }) => {
+      .then(({ data: { session: currentSession }, error: sessionError }) => {
         if (!mounted) return;
+        if (sessionError)
+          setError(authErrorMessage(sessionError, 'The email link could not be verified.'));
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.user) {
           void fetchProfile(currentSession.user.id, currentSession.user.email);
         }
         setLoading(false);
+        if (initialAuthCallback) clearAuthCallbackUrl();
       })
-      .catch(() => {
-        if (mounted) setLoading(false);
+      .catch((sessionError: unknown) => {
+        if (!mounted) return;
+        setError(authErrorMessage(sessionError, 'The account session could not be loaded.'));
+        setLoading(false);
+        if (initialAuthCallback) clearAuthCallbackUrl();
       });
 
     // Listen for auth state changes (login, logout, token refresh)
     const {
       data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
       if (!mounted) return;
       setSession(newSession);
       setUser(newSession?.user ?? null);
@@ -145,6 +161,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(data.session.user);
         setSession(data.session);
         void fetchProfile(data.session.user.id, data.session.user.email);
+      } else {
+        return {
+          success: false,
+          error: 'No signed-in session was returned. Please try signing in again.',
+        };
       }
       return { success: true, authenticated: Boolean(data.session) };
     } catch (err) {
@@ -161,6 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: email.trim(),
         password,
         options: {
+          emailRedirectTo: authEmailRedirectUrl('confirm'),
           data: {
             full_name: fullName?.trim() || undefined,
           },
@@ -203,7 +225,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetPassword = async (email: string) => {
     setError(null);
     try {
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim());
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: authEmailRedirectUrl('recovery'),
+      });
       if (resetErr) {
         const message = authErrorMessage(resetErr, 'Password reset failed');
         setError(message);
@@ -217,6 +241,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resendConfirmation = async (email: string) => {
+    setError(null);
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+        options: { emailRedirectTo: authEmailRedirectUrl('confirm') },
+      });
+      if (resendError) {
+        const message = authErrorMessage(resendError, 'The confirmation email could not be sent.');
+        setError(message);
+        return { success: false, error: message };
+      }
+      return { success: true };
+    } catch (resendError) {
+      const message = authErrorMessage(resendError, 'The confirmation email could not be sent.');
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  const updatePassword = async (password: string) => {
+    if (!session)
+      return { success: false, error: 'Open a valid recovery link before setting a new password.' };
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError)
+        return {
+          success: false,
+          error: authErrorMessage(updateError, 'The password could not be updated.'),
+        };
+      return { success: true };
+    } catch (updateError) {
+      return {
+        success: false,
+        error: authErrorMessage(updateError, 'The password could not be updated.'),
+      };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -225,10 +289,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         loading,
         error,
+        callback,
+        dismissCallback: () => setCallback(null),
         signIn,
         signUp,
         signOut,
         resetPassword,
+        resendConfirmation,
+        updatePassword,
         refreshProfile,
       }}
     >

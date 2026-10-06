@@ -48,6 +48,7 @@ describe('Model & Usage page', () => {
     await user.click(screen.getByRole('button', { name: /Back to workspace/i }));
 
     await waitFor(() => expect(container.querySelector('.file-meta-pill')).not.toBeNull());
+    expect(window.location.hash).toBe('#/workspace');
     expect(screen.queryByTestId('usage-page')).not.toBeInTheDocument();
   });
 

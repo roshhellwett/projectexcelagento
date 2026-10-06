@@ -16,19 +16,19 @@ import {
 import { useAuth } from '../lib/auth-context.js';
 
 interface AuthPageProps {
-  initialMode?: 'signin' | 'signup';
+  initialMode?: 'signin' | 'signup' | 'reset' | 'verify';
   onSuccess?: () => void;
   onNavigateBack?: () => void;
 }
 
-type AuthMode = 'signin' | 'signup' | 'reset';
+type AuthMode = 'signin' | 'signup' | 'reset' | 'verify';
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'signin',
   onSuccess,
   onNavigateBack,
 }) => {
-  const { signIn, signUp, resetPassword } = useAuth();
+  const { signIn, signUp, resetPassword, resendConfirmation } = useAuth();
   const reducedMotion = useReducedMotion();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
@@ -38,6 +38,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resendWait, setResendWait] = useState(0);
 
   useEffect(() => {
     setMode(initialMode);
@@ -45,32 +46,53 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setSuccessMessage(null);
   }, [initialMode]);
 
+  useEffect(() => {
+    if (resendWait === 0) return;
+    const timer = window.setTimeout(
+      () => setResendWait((seconds) => Math.max(0, seconds - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [resendWait]);
+
   const switchMode = (nextMode: AuthMode) => {
+    if (loading) return;
     setMode(nextMode);
+    setShowPassword(false);
     setError(null);
     setSuccessMessage(null);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (loading) return;
     setError(null);
     setSuccessMessage(null);
 
     const normalizedEmail = email.trim();
-    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setError('Enter a valid email address to continue.');
       return;
     }
 
     if (mode === 'reset') {
+      if (resendWait > 0) return;
       setLoading(true);
       const result = await resetPassword(normalizedEmail);
       setLoading(false);
       if (result.success) {
-        setSuccessMessage('Recovery instructions sent. Check your inbox, then return to sign in.');
+        setResendWait(60);
+        setSuccessMessage(
+          'If an account exists for this email, a recovery link has been requested. Check your inbox and spam folder.',
+        );
       } else {
         setError(result.error || 'We could not send recovery instructions.');
       }
+      return;
+    }
+
+    if (mode === 'verify') {
+      await handleResendConfirmation();
       return;
     }
 
@@ -95,6 +117,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
 
     if (mode === 'signup' && !result.authenticated) {
+      setMode('verify');
+      setResendWait(60);
+      setPassword('');
+      setShowPassword(false);
       setSuccessMessage(
         'Account created. Check your email to confirm the account, then sign in to enter the workspace.',
       );
@@ -104,18 +130,43 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     onSuccess?.();
   };
 
+  const handleResendConfirmation = async () => {
+    if (loading || resendWait > 0) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Enter your account email address above, then resend the confirmation link.');
+      return;
+    }
+    setError(null);
+    setSuccessMessage(null);
+    setLoading(true);
+    const result = await resendConfirmation(email);
+    setLoading(false);
+    if (!result.success) {
+      setError(result.error || 'The confirmation email could not be sent.');
+    } else {
+      setResendWait(60);
+      setSuccessMessage(
+        'If this account needs confirmation, a new email link has been requested. Check your inbox and spam folder, and use the newest email.',
+      );
+    }
+  };
+
   const title =
     mode === 'signin'
       ? 'Continue to your workspace'
       : mode === 'signup'
         ? 'Create your workspace account'
-        : 'Recover your account';
+        : mode === 'verify'
+          ? 'Confirm your email address'
+          : 'Recover your account';
   const subtitle =
     mode === 'signin'
       ? 'Sign in to load workbooks, ask for changes, and review every proposed operation.'
       : mode === 'signup'
         ? 'Create an account to enter the open-source ExcelAgento workspace.'
-        : 'Enter your account email and we will send a recovery link.';
+        : mode === 'verify'
+          ? 'Already registered? Request a fresh confirmation link using your account email.'
+          : 'Enter your account email to request a password recovery link.';
 
   return (
     <div className="auth-page">
@@ -197,13 +248,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <p>{subtitle}</p>
             </div>
 
-            {mode !== 'reset' && (
+            {(mode === 'signin' || mode === 'signup') && (
               <div className="auth-tabs" role="tablist" aria-label="Account action">
                 <button
                   type="button"
                   role="tab"
                   aria-selected={mode === 'signin'}
                   className={mode === 'signin' ? 'is-active' : ''}
+                  disabled={loading}
                   onClick={() => switchMode('signin')}
                 >
                   Sign in
@@ -213,6 +265,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   role="tab"
                   aria-selected={mode === 'signup'}
                   className={mode === 'signup' ? 'is-active' : ''}
+                  disabled={loading}
                   onClick={() => switchMode('signup')}
                 >
                   Create account
@@ -274,7 +327,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </span>
               </label>
 
-              {mode !== 'reset' && (
+              {(mode === 'signin' || mode === 'signup') && (
                 <div className="auth-field">
                   <span className="auth-label-row">
                     <label className="auth-label" htmlFor="auth-password">
@@ -284,6 +337,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <button
                         type="button"
                         className="auth-link-btn"
+                        disabled={loading}
                         onClick={() => switchMode('reset')}
                       >
                         Forgot password?
@@ -307,6 +361,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       className="auth-eye-btn"
                       onClick={() => setShowPassword((visible) => !visible)}
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      disabled={loading}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -317,7 +372,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </div>
               )}
 
-              <button type="submit" className="auth-submit-btn" disabled={loading}>
+              <button
+                type="submit"
+                className="auth-submit-btn"
+                disabled={loading || ((mode === 'reset' || mode === 'verify') && resendWait > 0)}
+              >
                 {loading ? (
                   <>
                     <Loader2 size={16} className="auth-spin" />
@@ -331,6 +390,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <>
                     Create account <ArrowRight size={16} />
                   </>
+                ) : resendWait > 0 ? (
+                  <>Send another link in {resendWait}s</>
+                ) : mode === 'verify' ? (
+                  <>
+                    Resend confirmation email <ArrowRight size={16} />
+                  </>
                 ) : (
                   <>
                     Send recovery link <ArrowRight size={16} />
@@ -339,10 +404,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </button>
             </form>
 
-            {mode === 'reset' && (
+            {mode === 'signin' && (
+              <div className="auth-confirmation-actions">
+                <button
+                  type="button"
+                  className="auth-link-btn"
+                  disabled={loading}
+                  onClick={() => switchMode('verify')}
+                >
+                  Resend confirmation email
+                </button>
+              </div>
+            )}
+
+            {(mode === 'reset' || mode === 'verify') && (
               <button
                 type="button"
                 className="auth-reset-back"
+                disabled={loading}
                 onClick={() => switchMode('signin')}
               >
                 <ArrowLeft size={14} /> Back to sign in
