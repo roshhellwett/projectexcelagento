@@ -60,25 +60,28 @@ export function createLicenseHandler(
   deps: LicenseDependencies,
 ): (request: Request) => Promise<Response> {
   const origin = deps.origin.replace(/\/$/, '');
-  const respond = (body: Record<string, unknown>, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-        Vary: 'Origin',
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      },
-    });
   return async (request) => {
+    const reqOrigin = request.headers.get('Origin');
+    const allowOrigin = origin === '*' ? (reqOrigin || '*') : origin;
+    const respond = (body: Record<string, unknown>, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          Vary: 'Origin',
+          'Access-Control-Allow-Origin': allowOrigin,
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        },
+      });
+
     if (!origin || deps.keyPepper.length < 32 || deps.devicePepper.length < 32)
       return respond(
         { error: 'Licensing service is not configured.', code: 'SERVICE_NOT_CONFIGURED' },
         503,
       );
-    if (request.headers.get('Origin') && request.headers.get('Origin') !== origin)
+    if (origin !== '*' && reqOrigin && reqOrigin !== origin)
       return respond({ error: 'Origin is not allowed.', code: 'ORIGIN_NOT_ALLOWED' }, 403);
     if (request.method === 'OPTIONS')
       return new Response(null, { status: 204, headers: respond({}).headers });
