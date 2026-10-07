@@ -29,7 +29,10 @@ Deno.serve(
         p_action: action,
         p_payload: payload,
       });
-      if (error) throw new Error('Licensing transaction failed');
+      if (error) {
+        console.error('license_command rpc error:', error);
+        throw new Error(`Licensing transaction failed: ${error.message}`);
+      }
       return data;
     },
   }),

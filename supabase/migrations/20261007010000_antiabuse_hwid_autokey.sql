@@ -2,6 +2,7 @@
 BEGIN;
 
 ALTER TABLE IF EXISTS public.license_keys ADD COLUMN IF NOT EXISTS raw_key text;
+ALTER TABLE IF EXISTS public.license_keys ALTER COLUMN created_by DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS public.license_ip_tracking (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -304,7 +305,8 @@ begin
       bound_email,
       bound_device_id,
       activated_at,
-      expires_at
+      expires_at,
+      created_by
     ) values (
       v_auto_key->>'keyHash',
       v_auto_key->>'keyHint',
@@ -315,7 +317,8 @@ begin
       lower(v_user.email),
       v_device.id,
       now(),
-      now() + interval '30 days'
+      now() + interval '30 days',
+      p_actor_id
     );
     insert into public.license_events(actor_user_id, target_user_id, device_id, event_type, metadata)
       values (p_actor_id, p_actor_id, v_device.id, 'auto_key_created', jsonb_build_object('key_hint', v_auto_key->>'keyHint'));
