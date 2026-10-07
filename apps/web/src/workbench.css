@@ -541,9 +541,9 @@
 .workspace-ribbon-tabs {
   display: flex;
   align-items: stretch;
-  gap: 2px;
-  min-height: 35px;
-  padding: 3px 5px 0;
+  gap: 4px;
+  min-height: 42px;
+  padding: 5px 10px 0;
   border-bottom: 1px solid var(--border-main);
   background: var(--bg-elevated);
   overflow-x: auto;
@@ -555,10 +555,10 @@
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 6px 6px 0 0;
-  padding: 0 10px;
+  padding: 0 14px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -582,8 +582,8 @@
 .workspace-ribbon-toolbar {
   display: flex;
   align-items: stretch;
-  min-height: 98px;
-  padding: 5px 6px 0;
+  min-height: 112px;
+  padding: 10px 14px 0;
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -591,9 +591,9 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 3px;
-  min-width: 74px;
-  padding: 0 7px 16px 2px;
+  gap: 6px;
+  min-width: 96px;
+  padding: 0 12px 18px 2px;
   border-right: 1px solid var(--border-subtle);
 }
 .workspace-ribbon-quick {
@@ -601,7 +601,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 5px;
-  min-height: 24px;
+  min-height: 28px;
   border: 0;
   border-radius: 5px;
   padding: 3px 5px;
@@ -633,7 +633,7 @@
   flex-direction: column;
   justify-content: space-between;
   min-width: max-content;
-  padding: 0 7px 3px;
+  padding: 0 12px 6px;
   border-right: 1px solid var(--border-subtle);
 }
 .workspace-ribbon-group:last-child {
@@ -643,29 +643,29 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
-  min-height: 68px;
+  gap: 5px;
+  min-height: 76px;
 }
 .workspace-ribbon-action {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 4px;
-  min-width: 42px;
-  min-height: 55px;
+  gap: 6px;
+  min-width: 54px;
+  min-height: 64px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 7px 4px 3px;
+  padding: 9px 7px 5px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 8px !important;
+  font-size: 10px !important;
   line-height: 1.15;
   text-align: center;
   cursor: pointer;
 }
 .workspace-ribbon-action span {
-  max-width: 64px;
+  max-width: 76px;
   white-space: normal;
 }
 .workspace-ribbon-action:hover:not(:disabled) {
@@ -683,7 +683,7 @@
 .workspace-ribbon-all-tab-label {
   display: block;
   color: var(--text-dim);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.2;
@@ -702,12 +702,12 @@
 .workspace-ribbon-status {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 25px;
-  padding: 3px 10px;
+  gap: 16px;
+  min-height: 30px;
+  padding: 5px 14px;
   border-top: 1px solid var(--border-subtle);
   color: var(--text-dim);
-  font-size: 9px;
+  font-size: 10px;
   white-space: nowrap;
 }
 .workspace-ribbon-status span {
@@ -729,6 +729,48 @@
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+.operation-format-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+.operation-inline-note {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.operation-selection-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.operation-format-toolbar,
+.operation-format-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.operation-format-toolbar .btn.is-active {
+  color: var(--brand-emerald);
+  border-color: var(--brand-emerald);
+  background: var(--studio-tint);
+}
+.operation-format-row .form-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+.operation-format-row input[type='color'] {
+  width: 30px;
+  height: 28px;
+  padding: 2px;
 }
 .operation-advanced-help strong {
   color: var(--text-main);
@@ -1328,7 +1370,7 @@
 .workbench .evidence-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 7px;
   margin-top: 7px;
 }
 .workbench .evidence-facts span {
@@ -1738,7 +1780,7 @@
   font-size: 8px;
   color: var(--text-dim);
   background: var(--bg-elevated);
-  padding: 3px 5px;
+  padding: 5px 7px;
   border-radius: 4px;
 }
 .workflow-engine-item p {
@@ -2542,7 +2584,7 @@
   .studio-segmented button {
     flex: 1;
     padding: 5px 6px;
-    font-size: 9px !important;
+    font-size: 10px !important;
   }
   .studio-filter-input {
     width: 100%;

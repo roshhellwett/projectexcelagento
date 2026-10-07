@@ -10,6 +10,7 @@ import {
   fillEditsFor,
   parseClipboardGrid,
   rectFromPositions,
+  translateFormula,
   unionRects,
   type CellRect,
 } from './grid-edit.js';
@@ -61,6 +62,31 @@ describe('coerceTypedValue', () => {
     expect(coerceTypedValue('')).toEqual({ value: null });
     // The engine stores formulas with their leading `=`, so typing one must not lose it.
     expect(coerceTypedValue('=SUM(A1:A9)')).toEqual({ formula: '=SUM(A1:A9)' });
+  });
+});
+
+describe('formula movement', () => {
+  it('translates relative references while preserving absolute references', () => {
+    expect(translateFormula('=A1+$B$2+C$3+$D4', 2, 1)).toBe('=B3+$B$2+D$3+$D6');
+  });
+
+  it('fills formulas as formulas instead of pasted text', () => {
+    const data = {
+      name: 'Data',
+      rows: [[createCell(2)], [createCell(4, { formula: '=A1*2' })], [createCell(null)]],
+    };
+    expect(
+      fillEditsFor(
+        data,
+        { startRow: 2, endRow: 2, startColIdx: 0, endColIdx: 0 },
+        {
+          startRow: 2,
+          endRow: 3,
+          startColIdx: 0,
+          endColIdx: 0,
+        },
+      ),
+    ).toEqual([{ row: 3, column: 'A', formula: '=A2*2' }]);
   });
 });
 

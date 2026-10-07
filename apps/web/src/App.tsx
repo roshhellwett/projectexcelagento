@@ -20,15 +20,13 @@ import { WorkspaceShell, type StudioView } from './components/WorkspaceShell.js'
 import { WorkspaceRibbon } from './components/WorkspaceRibbon.js';
 import { WorkbookInsights } from './components/WorkbookInsights.js';
 import { WorkflowLibrary } from './components/WorkflowLibrary.js';
-import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
-import type { CellSelection } from './lib/selection-context.js';
 import {
-  clipboardTextForRect,
-  editsForClipboardBlock,
-  parseClipboardGrid,
-  type CellEdit,
-  type CellRect,
-} from './lib/grid-edit.js';
+  SpreadsheetGrid,
+  type GridClipboardCommand,
+  type GridRowFilter,
+} from './components/SpreadsheetGrid.js';
+import type { CellSelection } from './lib/selection-context.js';
+import { type CellEdit, type CellRect } from './lib/grid-edit.js';
 import { AgentChat, type ChatMessage, type TaskReceipt } from './components/AgentChat.js';
 import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
@@ -509,6 +507,13 @@ const AppWorkspace: React.FC<{
     startColIdx: 0,
     endColIdx: 0,
   });
+  const [rowFilter, setRowFilter] = useState<GridRowFilter | undefined>();
+  const [clipboardCommand, setClipboardCommand] = useState<GridClipboardCommand>();
+  const clipboardCommandId = useRef(0);
+  const requestClipboardCommand = useCallback((action: GridClipboardCommand['action']) => {
+    clipboardCommandId.current += 1;
+    setClipboardCommand({ action, id: clipboardCommandId.current });
+  }, []);
 
   // Cmd+K / Ctrl+K keyboard shortcut for Command Palette HUD
   useEffect(() => {
@@ -840,6 +845,59 @@ const AppWorkspace: React.FC<{
         });
         return;
       }
+      if (actionId === 'format' || actionId === 'format-painter') {
+        openOperationModal('format_cells');
+        return;
+      }
+      if (actionId === 'autosum') {
+        const edits: CellEdit[] = [];
+        for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+          const column = indexToColumn(col);
+          edits.push({
+            row: gridSelection.endRow + 1,
+            column,
+            formula: `=SUM(${column}${gridSelection.startRow}:${column}${gridSelection.endRow})`,
+          });
+        }
+        if (edits.length > 0)
+          executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+        return;
+      }
+      if (actionId === 'fill-series') {
+        const source = currentSheet.rows[gridSelection.startRow - 1]?.[gridSelection.startColIdx];
+        const strategy =
+          source?.value instanceof Date
+            ? 'date'
+            : typeof source?.value === 'number'
+              ? 'linear'
+              : 'text';
+        if (gridSelection.endRow > gridSelection.startRow) {
+          executeOperation(
+            'fill_series',
+            {
+              sheet,
+              column: startColumn,
+              strategy,
+              sourceRange: `${startColumn}${gridSelection.startRow}`,
+              targetStartRow: gridSelection.startRow + 1,
+              targetEndRow: gridSelection.endRow,
+              step: 1,
+              dateUnit: 'day',
+              headerRow: 1,
+            },
+            undefined,
+            true,
+          );
+        } else {
+          pushToast('info', 'Select a vertical range with a starting value to fill a series.');
+        }
+        return;
+      }
+      if (actionId === 'checkbox') {
+        const edits = cellsInSelection().map((edit) => ({ ...edit, value: false }));
+        executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+        return;
+      }
       if (actionId === 'clear') {
         executeOperation('edit_cells', { sheet, edits: cellsInSelection() }, undefined, false, {
           quiet: true,
@@ -847,43 +905,24 @@ const AppWorkspace: React.FC<{
         return;
       }
       if (actionId === 'copy' || actionId === 'cut') {
-        const text = clipboardTextForRect(
-          currentSheet,
-          gridSelection,
-          (cell) => cell?.formula ?? String(cell?.value ?? ''),
+        requestClipboardCommand(actionId);
+        pushToast(
+          'success',
+          actionId === 'copy'
+            ? 'Selection copied.'
+            : 'Selection is ready to move. Paste it to complete the cut.',
         );
-        void navigator.clipboard?.writeText?.(text).catch?.(() => undefined);
-        if (actionId === 'cut') {
-          executeOperation('edit_cells', { sheet, edits: cellsInSelection() }, undefined, false, {
-            quiet: true,
-          });
-        }
-        pushToast('success', actionId === 'copy' ? 'Selection copied.' : 'Selection cut.');
         return;
       }
       if (actionId === 'paste') {
-        void navigator.clipboard
-          ?.readText?.()
-          .then((text) => {
-            const block = parseClipboardGrid(text);
-            const edits = editsForClipboardBlock(
-              block,
-              gridSelection.startRow,
-              gridSelection.startColIdx,
-            );
-            if (edits.length > 0)
-              executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
-          })
-          .catch(() =>
-            pushToast('warning', 'Clipboard access was denied. Use Ctrl+V in the grid.'),
-          );
+        requestClipboardCommand('paste');
         return;
       }
       if (actionId === 'sort' || actionId === 'sort-filter') {
         openOperationModal('sort_range');
         return;
       }
-      if (actionId === 'filter') {
+      if (actionId === 'filter' || actionId === 'advanced-filter') {
         openOperationModal('filter_rows');
         return;
       }
@@ -911,7 +950,15 @@ const AppWorkspace: React.FC<{
         `${actionId.replace(/-/g, ' ')} is available as a manual operation or from chat. No chat request was created.`,
       );
     },
-    [currentSheet, executeOperation, gridSelection, isProcessing, openOperationModal, pushToast],
+    [
+      currentSheet,
+      executeOperation,
+      gridSelection,
+      isProcessing,
+      openOperationModal,
+      pushToast,
+      requestClipboardCommand,
+    ],
   );
 
   // Undo / Redo handlers
@@ -966,6 +1013,14 @@ const AppWorkspace: React.FC<{
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.querySelector('[data-dialog-open="true"]')) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable
+      )
+        return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -2825,6 +2880,10 @@ const AppWorkspace: React.FC<{
                 onQuickSort={handleQuickSort}
                 onFileDrop={handleFileUpload}
                 onAddSelectionContext={setSelectionContext}
+                onOpenOperation={(operation) => openOperationModal(operation)}
+                rowFilter={rowFilter}
+                onClearFilter={() => setRowFilter(undefined)}
+                clipboardCommand={clipboardCommand}
                 onSelectionChange={setGridSelection}
                 onEditCells={handleEditCells}
               />
@@ -2935,6 +2994,8 @@ const AppWorkspace: React.FC<{
           workbook={workbook}
           activeSheetName={activeSheetName}
           initialOperation={operationModalOperation}
+          selection={gridSelection}
+          onApplyFilter={(filter) => setRowFilter(filter)}
           operationCatalog={orchestrator.tools}
           onExecute={(name, args) => executeOperation(name, args)}
         />

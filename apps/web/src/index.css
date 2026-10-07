@@ -710,6 +710,19 @@ body {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
+.grid-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 4px 14px 4px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--studio-tint) 55%, var(--bg-surface));
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 :root[data-theme='dark'] .formula-bar {
   background: var(--bg-surface-glass-subtle);
   border-color: var(--border-glass-subtle);
@@ -748,11 +761,24 @@ body {
 
 .formula-input-display {
   flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-main);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 5px 8px;
+  outline: none;
+}
+
+.formula-input-display:not(:read-only) {
+  border-color: var(--brand-emerald);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
 }
 
 /* Spreadsheet Grid View - Floating Frosted Glass Table */
@@ -2620,6 +2646,17 @@ body {
 
 .cell-context-menu-item:hover {
   background: var(--bg-hover);
+}
+
+.cell-context-menu-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border-subtle);
+}
+
+.cell-context-menu-secondary {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .chat-input {

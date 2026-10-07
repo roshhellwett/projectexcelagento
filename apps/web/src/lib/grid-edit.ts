@@ -1,4 +1,10 @@
-import { type Cell, type CellValue, type Sheet, indexToColumn } from '@excel-agent/engine';
+import {
+  columnToIndex,
+  type Cell,
+  type CellValue,
+  type Sheet,
+  indexToColumn,
+} from '@excel-agent/engine';
 
 /**
  * The spreadsheet interaction model, expressed as pure functions.
@@ -108,6 +114,29 @@ export function coerceTypedValue(raw: string): { value?: CellValue; formula?: st
 }
 
 /**
+ * Moves ordinary A1 references the way Excel does when a formula is filled to another cell.
+ * Absolute row/column markers remain fixed. This deliberately leaves quoted string literals alone.
+ */
+export function translateFormula(formula: string, rowDelta: number, colDelta: number): string {
+  const reference = /([$]?)([A-Z]{1,3})([$]?)(\d+)/g;
+  const parts = formula.split('"');
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      return part.replace(reference, (_match, absoluteColumn, column, absoluteRow, row) => {
+        const columnIndex = columnToIndex(column);
+        const nextColumn =
+          absoluteColumn || columnIndex === undefined
+            ? column
+            : indexToColumn(Math.max(0, columnIndex + colDelta));
+        const nextRow = absoluteRow ? row : String(Math.max(1, Number(row) + rowDelta));
+        return `${absoluteColumn ? '$' : ''}${nextColumn}${absoluteRow ? '$' : ''}${nextRow}`;
+      });
+    })
+    .join('"');
+}
+
+/**
  * Splits clipboard text into a grid of rows and columns.
  *
  * Tab-separated values and newlines are the interchange every spreadsheet and terminal accepts, so
@@ -153,6 +182,7 @@ export function editsForClipboardBlock(
   block: string[][],
   anchorRow: number,
   anchorColIdx: number,
+  source?: CellPosition,
 ): CellEdit[] {
   const edits: CellEdit[] = [];
   for (let rowOffset = 0; rowOffset < block.length; rowOffset += 1) {
@@ -162,10 +192,18 @@ export function editsForClipboardBlock(
     for (let colOffset = 0; colOffset < line.length; colOffset += 1) {
       const colIdx = anchorColIdx + colOffset;
       if (colIdx > MAX_COLUMN_INDEX) break;
+      const typed = coerceTypedValue(line[colOffset] ?? '');
+      if (typed.formula && source) {
+        typed.formula = translateFormula(
+          typed.formula,
+          row - (source.row + rowOffset),
+          colIdx - (source.colIdx + colOffset),
+        );
+      }
       edits.push({
         row,
         column: indexToColumn(colIdx),
-        ...coerceTypedValue(line[colOffset] ?? ''),
+        ...typed,
       });
       if (edits.length >= MAX_BULK_EDITS) return edits;
     }
@@ -202,8 +240,14 @@ export function clearEditsForRect(sheet: Sheet, rect: CellRect): CellEdit[] {
 }
 
 /** One step of a fill series: numbers count, dates advance a day, everything else repeats. */
-function seriesValueFor(seed: Cell, step: number): { value?: CellValue; formula?: string } {
-  if (seed.formula !== undefined) return { value: seed.formula };
+function seriesValueFor(
+  seed: Cell,
+  step: number,
+  rowDelta: number,
+  colDelta: number,
+): { value?: CellValue; formula?: string } {
+  if (seed.formula !== undefined)
+    return { formula: translateFormula(seed.formula, rowDelta, colDelta) };
   const value = seed.value;
   if (typeof value === 'number') return { value: value + step };
   if (value instanceof Date) return { value: new Date(value.getTime() + step * 86_400_000) };
@@ -236,7 +280,9 @@ export function fillEditsFor(sheet: Sheet, source: CellRect, target: CellRect): 
       let write: { value?: CellValue; formula?: string };
       if (single) {
         const step = stepsByRow ? row - source.startRow : colIdx - source.startColIdx;
-        write = seed ? seriesValueFor(seed, step) : { value: null };
+        write = seed
+          ? seriesValueFor(seed, step, stepsByRow ? step : 0, stepsByRow ? 0 : step)
+          : { value: null };
       } else {
         const sourceCell =
           sheet.rows[source.startRow - 1 + ((row - target.startRow) % sourceHeight)]?.[
@@ -244,9 +290,11 @@ export function fillEditsFor(sheet: Sheet, source: CellRect, target: CellRect): 
           ];
         // A formula is copied as text: rewriting its references per cell is guesswork, and a
         // repeated formula that still points at the source row is at least visible and correctable.
+        const sourceRow = source.startRow + ((row - target.startRow) % sourceHeight);
+        const sourceCol = source.startColIdx + ((colIdx - target.startColIdx) % sourceWidth);
         write = sourceCell
           ? sourceCell.formula !== undefined
-            ? { value: sourceCell.formula }
+            ? { formula: translateFormula(sourceCell.formula, row - sourceRow, colIdx - sourceCol) }
             : { value: sourceCell.value }
           : { value: null };
       }

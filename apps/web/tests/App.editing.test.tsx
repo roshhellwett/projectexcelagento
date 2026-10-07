@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import {
@@ -57,7 +57,7 @@ describe('editing cells in the workspace', () => {
     // Enter committed and stepped down, so the badge and the bar now describe the cell below.
     expect(container.querySelector('.cell-coord-badge')).toHaveTextContent('D4');
     await user.click(cell('D3'));
-    expect(container.querySelector('.formula-input-display')).toHaveTextContent('FR');
+    expect(container.querySelector('.formula-input-display')).toHaveValue('FR');
 
     // The change is in the audit log like any other, and undo is offered for it.
     await user.click(screen.getByRole('button', { name: /History \(/ }));
@@ -150,10 +150,10 @@ describe('accessible dialogs over a live grid', () => {
     const opener = screen.getByRole('button', { name: /Run Operation/i });
     await user.click(opener);
 
-    const dialog = await screen.findByRole('dialog', { name: 'Run Engine Operation' });
+    const dialog = await screen.findByRole('dialog', { name: 'Workbook tools' });
     // Every label in the dialog now names the control it labels.
-    expect(screen.getByLabelText('Select Operation')).toBeInTheDocument();
-    expect(screen.getByLabelText('Target Column')).toBeInTheDocument();
+    expect(screen.getByLabelText('Choose a tool')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Bold' })).toBeInTheDocument();
 
     // A keystroke aimed at the grid must not land in the sheet behind the modal.
     fireEvent.keyDown(window, { key: 'x' });

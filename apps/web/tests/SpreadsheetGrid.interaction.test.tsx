@@ -5,7 +5,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createCell, type Workbook } from '@excel-agent/engine';
 
-import { SpreadsheetGrid } from '../src/components/SpreadsheetGrid.js';
+import { SpreadsheetGrid, type GridRowFilter } from '../src/components/SpreadsheetGrid.js';
 import type { CellEdit } from '../src/lib/grid-edit.js';
 
 function testWorkbook(): Workbook {
@@ -27,6 +27,7 @@ interface HarnessOptions {
   /** Omit the writer to exercise the read-only grid. */
   writable?: boolean;
   strict?: boolean;
+  rowFilter?: GridRowFilter;
 }
 
 function renderGrid(options: HarnessOptions = {}) {
@@ -42,6 +43,7 @@ function renderGrid(options: HarnessOptions = {}) {
       onSelectSheet={() => {}}
       recentChangedCells={new Set()}
       {...(options.writable === false ? {} : { onEditCells })}
+      rowFilter={options.rowFilter}
     />,
     options.strict ? { wrapper: StrictMode } : undefined,
   );
@@ -55,6 +57,17 @@ beforeEach(() => {
 });
 
 describe('grid structure exposed to assistive technology', () => {
+  it('hides non-matching rows without deleting them from the workbook view model', () => {
+    const { cell } = renderGrid({
+      rowFilter: { sheet: 'Sheet1', column: 'B', operator: 'gt', value: '7' },
+    });
+
+    expect(cell('A1')).toBeInTheDocument();
+    expect(screen.queryByRole('gridcell', { name: /^A2: / })).not.toBeInTheDocument();
+    expect(cell('A3')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('1 matching rows');
+  });
+
   it('is a grid of rows, column headers and cells with ARIA indices that count the headers', () => {
     const { cell } = renderGrid();
 
@@ -108,6 +121,22 @@ describe('grid structure exposed to assistive technology', () => {
 });
 
 describe('editing', () => {
+  it('edits the active cell from the formula bar and advances on Enter', async () => {
+    const user = userEvent.setup();
+    const { cell, edits } = renderGrid();
+
+    await user.click(cell('B2'));
+    const formulaBar = screen.getByLabelText('Formula bar');
+    await user.clear(formulaBar);
+    await user.type(formulaBar, '=B2*2');
+    await user.keyboard('{Enter}');
+
+    expect(edits).toEqual([
+      { sheet: 'Sheet1', edits: [{ row: 2, column: 'B', formula: '=B2*2' }] },
+    ]);
+    expect(cell('B3')).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('starts an edit from a typed character and commits it with Enter', async () => {
     const user = userEvent.setup();
     const { cell, edits } = renderGrid();

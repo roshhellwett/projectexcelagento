@@ -23,6 +23,11 @@ For example, an app hosted at `https://your-app.example/` sends users back to:
 - `https://your-app.example/?auth=confirm`
 - `https://your-app.example/?auth=recovery`
 
+For the official Vercel deployment, set the Vercel environment variable
+`VITE_AUTH_REDIRECT_ORIGIN=https://excelagento.vercel.app`. When it is present, signup,
+resend-confirmation, and recovery links always target that production origin instead of inheriting
+an accidentally configured preview or localhost origin. Leave it unset for local-only development.
+
 The Supabase SDK consumes the email callback before the app clears its token fragment. The
 return screen offers workspace access only after a session is established. Recovery links
 open a new-password form; expired links offer sign-in and a fresh email request.
@@ -33,7 +38,8 @@ In **Authentication → URL Configuration** for the Supabase project used by thi
 
 1. Set **Site URL** to the actual production app URL, including `https://`. Do not leave the
    production fallback set to `http://localhost:3000`.
-2. Add both callback URLs above to **Redirect URLs**. Include any base path if the app is
+2. Add `https://excelagento.vercel.app/?auth=confirm` and
+   `https://excelagento.vercel.app/?auth=recovery` to **Redirect URLs**. Include any base path if the app is
    hosted below `/app/` or another prefix.
 3. For local development, also allow `http://localhost:5173/?auth=confirm` and
    `http://localhost:5173/?auth=recovery`. Add the `127.0.0.1` equivalents if used.

@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "env": {
+    "VITE_AUTH_REDIRECT_ORIGIN": "https://excelagento.vercel.app"
+  },
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "rewrites": [

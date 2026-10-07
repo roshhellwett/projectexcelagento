@@ -4,6 +4,9 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm build",
   "outputDirectory": "dist",
+  "env": {
+    "VITE_AUTH_REDIRECT_ORIGIN": "https://excelagento.vercel.app"
+  },
   "rewrites": [
     {
       "source": "/((?!assets/|fixtures/|favicon\\.svg|robots\\.txt).*)",

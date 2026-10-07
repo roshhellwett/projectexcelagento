@@ -4,6 +4,7 @@ import { useLicense } from '../lib/license-context.js';
 import {
   adminLicenseAction,
   fetchAdminLicenseData,
+  resolvePlaintextLicenseKey,
   type AdminLicenseData,
   type AdminLicenseRecord,
 } from '../lib/licensing.js';
@@ -301,20 +302,27 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                   const account = license.bound_user_id
                     ? accountByUser.get(license.bound_user_id)
                     : undefined;
+                  const plaintextKey = resolvePlaintextLicenseKey(license, generatedKeys);
                   return (
                     <tr key={license.id}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <code>{license.raw_key || license.key_hint}</code>
+                          <code>{plaintextKey || license.key_hint}</code>
                           <button
                             type="button"
                             className="btn btn-ghost btn-icon btn-sm"
                             onClick={() =>
-                              void navigator.clipboard?.writeText(
-                                license.raw_key || license.key_hint,
-                              )
+                              plaintextKey
+                                ? void navigator.clipboard?.writeText(plaintextKey)
+                                : setError(
+                                    'The plaintext for this older key is not recoverable. Generate a replacement key to copy it.',
+                                  )
                             }
                             title="Copy activation key"
+                            aria-label={
+                              plaintextKey ? 'Copy activation key' : 'Plaintext key unavailable'
+                            }
+                            disabled={!plaintextKey}
                             style={{ padding: '2px', height: 'auto' }}
                           >
                             <Copy size={12} />

@@ -1,6 +1,38 @@
 project_id = "fsepapdadtrlddkyqqxu"
 
+[auth]
+site_url = "https://excelagento.vercel.app"
+additional_redirect_urls = [
+  "https://excelagento.vercel.app/?auth=confirm",
+  "https://excelagento.vercel.app/?auth=recovery"
+]
+
+[auth.email.template.confirmation]
+subject = "Confirm your signup"
+content = """
+<h2>Confirm your signup</h2>
+<p>Follow this link to confirm your user:</p>
+<p><a href="{{ .ConfirmationURL }}">Confirm your mail</a></p>
+"""
+
+[auth.email.template.recovery]
+subject = "Reset password"
+content = """
+<h2>Reset password</h2>
+<p>Follow this link to reset the password for your user:</p>
+<p><a href="{{ .ConfirmationURL }}">Reset password</a></p>
+"""
+
+[auth.email.template.magic_link]
+subject = "Your magic link"
+content = """
+<h2>Your magic link</h2>
+<p>Follow this link to login:</p>
+<p><a href="{{ .ConfirmationURL }}">Log in</a></p>
+"""
+
 [functions.license]
 # The handler verifies every bearer token with Supabase Auth. This also supports
 # modern publishable keys, which the legacy gateway JWT check cannot validate.
 verify_jwt = false
+

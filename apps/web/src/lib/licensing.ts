@@ -94,6 +94,23 @@ export interface AdminLicenseData {
   events: LicenseEventRecord[];
 }
 
+/**
+ * Resolves a real key only when it is available in the current generation response or database
+ * record. A masked key hint is never returned as plaintext because copying it would produce an
+ * activation value that can never work.
+ */
+export function resolvePlaintextLicenseKey(
+  license: Pick<AdminLicenseRecord, 'raw_key' | 'key_hint'>,
+  generatedKeys: readonly string[],
+): string | undefined {
+  if (license.raw_key) return license.raw_key;
+  const suffix = license.key_hint
+    .replace(/[^A-Z0-9]/gi, '')
+    .slice(-6)
+    .toUpperCase();
+  return generatedKeys.find((key) => key.replace(/[^A-Z0-9]/gi, '').endsWith(suffix));
+}
+
 export class LicenseServiceError extends Error {
   readonly code?: string;
   readonly status?: number;

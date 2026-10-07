@@ -5,10 +5,26 @@ export interface AuthCallbackInfo {
   error: string | null;
 }
 
+function configuredAuthOrigin(): string | undefined {
+  const configured =
+    typeof import.meta !== 'undefined' &&
+    typeof import.meta.env?.VITE_AUTH_REDIRECT_ORIGIN === 'string'
+      ? import.meta.env.VITE_AUTH_REDIRECT_ORIGIN.trim()
+      : '';
+  if (!configured) return undefined;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Use the app the person signed up on, including the dev port and any base path.
  * Keep routing in the query: Supabase uses the fragment for session tokens. */
 export function authEmailRedirectUrl(kind: AuthEmailKind, href = window.location.href): string {
-  const url = new URL(href);
+  const current = new URL(href);
+  const configuredOrigin = configuredAuthOrigin();
+  const url = configuredOrigin ? new URL(configuredOrigin) : current;
   url.search = '';
   url.hash = '';
   url.searchParams.set('auth', kind);

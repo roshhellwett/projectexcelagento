@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { type Workbook, indexToColumn, maxColumnCount } from '@excel-agent/engine';
+import { type CellStyle, type Workbook, indexToColumn, maxColumnCount } from '@excel-agent/engine';
 
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
+import type { CellRect } from '../lib/grid-edit.js';
+import type { GridRowFilter } from './SpreadsheetGrid.js';
 
 interface OperationModalProps {
   isOpen: boolean;
@@ -15,6 +17,8 @@ interface OperationModalProps {
     description: string;
     example?: Record<string, unknown>;
   }>;
+  selection?: CellRect;
+  onApplyFilter?: (filter: GridRowFilter) => void;
 }
 
 type OperationCatalogItem = {
@@ -34,6 +38,7 @@ const OPERATIONS = [
   { id: 'delete_column', label: 'Delete Column' },
   { id: 'add_column', label: 'Add New Column' },
   { id: 'set_cells', label: 'Set Cell Value' },
+  { id: 'format_cells', label: 'Format Selected Cells' },
 ];
 
 const FORM_OPERATION_IDS = new Set(OPERATIONS.map((operation) => operation.id));
@@ -57,16 +62,19 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   onExecute,
   operationCatalog = [],
   initialOperation,
+  selection,
+  onApplyFilter,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   // Every hook runs whether or not the modal is showing, so opening it is not a different
   // component as far as React is concerned.
   useDialogA11y(isOpen, cardRef, onClose);
 
-  const [selectedOp, setSelectedOp] = useState(initialOperation ?? 'format_dates');
+  const [selectedOp, setSelectedOp] = useState(initialOperation ?? 'format_cells');
   useEffect(() => {
     if (isOpen && initialOperation) setSelectedOp(initialOperation);
-  }, [initialOperation, isOpen]);
+    if (isOpen && selection) setCol(indexToColumn(selection.startColIdx));
+  }, [initialOperation, isOpen, selection]);
 
   // Form states
   const [col, setCol] = useState('A');
@@ -87,6 +95,8 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   const [cellVal, setCellVal] = useState('');
   const [advancedJson, setAdvancedJson] = useState('{}');
   const [advancedError, setAdvancedError] = useState('');
+  const [formatStyle, setFormatStyle] = useState<CellStyle>({});
+  const [formatNumberFormat, setFormatNumberFormat] = useState('');
 
   if (!isOpen) return null;
 
@@ -100,6 +110,12 @@ export const OperationModal: React.FC<OperationModalProps> = ({
       : OPERATIONS.map((operation) => ({ name: operation.id, description: operation.label }));
   const selectedCatalogItem = catalog.find((operation) => operation.name === selectedOp);
   const isAdvancedOperation = !FORM_OPERATION_IDS.has(selectedOp);
+  const selectedRect = selection ?? {
+    startRow: 1,
+    endRow: 1,
+    startColIdx: 0,
+    endColIdx: 0,
+  };
 
   const handleRun = () => {
     if (!currentSheet) return;
@@ -129,6 +145,18 @@ export const OperationModal: React.FC<OperationModalProps> = ({
     }
 
     switch (selectedOp) {
+      case 'format_cells':
+        onExecute('format_cells', {
+          sheet,
+          startRow: selectedRect.startRow,
+          endRow: selectedRect.endRow,
+          startColumn: indexToColumn(selectedRect.startColIdx),
+          endColumn: indexToColumn(selectedRect.endColIdx),
+          style: formatStyle,
+          ...(formatNumberFormat ? { numberFormat: formatNumberFormat } : {}),
+        });
+        break;
+
       case 'format_dates':
         onExecute('format_dates', {
           sheet,
@@ -161,19 +189,33 @@ export const OperationModal: React.FC<OperationModalProps> = ({
           sheet,
           column: col,
           direction: sortDir,
-          startRow: 2,
-          startColumn: 'A',
+          startRow: Math.max(2, selectedRect.startRow),
+          startColumn: indexToColumn(selectedRect.startColIdx),
+          endRow: selectedRect.endRow,
+          endColumn: indexToColumn(selectedRect.endColIdx),
         });
         break;
 
       case 'filter_rows':
-        onExecute('filter_rows', {
-          sheet,
-          column: col,
-          operator: filterCond,
-          value: filterVal,
-          headerRow: 1,
-        });
+        {
+          const filter = {
+            sheet,
+            column: col,
+            operator: filterCond,
+            ...(filterCond !== 'is_blank' && filterCond !== 'is_not_blank'
+              ? { value: filterVal }
+              : {}),
+          } as GridRowFilter;
+          if (onApplyFilter) onApplyFilter(filter);
+          else
+            onExecute('filter_rows', {
+              sheet,
+              column: col,
+              operator: filterCond,
+              value: filterVal,
+              headerRow: 1,
+            });
+        }
         break;
 
       case 'find_replace':
@@ -264,7 +306,7 @@ export const OperationModal: React.FC<OperationModalProps> = ({
       >
         <div className="modal-header">
           <div className="modal-title" id="operation-modal-title">
-            Run Engine Operation
+            Workbook tools
           </div>
           <button
             type="button"
@@ -279,7 +321,7 @@ export const OperationModal: React.FC<OperationModalProps> = ({
         <div className="modal-body">
           <div className="form-group">
             <label className="form-label" htmlFor="op-operation">
-              Select Operation
+              Choose a tool
             </label>
             <select
               id="op-operation"
@@ -339,6 +381,102 @@ export const OperationModal: React.FC<OperationModalProps> = ({
                   {advancedError}
                 </p>
               )}
+            </div>
+          )}
+
+          {selectedOp === 'format_cells' && (
+            <div className="operation-format-panel">
+              <div className="operation-selection-summary">
+                Formatting {indexToColumn(selectedRect.startColIdx)}
+                {selectedRect.startRow}:{indexToColumn(selectedRect.endColIdx)}
+                {selectedRect.endRow}
+              </div>
+              <div className="operation-format-toolbar" aria-label="Cell formatting">
+                {(
+                  [
+                    ['bold', 'Bold'],
+                    ['italic', 'Italic'],
+                    ['underline', 'Underline'],
+                    ['wrapText', 'Wrap text'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`btn btn-ghost btn-sm ${formatStyle[key] ? 'is-active' : ''}`}
+                    aria-pressed={formatStyle[key] === true}
+                    onClick={() =>
+                      setFormatStyle((previous) => ({ ...previous, [key]: !previous[key] }))
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="operation-format-row">
+                <label className="form-label" htmlFor="op-fill-color">
+                  Fill
+                  <input
+                    id="op-fill-color"
+                    type="color"
+                    value={formatStyle.fillColor ?? '#ffffff'}
+                    onChange={(event) =>
+                      setFormatStyle((previous) => ({ ...previous, fillColor: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-label" htmlFor="op-font-color">
+                  Text
+                  <input
+                    id="op-font-color"
+                    type="color"
+                    value={formatStyle.fontColor ?? '#20342b'}
+                    onChange={(event) =>
+                      setFormatStyle((previous) => ({ ...previous, fontColor: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="form-label" htmlFor="op-horizontal-align">
+                  Align
+                  <select
+                    id="op-horizontal-align"
+                    className="select-input"
+                    value={formatStyle.horizontalAlignment ?? ''}
+                    onChange={(event) =>
+                      setFormatStyle((previous) => ({
+                        ...previous,
+                        ...(event.target.value
+                          ? {
+                              horizontalAlignment: event.target
+                                .value as CellStyle['horizontalAlignment'],
+                            }
+                          : { horizontalAlignment: undefined }),
+                      }))
+                    }
+                  >
+                    <option value="">Keep</option>
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+              </div>
+              <label className="form-label" htmlFor="op-number-format">
+                Number format
+                <select
+                  id="op-number-format"
+                  className="select-input"
+                  value={formatNumberFormat}
+                  onChange={(event) => setFormatNumberFormat(event.target.value)}
+                >
+                  <option value="">Keep current</option>
+                  <option value="General">General</option>
+                  <option value="$#,##0.00">Currency</option>
+                  <option value="0.00%">Percent</option>
+                  <option value="#,##0.00">Number with commas</option>
+                  <option value="0.00">Two decimals</option>
+                </select>
+              </label>
             </div>
           )}
 
@@ -453,6 +591,9 @@ export const OperationModal: React.FC<OperationModalProps> = ({
 
           {selectedOp === 'filter_rows' && (
             <>
+              <p className="operation-inline-note">
+                Filtering hides non-matching rows in this view. Your workbook data stays intact.
+              </p>
               <div className="form-group">
                 <label className="form-label" htmlFor="op-column">
                   Filter Column
@@ -658,7 +799,7 @@ export const OperationModal: React.FC<OperationModalProps> = ({
             Cancel
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={handleRun}>
-            Execute Operation
+            Apply to selection
           </button>
         </div>
       </div>

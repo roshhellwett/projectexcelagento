@@ -8,7 +8,7 @@ import {
 } from '@excel-agent/engine';
 
 import { describeCellSelection, type CellSelection } from '../lib/selection-context.js';
-import { cellDisplay, formulaTextFor, useCellEvaluator } from '../lib/cell-evaluator.js';
+import { cellDisplay, useCellEvaluator } from '../lib/cell-evaluator.js';
 import {
   DEFAULT_COLUMN_WIDTH,
   MAX_BULK_EDITS,
@@ -41,6 +41,10 @@ interface SpreadsheetGridProps {
   onSelectCell?: (coord: { row: number; column: string; value: unknown }) => void;
   onFileDrop?: (file: File) => void;
   onAddSelectionContext?: (ctx: CellSelection) => void;
+  onOpenOperation?: (operation?: string) => void;
+  rowFilter?: GridRowFilter;
+  onClearFilter?: () => void;
+  clipboardCommand?: GridClipboardCommand;
   onSelectionChange?: (selection: CellRect) => void;
   /**
    * Applies a batch of cell writes to the named sheet. Without it the grid stays a viewer: cells
@@ -74,6 +78,60 @@ interface ClipboardBuffer {
   mode: 'copy' | 'cut';
   sheetName: string;
   rect: CellRect;
+}
+
+export type GridRowFilter = {
+  sheet: string;
+  column: string;
+  operator:
+    | 'equals'
+    | 'not_equals'
+    | 'contains'
+    | 'starts_with'
+    | 'ends_with'
+    | 'is_blank'
+    | 'is_not_blank'
+    | 'gt'
+    | 'lt';
+  value?: string;
+};
+
+export type GridClipboardCommand = {
+  action: 'copy' | 'cut' | 'paste';
+  id: number;
+};
+
+function rowMatchesFilter(row: Sheet['rows'][number] | undefined, filter: GridRowFilter): boolean {
+  const columnIndex =
+    filter.column
+      .toUpperCase()
+      .split('')
+      .reduce((index, letter) => index * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+  const value = row?.[columnIndex]?.value;
+  const text = value === null || value === undefined ? '' : String(value);
+  const expected = filter.value ?? '';
+  switch (filter.operator) {
+    case 'is_blank':
+      return value === null || value === undefined || value === '';
+    case 'is_not_blank':
+      return value !== null && value !== undefined && value !== '';
+    case 'equals':
+      return text.toLowerCase() === expected.toLowerCase();
+    case 'not_equals':
+      return text.toLowerCase() !== expected.toLowerCase();
+    case 'contains':
+      return text.toLowerCase().includes(expected.toLowerCase());
+    case 'starts_with':
+      return text.toLowerCase().startsWith(expected.toLowerCase());
+    case 'ends_with':
+      return text.toLowerCase().endsWith(expected.toLowerCase());
+    case 'gt':
+      return Number(value) > Number(expected);
+    case 'lt':
+      return Number(value) < Number(expected);
+    default:
+      return true;
+  }
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -123,6 +181,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onSelectCell,
   onFileDrop,
   onAddSelectionContext,
+  onOpenOperation,
+  rowFilter,
+  onClearFilter,
+  clipboardCommand,
   onSelectionChange,
   onEditCells,
   dateSystem = '1900',
@@ -138,6 +200,8 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const [editing, setEditing] = useState<{ row: number; colIdx: number; text: string } | null>(
     null,
   );
+  const [formulaDraft, setFormulaDraft] = useState('');
+  const [formulaEditing, setFormulaEditing] = useState(false);
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>({});
   const [resizeDrag, setResizeDrag] = useState<{
     colIdx: number;
@@ -171,6 +235,22 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   const totalRows = currentSheet.rows.length;
   const totalCols = maxColumnCount(currentSheet.rows);
+  const visibleRowIndexes = useMemo(() => {
+    if (!rowFilter || rowFilter.sheet !== currentSheet.name) return null;
+    return currentSheet.rows.reduce<number[]>((indexes, row, index) => {
+      if (index === 0 || rowMatchesFilter(row, rowFilter)) indexes.push(index);
+      return indexes;
+    }, []);
+  }, [currentSheet, rowFilter]);
+  const visibleRowCount = visibleRowIndexes?.length ?? totalRows;
+
+  useEffect(() => {
+    if (!visibleRowIndexes || visibleRowIndexes.length === 0) return;
+    if (visibleRowIndexes.includes(activeCell.row - 1)) return;
+    const firstVisible = visibleRowIndexes[0] ?? 0;
+    setAnchor({ row: firstVisible + 1, colIdx: activeCell.colIdx });
+    setActiveCell({ row: firstVisible + 1, colIdx: activeCell.colIdx });
+  }, [activeCell.colIdx, activeCell.row, visibleRowIndexes]);
 
   // The cell-level actions read the sheet, the selection and the writer through this one ref so
   // their identities never change. A per-cell inline arrow would be a new prop on every render and
@@ -238,12 +318,15 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   }, [handleScroll, totalRows, totalCols]);
 
   const rowWindow = useMemo(() => {
-    if (totalRows <= 120 || viewportHeight <= 0) return { start: 0, end: totalRows };
+    if (visibleRowCount <= 120 || viewportHeight <= 0) return { start: 0, end: visibleRowCount };
     return {
       start: Math.max(0, Math.floor(scrollTop / rowHeight) - ROW_OVERSCAN),
-      end: Math.min(totalRows, Math.ceil((scrollTop + viewportHeight) / rowHeight) + ROW_OVERSCAN),
+      end: Math.min(
+        visibleRowCount,
+        Math.ceil((scrollTop + viewportHeight) / rowHeight) + ROW_OVERSCAN,
+      ),
     };
-  }, [totalRows, scrollTop, viewportHeight, rowHeight]);
+  }, [visibleRowCount, scrollTop, viewportHeight, rowHeight]);
 
   const columnWindow = useMemo(() => {
     const total = columnOffsets[totalCols] ?? 0;
@@ -302,6 +385,29 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       if (!extend) setAnchor(next);
     },
     [totalRows, totalCols],
+  );
+
+  const moveToDataEdge = useCallback(
+    (rowDelta: number, colDelta: number, extend: boolean) => {
+      const { row: startRow, colIdx: startColIdx } = activeCell;
+      const filled = (row: number, colIdx: number) => {
+        const cell = currentSheet.rows[row - 1]?.[colIdx];
+        return Boolean(cell && (cell.formula !== undefined || cell.value !== null));
+      };
+      let row = startRow;
+      let colIdx = startColIdx;
+      const startFilled = filled(row, colIdx);
+      while (true) {
+        const nextRow = Math.min(Math.max(1, row + rowDelta), Math.max(1, totalRows));
+        const nextCol = Math.min(Math.max(0, colIdx + colDelta), Math.max(0, totalCols - 1));
+        if (nextRow === row && nextCol === colIdx) break;
+        row = nextRow;
+        colIdx = nextCol;
+        if (startFilled !== filled(row, colIdx)) break;
+      }
+      selectPosition({ row, colIdx }, extend);
+    },
+    [activeCell, currentSheet.rows, selectPosition, totalCols, totalRows],
   );
 
   // The caret follows the selection while the grid owns the keyboard, so a keyboard user keeps
@@ -368,6 +474,33 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     setActiveCell(next);
   }, []);
 
+  const commitFormulaBar = useCallback(
+    (move: EditorMove = 'none') => {
+      if (!editable) return;
+      const current = currentSheet.rows[activeCell.row - 1]?.[activeCell.colIdx];
+      if (formulaDraft !== editableTextFor(current)) {
+        onEditCellsRef.current?.(currentSheet.name, [
+          {
+            row: activeCell.row,
+            column: indexToColumn(activeCell.colIdx),
+            ...coerceTypedValue(formulaDraft),
+          },
+        ]);
+      }
+      setFormulaEditing(false);
+      if (move === 'none') return;
+      const deltas: Record<Exclude<EditorMove, 'none'>, [number, number]> = {
+        down: [1, 0],
+        up: [-1, 0],
+        right: [0, 1],
+        left: [0, -1],
+      };
+      const [rowDelta, colDelta] = deltas[move];
+      moveActive(rowDelta, colDelta, false);
+    },
+    [activeCell, currentSheet, editable, formulaDraft, moveActive],
+  );
+
   const clearSelection = useCallback(() => {
     const { sheet, selection: rect, editable: canEdit } = latest.current;
     if (!canEdit || isDialogOpen()) return;
@@ -383,6 +516,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       currentSheet,
       selection,
       (cell, row, colIdx) =>
+        cell?.formula ??
         cellDisplay(cell, evaluateCell(cell, currentSheet.name, colIdx, row), dateSystem).text,
     );
   }, [currentSheet, selection, evaluateCell, dateSystem]);
@@ -390,11 +524,15 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const pasteBlock = useCallback((block: string[][], anchorRow: number, anchorColIdx: number) => {
     const { sheet, editable: canEdit } = latest.current;
     if (!canEdit || isDialogOpen()) return;
-    const pasted = editsForClipboardBlock(block, anchorRow, anchorColIdx).slice(0, MAX_PASTE_BLOCK);
+    const cut = clipboardRef.current;
+    const source = cut ? { row: cut.rect.startRow, colIdx: cut.rect.startColIdx } : undefined;
+    const pasted = editsForClipboardBlock(block, anchorRow, anchorColIdx, source).slice(
+      0,
+      MAX_PASTE_BLOCK,
+    );
     if (pasted.length === 0) return;
 
     const edits: CellEdit[] = [];
-    const cut = clipboardRef.current;
     // A cut only moves cells when the source is the sheet being pasted into; across sheets the
     // safe reading is a copy, since the move would need the other sheet on screen.
     if (cut?.mode === 'cut' && cut.sheetName === sheet.name) {
@@ -425,6 +563,33 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     },
     [selection, pasteBlock],
   );
+
+  const copySelection = useCallback(
+    (mode: 'copy' | 'cut') => {
+      const text = selectionText();
+      if (!text) return;
+      clipboardRef.current = { text, mode, sheetName: currentSheet.name, rect: selection };
+      void navigator.clipboard?.writeText?.(text)?.catch?.(() => undefined);
+    },
+    [currentSheet.name, selection, selectionText],
+  );
+
+  useEffect(() => {
+    if (!clipboardCommand) return;
+    if (clipboardCommand.action === 'copy' || clipboardCommand.action === 'cut') {
+      copySelection(clipboardCommand.action);
+      return;
+    }
+    const internal = clipboardRef.current?.text;
+    if (internal) {
+      pasteText(internal);
+      return;
+    }
+    void navigator.clipboard
+      ?.readText?.()
+      .then((text) => text && pasteText(text))
+      .catch(() => undefined);
+  }, [clipboardCommand, copySelection, pasteText]);
 
   // ------------------------------------------------------------ fill handle
 
@@ -578,6 +743,79 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key;
 
+      if (mod && !event.altKey && (key.toLowerCase() === 'f' || key.toLowerCase() === 'h')) {
+        event.preventDefault();
+        onOpenOperation?.('find_replace');
+        return;
+      }
+
+      if (mod && !event.altKey && key.startsWith('Arrow')) {
+        event.preventDefault();
+        const deltas: Record<string, [number, number]> = {
+          ArrowUp: [-1, 0],
+          ArrowDown: [1, 0],
+          ArrowLeft: [0, -1],
+          ArrowRight: [0, 1],
+        };
+        const delta = deltas[key];
+        if (delta) moveToDataEdge(delta[0], delta[1], event.shiftKey);
+        return;
+      }
+
+      if (mod && !event.altKey && key === ' ') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          setAnchor({ row: activeCell.row, colIdx: 0 });
+          setActiveCell({ row: activeCell.row, colIdx: Math.max(0, totalCols - 1) });
+        } else {
+          setAnchor({ row: 1, colIdx: activeCell.colIdx });
+          setActiveCell({ row: Math.max(1, totalRows), colIdx: activeCell.colIdx });
+        }
+        return;
+      }
+
+      if (mod && !event.altKey && key.toLowerCase() === 'd') {
+        event.preventDefault();
+        if (selection.endRow > selection.startRow) {
+          const source = {
+            startRow: selection.startRow,
+            endRow: selection.startRow,
+            startColIdx: selection.startColIdx,
+            endColIdx: selection.endColIdx,
+          };
+          const edits = fillEditsFor(currentSheet, source, selection);
+          if (edits.length > 0) onEditCellsRef.current?.(currentSheet.name, edits);
+        }
+        return;
+      }
+
+      if (mod && !event.altKey && key.toLowerCase() === 'r') {
+        event.preventDefault();
+        if (selection.endColIdx > selection.startColIdx) {
+          const source = {
+            startRow: selection.startRow,
+            endRow: selection.endRow,
+            startColIdx: selection.startColIdx,
+            endColIdx: selection.startColIdx,
+          };
+          const edits = fillEditsFor(currentSheet, source, selection);
+          if (edits.length > 0) onEditCellsRef.current?.(currentSheet.name, edits);
+        }
+        return;
+      }
+
+      if (mod && !event.altKey && key === '1') {
+        event.preventDefault();
+        onOpenOperation?.('format_cells');
+        return;
+      }
+
+      if (mod && event.shiftKey && key.toLowerCase() === 'l') {
+        event.preventDefault();
+        onOpenOperation?.('filter_rows');
+        return;
+      }
+
       if (mod && !event.altKey && key.toLowerCase() === 'a' && totalRows > 0) {
         event.preventDefault();
         setAnchor({ row: 1, colIdx: 0 });
@@ -659,6 +897,9 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       currentSheet,
       editable,
       moveActive,
+      moveToDataEdge,
+      onOpenOperation,
+      selection,
       selectPosition,
       totalCols,
       totalRows,
@@ -749,6 +990,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     dateSystem,
   ).text;
 
+  useEffect(() => {
+    if (!formulaEditing) setFormulaDraft(editableTextFor(currentCell));
+  }, [currentCell, formulaEditing]);
+
   let cellTypeStr = 'empty';
   if (cellFormula) cellTypeStr = 'formula';
   else if (cellValue instanceof Date) cellTypeStr = 'date';
@@ -778,7 +1023,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   };
 
   const topSpacerHeight = rowWindow.start * rowHeight;
-  const bottomSpacerHeight = Math.max(0, (totalRows - rowWindow.end) * rowHeight);
+  const bottomSpacerHeight = Math.max(0, (visibleRowCount - rowWindow.end) * rowHeight);
   const spacerColSpan = Math.max(
     1,
     columnIndicesLength(columnWindow) +
@@ -826,20 +1071,51 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         </div>
       )}
 
+      {rowFilter?.sheet === currentSheet.name && (
+        <div className="grid-filter-banner" role="status">
+          <span>
+            Filtered: {rowFilter.column} {rowFilter.operator.replace(/_/g, ' ')}
+            {rowFilter.value ? ` “${rowFilter.value}”` : ''} · {visibleRowCount - 1} matching rows
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClearFilter}>
+            Clear filter
+          </button>
+        </div>
+      )}
+
       <div className="formula-bar">
         <div className="cell-coord-badge">{selectedCellCoord}</div>
         <div className="formula-type-badge">{cellTypeStr}</div>
-        <div className="formula-input-display">
-          {cellFormula ? (
-            <span className="cell-val-formula">{formulaTextFor(currentCell)}</span>
-          ) : cellValue !== null && cellValue !== undefined ? (
-            // A Date read as a raw string becomes "Fri Jan 01 2021 00:00:00 GMT+0000"; the grid
-            // shows it the way its number format renders it.
-            formulaBarText || String(cellValue)
-          ) : (
-            <span style={{ color: 'var(--text-subtle)' }}>(empty)</span>
-          )}
-        </div>
+        <input
+          className="formula-input-display"
+          aria-label="Formula bar"
+          readOnly={!editable}
+          value={formulaEditing ? formulaDraft : formulaBarText}
+          placeholder="(empty)"
+          onFocus={() => {
+            if (!editable) return;
+            setFormulaDraft(editableTextFor(currentCell));
+            setFormulaEditing(true);
+          }}
+          onChange={(event) => setFormulaDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              setFormulaEditing(false);
+              setFormulaDraft(editableTextFor(currentCell));
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              commitFormulaBar(event.shiftKey ? 'up' : 'down');
+            } else if (event.key === 'Tab') {
+              event.preventDefault();
+              commitFormulaBar(event.shiftKey ? 'left' : 'right');
+            }
+          }}
+          onBlur={() => {
+            if (formulaEditing) commitFormulaBar();
+          }}
+          title={editable ? 'Edit the active cell or formula' : 'Formula bar'}
+        />
       </div>
 
       <div className="grid-scroll-wrapper" ref={scrollWrapperRef} onScroll={handleScroll}>
@@ -848,7 +1124,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
           role="grid"
           aria-label={`${currentSheet.name} spreadsheet`}
           aria-readonly={!editable}
-          aria-rowcount={totalRows + 1}
+          aria-rowcount={visibleRowCount + 1}
           aria-colcount={totalCols + 1}
         >
           <thead>
@@ -978,8 +1254,9 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             )}
 
             {rowIndices.map((rowIdx, rowOffset) => {
-              const rowNumber = rowIdx + 1;
-              const rowCells = currentSheet.rows[rowIdx] ?? [];
+              const sourceRowIdx = visibleRowIndexes?.[rowIdx] ?? rowIdx;
+              const rowNumber = sourceRowIdx + 1;
+              const rowCells = currentSheet.rows[sourceRowIdx] ?? [];
               const isHeaderRow = rowNumber === 1;
 
               return (
@@ -1094,12 +1371,97 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              copySelection('copy');
+              setContextMenu(null);
+            }}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              copySelection('cut');
+              setContextMenu(null);
+            }}
+          >
+            Cut
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              const internal = clipboardRef.current?.text;
+              if (internal) pasteText(internal);
+              else void navigator.clipboard?.readText?.().then((text) => text && pasteText(text));
+              setContextMenu(null);
+            }}
+          >
+            Paste
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              clearSelection();
+              setContextMenu(null);
+            }}
+          >
+            Clear contents
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              onOpenOperation?.('format_cells');
+              setContextMenu(null);
+            }}
+          >
+            Format cells…
+          </button>
+          <div className="cell-context-menu-separator" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              setAnchor({ row: contextMenu.rowIdx + 1, colIdx: 0 });
+              setActiveCell({
+                row: contextMenu.rowIdx + 1,
+                colIdx: Math.max(0, totalCols - 1),
+              });
+              setContextMenu(null);
+            }}
+          >
+            Select row
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="cell-context-menu-item"
+            onClick={() => {
+              setAnchor({ row: 1, colIdx: contextMenu.colIdx });
+              setActiveCell({ row: Math.max(1, totalRows), colIdx: contextMenu.colIdx });
+              setContextMenu(null);
+            }}
+          >
+            Select column
+          </button>
           {(['cell', 'row', 'column'] as const).map((kind) => (
             <button
-              key={kind}
+              key={`agent-${kind}`}
               type="button"
               role="menuitem"
-              className="cell-context-menu-item"
+              className="cell-context-menu-item cell-context-menu-secondary"
               onClick={() => {
                 const ctx = describeCellSelection(
                   kind,

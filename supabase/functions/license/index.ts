@@ -24,7 +24,7 @@ Deno.serve(
     },
     async command(actorId, action, payload) {
       if (!db) throw new Error('Service configuration missing');
-      const { data, error } = await db.rpc('license_command', {
+      const { data, error } = await db.rpc('license_command_guarded', {
         p_actor_id: actorId,
         p_action: action,
         p_payload: payload,
