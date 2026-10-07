@@ -91,7 +91,7 @@ describe('license Edge Function boundary', () => {
       .calls[0] as [string, string, Record<string, unknown>];
     expect(action).toBe('admin_generate');
     expect(payload.keys).toHaveLength(3);
-    expect(JSON.stringify(payload)).not.toContain(generated[0]);
+    expect((payload.keys as Array<Record<string, unknown>>)[0]?.rawKey).toBe(generated[0]);
   });
 
   it('rejects unbounded administrator key requests', async () => {

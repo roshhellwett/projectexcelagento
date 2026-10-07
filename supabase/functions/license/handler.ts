@@ -168,6 +168,7 @@ export function createLicenseHandler(
           keys.map(async (key) => ({
             hash: await hash(key, deps.keyPepper, 'excelagento:key:v1'),
             hint: `EXCEL-••••-${key.slice(-6)}`,
+            rawKey: key,
           })),
         );
       }

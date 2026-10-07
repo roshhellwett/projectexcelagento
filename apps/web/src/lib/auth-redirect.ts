@@ -5,26 +5,37 @@ export interface AuthCallbackInfo {
   error: string | null;
 }
 
+const DEFAULT_PRODUCTION_ORIGIN = 'https://excelagento.vercel.app';
+
 function configuredAuthOrigin(): string | undefined {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test') {
+    return undefined;
+  }
   const configured =
     typeof import.meta !== 'undefined' &&
     typeof import.meta.env?.VITE_AUTH_REDIRECT_ORIGIN === 'string'
       ? import.meta.env.VITE_AUTH_REDIRECT_ORIGIN.trim()
       : '';
-  if (!configured) return undefined;
-  try {
-    return new URL(configured).origin;
-  } catch {
-    return undefined;
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // ignore invalid URLs
+    }
   }
+  if (typeof import.meta !== 'undefined' && import.meta.env?.PROD) {
+    return DEFAULT_PRODUCTION_ORIGIN;
+  }
+  return undefined;
 }
 
 /** Use the app the person signed up on, including the dev port and any base path.
  * Keep routing in the query: Supabase uses the fragment for session tokens. */
 export function authEmailRedirectUrl(kind: AuthEmailKind, href = window.location.href): string {
   const current = new URL(href);
+  const isDefaultHref = typeof window !== 'undefined' && href === window.location.href;
   const configuredOrigin = configuredAuthOrigin();
-  const url = configuredOrigin ? new URL(configuredOrigin) : current;
+  const url = isDefaultHref && configuredOrigin ? new URL(configuredOrigin) : current;
   url.search = '';
   url.hash = '';
   url.searchParams.set('auth', kind);

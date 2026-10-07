@@ -17,3 +17,5 @@ test-results/
 .DS_Store
 *.csv
 scripts/
+supabase/.temp/
+supabase/launch-reset.sql

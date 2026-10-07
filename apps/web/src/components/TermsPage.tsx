@@ -163,8 +163,10 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
             The official hosted deployment may provide a 30-day evaluation followed by device-bound
             activation. Access state is determined by the server, not by editable browser storage.
             Purchased keys are issued through{' '}
-            <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and are bound
-            to the verified account and installation at first activation.
+            <a href="mailto:zenithopensourceprojects@gmail.com">
+              zenithopensourceprojects@gmail.com
+            </a>{' '}
+            and are bound to the verified account and installation at first activation.
           </p>
           <p>
             Administrative transfers, device recovery, expiry changes, revocations and suspensions

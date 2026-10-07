@@ -318,10 +318,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 <p style={{ margin: 0, fontSize: '0.85rem' }}>
                   Your 30-day access has ended. Contact{' '}
                   <a
-                    href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
+                    href={`mailto:zenithopensourceprojects@gmail.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
                     style={{ textDecoration: 'underline' }}
                   >
-                    zenithprojects@icloud.com
+                    zenithopensourceprojects@gmail.com
                   </a>{' '}
                   with your Unique Device ID (<code>{deviceId}</code>) to add days or purchase
                   extended access.
@@ -359,8 +359,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             )}
             <p className="license-muted" style={{ marginTop: '0.75rem' }}>
               Need a paid key, a duration change, or a recovery transfer? Contact{' '}
-              <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and include
-              your verified email and Unique Device ID.
+              <a href="mailto:zenithopensourceprojects@gmail.com">
+                zenithopensourceprojects@gmail.com
+              </a>{' '}
+              and include your verified email and Unique Device ID.
             </p>
           </article>
         </section>
@@ -381,7 +383,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             )}
             <a
               className="btn btn-ghost"
-              href="mailto:zenithprojects@icloud.com?subject=ExcelAgento%20activation%20support"
+              href="mailto:zenithopensourceprojects@gmail.com?subject=ExcelAgento%20activation%20support"
             >
               Contact support <ExternalLink size={14} />
             </a>

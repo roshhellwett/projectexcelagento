@@ -1,5 +1,4 @@
 const INSTALL_ID_STORAGE_KEY = 'excelagento_unique_id_v2';
-const LEGACY_STORAGE_KEY = 'excelagento_install_id_v1';
 
 let cachedUniqueId: string | null = null;
 
@@ -71,29 +70,13 @@ export function getRawHWID(): string {
  */
 export function getInstallId(): string {
   if (cachedUniqueId) return cachedUniqueId;
-  try {
-    const existing =
-      window.localStorage.getItem(INSTALL_ID_STORAGE_KEY)?.trim() ||
-      window.localStorage.getItem(LEGACY_STORAGE_KEY)?.trim();
-    if (
-      existing &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(existing)
-    ) {
-      cachedUniqueId = existing;
-      window.localStorage.setItem(INSTALL_ID_STORAGE_KEY, existing);
-      return existing;
-    }
-  } catch {
-    // LocalStorage may be unavailable in some sandboxes
-  }
-
   const hwid = getRawHWID();
   const generated = hashStringToUuid(hwid);
 
   try {
     window.localStorage.setItem(INSTALL_ID_STORAGE_KEY, generated);
   } catch {
-    // Ignore storage errors
+    // LocalStorage may be unavailable in some sandboxes
   }
 
   cachedUniqueId = generated;
