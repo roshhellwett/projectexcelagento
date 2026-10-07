@@ -5,12 +5,9 @@ export interface AuthCallbackInfo {
   error: string | null;
 }
 
-const DEFAULT_PRODUCTION_ORIGIN = 'https://excelagento.vercel.app';
+export const DEFAULT_PRODUCTION_ORIGIN = 'https://excelagento.vercel.app';
 
-function configuredAuthOrigin(): string | undefined {
-  if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test') {
-    return undefined;
-  }
+function configuredAuthOrigin(): string {
   const configured =
     typeof import.meta !== 'undefined' &&
     typeof import.meta.env?.VITE_AUTH_REDIRECT_ORIGIN === 'string'
@@ -23,19 +20,34 @@ function configuredAuthOrigin(): string | undefined {
       // ignore invalid URLs
     }
   }
-  if (typeof import.meta !== 'undefined' && import.meta.env?.PROD) {
-    return DEFAULT_PRODUCTION_ORIGIN;
+
+  // If in browser and current origin is already a deployed public domain
+  if (typeof window !== 'undefined' && window.location.origin) {
+    const origin = window.location.origin;
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return origin;
+    }
   }
-  return undefined;
+
+  // Always fallback to production origin so Supabase emails never link to localhost
+  return DEFAULT_PRODUCTION_ORIGIN;
 }
 
-/** Use the app the person signed up on, including the dev port and any base path.
+/** Use the canonical website origin for email verification & recovery.
  * Keep routing in the query: Supabase uses the fragment for session tokens. */
-export function authEmailRedirectUrl(kind: AuthEmailKind, href = window.location.href): string {
-  const current = new URL(href);
-  const isDefaultHref = typeof window !== 'undefined' && href === window.location.href;
+export function authEmailRedirectUrl(kind: AuthEmailKind, href?: string): string {
+  const isDefaultHref =
+    href === undefined || (typeof window !== 'undefined' && href === window.location.href);
+  const currentHref =
+    href ?? (typeof window !== 'undefined' ? window.location.href : DEFAULT_PRODUCTION_ORIGIN);
+  const current = new URL(currentHref);
+
+  const isTestMode = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test';
   const configuredOrigin = configuredAuthOrigin();
-  const url = isDefaultHref && configuredOrigin ? new URL(configuredOrigin) : current;
+  const shouldUseConfigured =
+    isDefaultHref || current.origin.includes('localhost') || current.origin.includes('127.0.0.1');
+
+  const url = !isTestMode && shouldUseConfigured ? new URL(configuredOrigin) : current;
   url.search = '';
   url.hash = '';
   url.searchParams.set('auth', kind);

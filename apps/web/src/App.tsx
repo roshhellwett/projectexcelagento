@@ -49,6 +49,7 @@ import { AuthCallbackPage } from './components/AuthCallbackPage.js';
 import { LicensePanel } from './components/LicensePanel.js';
 import { AdminLicensePage } from './components/AdminLicensePage.js';
 import { SupportPage } from './components/SupportPage.js';
+import { VerifyEmailPage } from './components/VerifyEmailPage.js';
 
 import {
   createSampleWorkbook,
@@ -131,6 +132,7 @@ export type WorkspaceView =
   | 'workspace'
   | 'landing'
   | 'auth'
+  | 'verify-email'
   | 'account'
   | 'admin'
   | 'support'
@@ -163,7 +165,8 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
       return { view: 'auth', authMode: 'signin' };
     if (clean === 'signup' || clean === 'register') return { view: 'auth', authMode: 'signup' };
     if (clean === 'forgot-password') return { view: 'auth', authMode: 'reset' };
-    if (clean === 'verify-email') return { view: 'auth', authMode: 'verify' };
+    if (clean === 'verify-email' || clean === 'verify' || clean === 'email-verification')
+      return { view: 'verify-email' };
     if (clean === 'account' || clean === 'activation') return { view: 'account' };
     if (clean === 'admin' || clean === 'license-admin') return { view: 'admin' };
     if (clean === 'support' || clean === 'contact' || clean === 'help') return { view: 'support' };
@@ -361,6 +364,7 @@ const AppWorkspace: React.FC<{
     if (initialView) return initialView;
     return readViewFromHash().view;
   });
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string>('');
   const [usageEntries, setUsageEntries] = useState<UsageEntry[]>(() => loadUsageLog());
   const [learnedActions, setLearnedActions] = useState(() => learnedActionCount());
   const {
@@ -2405,10 +2409,37 @@ const AppWorkspace: React.FC<{
     view === 'admin';
   const licenseGatedView = view === 'workspace' || view === 'missions' || view === 'usage';
   const isTestMode = import.meta.env.MODE === 'test';
-  if (authCallback) {
+  if (authCallback && authCallback.kind === 'confirm') {
     return (
       <div className="app-container app-page-scroll">
-        <ErrorBoundary variant="panel" label="Email confirmation">
+        <ErrorBoundary variant="panel" label="Email Verification">
+          <VerifyEmailPage
+            initialEmail={pendingVerifyEmail}
+            onContinue={() => {
+              dismissCallback();
+              if (licenseStatus?.isAdmin) {
+                navigate('admin');
+              } else {
+                navigate('workspace');
+              }
+            }}
+            onSignIn={() => {
+              dismissCallback();
+              openAuth('signin');
+            }}
+            onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+            onOpenSupport={() => navigate('support')}
+          />
+        </ErrorBoundary>
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  if (authCallback && authCallback.kind === 'recovery') {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Password Recovery">
           <AuthCallbackPage
             callback={authCallback}
             onContinue={() => {
@@ -2425,7 +2456,7 @@ const AppWorkspace: React.FC<{
             }}
             onRequestVerification={() => {
               dismissCallback();
-              openAuth('verify');
+              navigate('verify-email');
             }}
           />
         </ErrorBoundary>
@@ -2637,7 +2668,36 @@ const AppWorkspace: React.FC<{
                 navigate('workspace');
               }
             }}
+            onNavigateVerify={(email) => {
+              setPendingVerifyEmail(email);
+              navigate('verify-email');
+            }}
             onNavigateBack={() => navigate('landing')}
+          />
+        </ErrorBoundary>
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
+  // Dedicated Email Verification Page
+  if (view === 'verify-email') {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Email Verification">
+          <VerifyEmailPage
+            initialEmail={pendingVerifyEmail}
+            onContinue={() => {
+              if (licenseStatus?.isAdmin) {
+                navigate('admin');
+              } else {
+                navigate('workspace');
+              }
+            }}
+            onSignIn={() => openAuth('signin')}
+            onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+            onOpenSupport={() => navigate('support')}
           />
         </ErrorBoundary>
 

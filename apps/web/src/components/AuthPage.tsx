@@ -19,6 +19,7 @@ interface AuthPageProps {
   initialMode?: 'signin' | 'signup' | 'reset' | 'verify';
   onSuccess?: () => void;
   onNavigateBack?: () => void;
+  onNavigateVerify?: (email: string) => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'reset' | 'verify';
@@ -27,6 +28,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'signin',
   onSuccess,
   onNavigateBack,
+  onNavigateVerify,
 }) => {
   const { signIn, signUp, resetPassword, resendConfirmation } = useAuth();
   const reducedMotion = useReducedMotion();
@@ -117,6 +119,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
 
     if (mode === 'signup' && !result.authenticated) {
+      if (onNavigateVerify) {
+        onNavigateVerify(normalizedEmail);
+        return;
+      }
       setMode('verify');
       setResendWait(60);
       setPassword('');
