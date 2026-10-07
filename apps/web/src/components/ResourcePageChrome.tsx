@@ -1,7 +1,17 @@
 import React from 'react';
-import { ArrowLeft, ArrowUpRight, BookOpen, Bot, FileText, Home, Shield } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  BookOpen,
+  Bot,
+  FileText,
+  Home,
+  LifeBuoy,
+  Shield,
+} from 'lucide-react';
 
-export type ResourcePageId = 'agents' | 'docs' | 'privacy' | 'terms' | 'missions' | 'usage';
+export type ResourcePageId =
+  'agents' | 'docs' | 'privacy' | 'terms' | 'missions' | 'usage' | 'support';
 
 const links: Array<{
   id: ResourcePageId | 'landing';
@@ -12,6 +22,7 @@ const links: Array<{
   { id: 'landing', label: 'Overview', icon: Home, href: '#/landing' },
   { id: 'agents', label: 'Agents', icon: Bot, href: '#/agents' },
   { id: 'docs', label: 'Docs', icon: BookOpen, href: '#/docs' },
+  { id: 'support', label: 'Support', icon: LifeBuoy, href: '#/support' },
   { id: 'privacy', label: 'Privacy', icon: Shield, href: '#/privacy' },
   { id: 'terms', label: 'Terms', icon: FileText, href: '#/terms' },
 ];
@@ -19,6 +30,7 @@ const links: Array<{
 const labels: Record<ResourcePageId, string> = {
   agents: 'Agent architecture',
   docs: 'Documentation',
+  support: 'Help & support',
   privacy: 'Privacy & data flow',
   terms: 'Terms & governance',
   missions: 'Mission control',

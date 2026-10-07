@@ -29,6 +29,10 @@ const ACTIONS = new Set([
   'admin_ban_device',
   'admin_unban_device',
   'admin_adjust_trial',
+  'admin_delete_key',
+  'admin_delete_unused_keys',
+  'admin_update_ticket',
+  'admin_delete_ticket',
 ]);
 
 async function hash(value: string, pepper: string, domain: string): Promise<string> {
@@ -118,6 +122,10 @@ export function createLicenseHandler(
         'preserveDevice',
         'offset',
         'query',
+        'ticketId',
+        'status',
+        'adminNotes',
+        'replied',
       ]) {
         if (body[field] !== undefined) payload[field] = body[field];
       }

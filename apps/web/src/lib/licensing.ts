@@ -44,6 +44,7 @@ export interface AdminLicenseRecord {
   raw_key?: string | null;
   status: 'unused' | 'active' | 'expired' | 'revoked';
   duration_days: number;
+  days_remaining?: number;
   bound_user_id: string | null;
   bound_email: string | null;
   bound_device_id: string | null;
@@ -59,10 +60,35 @@ export interface AdminAccountRecord {
   status: 'trial' | 'licensed' | 'expired' | 'banned';
   trial_started_at: string;
   trial_expires_at: string;
+  days_remaining?: number;
   ban_reason: string | null;
   banned_at: string | null;
   created_at: string;
+  updated_at?: string;
+  active_device_id?: string | null;
+}
+
+export interface SupportTicketRecord {
+  id: string;
+  user_id: string | null;
+  name: string;
+  email: string;
+  category: string;
+  subject: string;
+  message: string;
+  status: 'pending' | 'in_progress' | 'resolved';
+  admin_notes: string | null;
+  replied_at: string | null;
+  created_at: string;
   updated_at: string;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  activeLicenses: number;
+  unusedKeys: number;
+  pendingTickets: number;
+  totalTickets: number;
 }
 
 export interface AdminDeviceRecord {
@@ -92,6 +118,8 @@ export interface AdminLicenseData {
   accounts: AdminAccountRecord[];
   devices: AdminDeviceRecord[];
   events: LicenseEventRecord[];
+  tickets?: SupportTicketRecord[];
+  stats?: AdminStats;
 }
 
 /**
@@ -179,4 +207,59 @@ export async function adminLicenseAction<T>(
 
 export async function fetchAdminLicenseData(): Promise<AdminLicenseData> {
   return adminLicenseAction<AdminLicenseData>('list');
+}
+
+export async function submitSupportTicket(ticket: {
+  name: string;
+  email: string;
+  category: string;
+  subject: string;
+  message: string;
+  userId?: string | null;
+}): Promise<{ id: string }> {
+  const { data, error } = await supabase
+    .from('support_tickets')
+    .insert({
+      name: ticket.name.trim(),
+      email: ticket.email.trim().toLowerCase(),
+      category: ticket.category || 'general',
+      subject: ticket.subject.trim(),
+      message: ticket.message.trim(),
+      user_id: ticket.userId || null,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    throw new Error(error.message || 'Failed to submit support ticket. Please try again.');
+  }
+
+  return { id: data.id };
+}
+
+export async function adminDeleteKey(licenseId: string): Promise<void> {
+  await adminLicenseAction('delete_key', { licenseId });
+}
+
+export async function adminDeleteUnusedKeys(): Promise<{ deletedCount: number }> {
+  return adminLicenseAction<{ deletedCount: number }>('delete_unused_keys');
+}
+
+export async function adminUpdateTicket(
+  ticketId: string,
+  status: 'pending' | 'in_progress' | 'resolved',
+  adminNotes?: string,
+  replied?: boolean,
+): Promise<void> {
+  await adminLicenseAction('update_ticket', {
+    ticketId,
+    status,
+    adminNotes,
+    replied: replied ? 'true' : 'false',
+  });
+}
+
+export async function adminDeleteTicket(ticketId: string): Promise<void> {
+  await adminLicenseAction('delete_ticket', { ticketId });
 }

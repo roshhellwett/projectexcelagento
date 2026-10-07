@@ -48,6 +48,7 @@ import { AuthPage } from './components/AuthPage.js';
 import { AuthCallbackPage } from './components/AuthCallbackPage.js';
 import { LicensePanel } from './components/LicensePanel.js';
 import { AdminLicensePage } from './components/AdminLicensePage.js';
+import { SupportPage } from './components/SupportPage.js';
 
 import {
   createSampleWorkbook,
@@ -132,6 +133,7 @@ export type WorkspaceView =
   | 'auth'
   | 'account'
   | 'admin'
+  | 'support'
   | 'missions'
   | 'usage'
   | 'agents'
@@ -164,6 +166,7 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
     if (clean === 'verify-email') return { view: 'auth', authMode: 'verify' };
     if (clean === 'account' || clean === 'activation') return { view: 'account' };
     if (clean === 'admin' || clean === 'license-admin') return { view: 'admin' };
+    if (clean === 'support' || clean === 'contact' || clean === 'help') return { view: 'support' };
     if (clean === 'missions') return { view: 'missions' };
     if (clean === 'usage') return { view: 'usage' };
     if (clean === 'agents') return { view: 'agents' };
@@ -398,6 +401,29 @@ const AppWorkspace: React.FC<{
       // Hash updates are best-effort; the in-memory view state still switches.
     }
   }, []);
+
+  // When an admin signs in or opens the application, route directly to the Admin CMS dashboard
+  // instead of the end-user spreadsheet workspace.
+  const adminAutoRoutedRef = useRef(false);
+  useEffect(() => {
+    if (!licenseLoading && licenseStatus?.isAdmin && !adminAutoRoutedRef.current) {
+      const hash =
+        typeof window !== 'undefined'
+          ? window.location.hash.replace(/^#\/?/, '').toLowerCase()
+          : '';
+      if (
+        !hash ||
+        hash === 'auth' ||
+        hash === 'login' ||
+        hash === 'signin' ||
+        hash === 'signup' ||
+        hash === 'landing'
+      ) {
+        adminAutoRoutedRef.current = true;
+        navigate('admin');
+      }
+    }
+  }, [licenseLoading, licenseStatus?.isAdmin, navigate]);
 
   const openAuth = useCallback((mode: 'signin' | 'signup' | 'reset' | 'verify' = 'signin') => {
     setAuthInitialMode(mode);
@@ -2472,6 +2498,33 @@ const AppWorkspace: React.FC<{
     return <AdminLicensePage onBack={() => navigate('workspace')} />;
   }
 
+  // Dedicated Contact & Support Helpdesk Page
+  if (view === 'support') {
+    return (
+      <div className="app-container app-page-scroll">
+        <ErrorBoundary variant="panel" label="Support & Helpdesk">
+          <SupportPage
+            onBack={() =>
+              navigate(user ? (licenseStatus?.isAdmin ? 'admin' : 'workspace') : 'landing')
+            }
+            onOpenAuth={() => openAuth('signin')}
+            onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+          />
+        </ErrorBoundary>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={settings}
+          onSave={handleSettingsChange}
+          onClear={handleClearApiKey}
+        />
+
+        <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   // Durable mission control: prepared tasks and applied receipts survive navigation and refresh.
   if (view === 'missions') {
     return (
@@ -2547,7 +2600,11 @@ const AppWorkspace: React.FC<{
           <LandingPage
             onLaunchWorkspace={() => {
               if (user) {
-                navigate('workspace');
+                if (licenseStatus?.isAdmin) {
+                  navigate('admin');
+                } else {
+                  navigate('workspace');
+                }
               } else {
                 openAuth('signup');
               }
@@ -2556,6 +2613,7 @@ const AppWorkspace: React.FC<{
             onOpenAgents={() => navigate('agents')}
             onOpenDocs={() => navigate('docs')}
             onOpenPrivacy={() => navigate('privacy')}
+            onOpenSupport={() => navigate('support')}
           />
         </ErrorBoundary>
 
@@ -2571,7 +2629,14 @@ const AppWorkspace: React.FC<{
         <ErrorBoundary variant="panel" label="Authentication Page">
           <AuthPage
             initialMode={authInitialMode}
-            onSuccess={() => navigate('workspace')}
+            onSuccess={() => {
+              adminAutoRoutedRef.current = false;
+              if (licenseStatus?.isAdmin) {
+                navigate('admin');
+              } else {
+                navigate('workspace');
+              }
+            }}
             onNavigateBack={() => navigate('landing')}
           />
         </ErrorBoundary>
@@ -2711,6 +2776,7 @@ const AppWorkspace: React.FC<{
           onOpenDocs={() => navigate('docs')}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           onOpenLanding={() => navigate('landing')}
+          onOpenSupport={() => navigate('support')}
           onOpenAuth={openAuth}
           onOpenAccount={() => navigate('account')}
           onOpenAdmin={() => navigate('admin')}

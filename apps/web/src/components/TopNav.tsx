@@ -23,6 +23,8 @@ import {
   LogIn,
   LogOut,
   Home,
+  LifeBuoy,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context.js';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
@@ -96,6 +98,7 @@ interface TopNavProps {
   onOpenMissions?: () => void;
   onOpenAgents?: () => void;
   onOpenDocs?: () => void;
+  onOpenSupport?: () => void;
   onOpenCommandPalette?: () => void;
   checkpointStatus?: CheckpointStatus;
   checkpointLabel?: string;
@@ -226,11 +229,18 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
               {props.isAdmin && props.onOpenAdmin && (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
+                  className="btn btn-secondary btn-sm studio-admin-cms-btn"
                   onClick={props.onOpenAdmin}
-                  title="Open licensing admin console"
+                  title="Open licensing admin console & CMS Dashboard"
+                  style={{
+                    borderColor: 'rgba(16, 185, 129, 0.4)',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    color: '#34d399',
+                    fontWeight: 600,
+                  }}
                 >
-                  Admin
+                  <ShieldCheck size={13} />
+                  <span>Admin CMS</span>
                 </button>
               )}
               <button
@@ -438,6 +448,18 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
             <BarChart2 size={15} />
             <span>Usage</span>
           </button>
+          {props.onOpenSupport && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={props.onOpenSupport}
+              data-testid="open-support"
+              title="Helpdesk & Customer Support"
+            >
+              <LifeBuoy size={15} />
+              <span>Support</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-ghost btn-icon studio-mobile-command"

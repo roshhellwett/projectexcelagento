@@ -23,6 +23,7 @@ interface LandingPageProps {
   onOpenAgents: () => void;
   onOpenDocs: () => void;
   onOpenPrivacy: () => void;
+  onOpenSupport?: () => void;
 }
 
 const capabilities = [
@@ -122,6 +123,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onOpenAgents,
   onOpenDocs,
   onOpenPrivacy,
+  onOpenSupport,
 }) => {
   const { user, profile, signOut } = useAuth();
   const reducedMotion = useReducedMotion();
@@ -164,6 +166,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button type="button" onClick={onOpenDocs}>
               Docs
             </button>
+            {onOpenSupport && (
+              <button type="button" onClick={onOpenSupport}>
+                Support
+              </button>
+            )}
           </nav>
 
           <div className="product-nav-actions">
@@ -503,6 +510,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <button type="button" onClick={onOpenPrivacy}>
               Privacy and data flow
             </button>
+            {onOpenSupport && (
+              <button type="button" onClick={onOpenSupport}>
+                Contact &amp; Support
+              </button>
+            )}
           </div>
           <div className="product-footer-status">
             <Clock3 size={14} /> Open source · account required for workspace access
