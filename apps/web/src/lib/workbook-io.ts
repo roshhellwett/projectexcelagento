@@ -1,4 +1,4 @@
-import type { WorkSheet, WorkBook } from 'xlsx';
+import type { WorkSheet, WorkBook } from 'xlsx-js-style';
 import {
   createCell,
   createWorkbookValueReader,
@@ -7,12 +7,13 @@ import {
   excelSerialToDate,
   isDateNumberFormat,
   type Cell,
+  type CellStyle,
   type CellValue,
   type Workbook,
   type Sheet,
 } from '@excel-agent/engine';
 
-type XlsxModule = typeof import('xlsx');
+type XlsxModule = typeof import('xlsx-js-style');
 
 /** Guard against pathological sheets that would freeze the browser tab. */
 export const MAX_IMPORTED_CELLS = 1_500_000;
@@ -383,6 +384,50 @@ export function workbookFromCsvText(
   return { name: sheetName, rows };
 }
 
+function rgbColor(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const hex = value.replace(/^#/, '').slice(-6);
+  return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toUpperCase()}` : undefined;
+}
+
+function styleFromSheetJs(raw: unknown): CellStyle | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const style = raw as {
+    patternType?: string;
+    fgColor?: { rgb?: string };
+    font?: {
+      bold?: boolean;
+      italic?: boolean;
+      underline?: boolean | string;
+      color?: { rgb?: string };
+    };
+    fill?: { fgColor?: { rgb?: string } };
+    alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean };
+  };
+  const next: CellStyle = {
+    ...(style.font?.bold ? { bold: true } : {}),
+    ...(style.font?.italic ? { italic: true } : {}),
+    ...(style.font?.underline ? { underline: true } : {}),
+    ...(rgbColor(style.font?.color?.rgb) ? { fontColor: rgbColor(style.font?.color?.rgb) } : {}),
+    ...(rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb)
+      ? { fillColor: rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb) }
+      : {}),
+    ...(style.alignment?.horizontal &&
+    ['left', 'center', 'right'].includes(style.alignment.horizontal)
+      ? { horizontalAlignment: style.alignment.horizontal as CellStyle['horizontalAlignment'] }
+      : {}),
+    ...(style.alignment?.vertical && ['top', 'center', 'bottom'].includes(style.alignment.vertical)
+      ? {
+          verticalAlignment: (style.alignment.vertical === 'center'
+            ? 'middle'
+            : style.alignment.vertical) as CellStyle['verticalAlignment'],
+        }
+      : {}),
+    ...(style.alignment?.wrapText ? { wrapText: true } : {}),
+  };
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
 /**
  * Converts a parsed SheetJS sheet into engine cells, promoting numeric cells to real dates when
  * their number format says so. This is what makes `=B2-A2` produce a day count on a real file:
@@ -416,7 +461,7 @@ function sheetFromWorksheet(
     for (let c = 0; c < colCount; c += 1) {
       const address = XLSX.utils.encode_cell({ r, c });
       const cellObj = ws[address] as
-        { v?: unknown; f?: string; z?: string; t?: string; w?: string } | undefined;
+        { v?: unknown; f?: string; z?: string; t?: string; w?: string; s?: unknown } | undefined;
 
       if (!cellObj) {
         rowCells.push(createCell(null));
@@ -455,7 +500,9 @@ function sheetFromWorksheet(
         value = String(cellObj.v);
       }
 
-      rowCells.push(createCell(value, { formula, numberFormat }));
+      rowCells.push(
+        createCell(value, { formula, numberFormat, style: styleFromSheetJs(cellObj.s) }),
+      );
     }
     rows.push(rowCells);
   }
@@ -595,6 +642,30 @@ function formatForExport(cell: { value: unknown; numberFormat?: string }): strin
   return cell.numberFormat;
 }
 
+function styleForExport(style: CellStyle | undefined): Record<string, unknown> | undefined {
+  if (!style) return undefined;
+  const font: Record<string, unknown> = {};
+  if (style.bold !== undefined) font.bold = style.bold;
+  if (style.italic !== undefined) font.italic = style.italic;
+  if (style.underline !== undefined) font.underline = style.underline;
+  if (style.fontColor) font.color = { rgb: `FF${style.fontColor.replace(/^#/, '')}` };
+  const fill = style.fillColor
+    ? { patternType: 'solid', fgColor: { rgb: `FF${style.fillColor.replace(/^#/, '')}` } }
+    : undefined;
+  const alignment = {
+    ...(style.horizontalAlignment ? { horizontal: style.horizontalAlignment } : {}),
+    ...(style.verticalAlignment
+      ? { vertical: style.verticalAlignment === 'middle' ? 'center' : style.verticalAlignment }
+      : {}),
+    ...(style.wrapText !== undefined ? { wrapText: style.wrapText } : {}),
+  };
+  return {
+    ...(Object.keys(font).length > 0 ? { font } : {}),
+    ...(fill ? { fill } : {}),
+    ...(Object.keys(alignment).length > 0 ? { alignment } : {}),
+  };
+}
+
 /** Excel rejects these characters in a sheet name, and duplicates are not allowed either. */
 export function sanitizeSheetName(name: string, used: Set<string>): string {
   const base =
@@ -692,8 +763,9 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
         // and an unknown function may be valid in Excel. Do not invent a typed error cache or
         // reuse a stale numeric cache in either case: preserve the formula for recalculation.
         const uncached = isFormulaError(cached);
-        const type =
-          typeof cached === 'number' || cached === null || uncached
+        const type = uncached
+          ? 'e'
+          : typeof cached === 'number' || cached === null
             ? 'n'
             : typeof cached === 'boolean'
               ? 'b'
@@ -710,13 +782,20 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
     sheet.rows.forEach((row, rowIndex) => {
       row.forEach((cell, columnIndex) => {
         const format = formatForExport(cell);
-        if (!format) return;
         const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
-        const target = worksheet[address] as { z?: string } | undefined;
+        const target = worksheet[address] as
+          { z?: string; s?: Record<string, unknown> } | undefined;
         if (target) {
-          target.z = format;
-        } else if (cell.value !== null && cell.value !== '') {
-          worksheet[address] = { t: 's', v: String(cell.value), z: format };
+          if (format) target.z = format;
+          const style = styleForExport(cell.style);
+          if (style) target.s = style;
+        } else if ((format || cell.style) && cell.value !== null && cell.value !== '') {
+          worksheet[address] = {
+            t: 's',
+            v: String(cell.value),
+            ...(format ? { z: format } : {}),
+            ...(styleForExport(cell.style) ? { s: styleForExport(cell.style) } : {}),
+          };
         }
       });
     });
@@ -741,6 +820,8 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
     WBProps: { ...book.Workbook?.WBProps, date1904: dateSystem === '1904' },
   };
 
-  const bytes = new Uint8Array(XLSX.write(book, { bookType: 'xlsx', type: 'array' }));
+  const bytes = new Uint8Array(
+    XLSX.write(book, { bookType: 'xlsx', type: 'array', cellStyles: true }),
+  );
   return hasFormulas ? requestExcelRecalculation(XLSX, bytes) : bytes;
 }

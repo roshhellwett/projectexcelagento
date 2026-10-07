@@ -58,12 +58,40 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
           )
             return true;
           const value = cell.value;
-          return !(
-            value === null ||
-            typeof value === 'string' ||
-            typeof value === 'boolean' ||
-            (typeof value === 'number' && Number.isFinite(value)) ||
-            (value instanceof Date && Number.isFinite(value.getTime()))
+          const style = cell.style as
+            | {
+                bold?: unknown;
+                italic?: unknown;
+                underline?: unknown;
+                fillColor?: unknown;
+                fontColor?: unknown;
+                horizontalAlignment?: unknown;
+                verticalAlignment?: unknown;
+                wrapText?: unknown;
+              }
+            | undefined;
+          const validStyle =
+            style === undefined ||
+            (typeof style === 'object' &&
+              (style.bold === undefined || typeof style.bold === 'boolean') &&
+              (style.italic === undefined || typeof style.italic === 'boolean') &&
+              (style.underline === undefined || typeof style.underline === 'boolean') &&
+              (style.fillColor === undefined || /^#[0-9a-f]{6}$/i.test(String(style.fillColor))) &&
+              (style.fontColor === undefined || /^#[0-9a-f]{6}$/i.test(String(style.fontColor))) &&
+              (style.horizontalAlignment === undefined ||
+                ['left', 'center', 'right'].includes(String(style.horizontalAlignment))) &&
+              (style.verticalAlignment === undefined ||
+                ['top', 'middle', 'bottom'].includes(String(style.verticalAlignment))) &&
+              (style.wrapText === undefined || typeof style.wrapText === 'boolean'));
+          return (
+            !validStyle ||
+            !(
+              value === null ||
+              typeof value === 'string' ||
+              typeof value === 'boolean' ||
+              (typeof value === 'number' && Number.isFinite(value)) ||
+              (value instanceof Date && Number.isFinite(value.getTime()))
+            )
           );
         })
       )

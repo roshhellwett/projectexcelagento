@@ -6,6 +6,7 @@ import {
   summarizeNumericValues,
   toNumericOrNull,
   type Cell,
+  type CellStyle,
   type CellType,
   type FormulaValue,
   type NumericSummary,
@@ -418,6 +419,7 @@ export interface BaselineCellSnapshot {
   value?: BaselineValue;
   formula?: string | null;
   numberFormat?: string | null;
+  style?: CellStyle | null;
 }
 
 export interface WorkbookBaselineComparison {
@@ -469,6 +471,7 @@ function snapshot(cell: Cell | undefined): BaselineCellSnapshot {
     value,
     formula: cell.formula ?? null,
     numberFormat: cell.numberFormat ?? null,
+    style: cell.style ?? null,
   };
 }
 
@@ -499,7 +502,7 @@ export function compareWorkbookBaseline(
     changedCells: [],
     omittedChangedCellCount: 0,
     notes: [
-      'Address-based comparison of exact stored cells, including headers, formulas, caches, types, number formats, and Date instants. Absent cells differ from explicit blank cells.',
+      'Address-based comparison of exact stored cells, including headers, formulas, caches, types, number formats, styles, and Date instants. Absent cells differ from explicit blank cells.',
       'No record alignment, trends, or comparable aggregate deltas are inferred, even when headers match. Shifted headers or rows may create many positional changes.',
       `Changed-cell examples are bounded to ${BRIEFING_LIMITS.changedCellExamples}; change counts scan all stored addresses.`,
     ],

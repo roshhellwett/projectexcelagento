@@ -201,6 +201,7 @@ export function cloneWithValue(
     type: options.type ?? (options.formula === undefined ? undefined : 'formula'),
     ...(options.formula !== undefined ? { formula: options.formula } : {}),
     numberFormat: options.numberFormat ?? cell.numberFormat,
+    style: cell.style ? { ...cell.style } : undefined,
   });
 }
 

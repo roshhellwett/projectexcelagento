@@ -25,6 +25,19 @@ interface ToolMetadata {
  * it is documented for the model.
  */
 const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
+  format_cells: {
+    description:
+      'Apply workbook-native formatting to a rectangular cell range: bold, italic, underline, colors, alignment, wrapping, and number formats.',
+    category: 'format',
+    example: {
+      sheet: 'Sheet1',
+      startRow: 1,
+      endRow: 10,
+      startColumn: 'A',
+      endColumn: 'D',
+      style: { bold: true, fillColor: '#EAF2E6' },
+    },
+  },
   format_dates: {
     description: 'Normalize a column of dates into a single, consistent format.',
     category: 'format',

@@ -62,7 +62,6 @@ interface RibbonAction {
   id: string;
   label: string;
   icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
-  prompt?: string;
   hint?: string;
   tone?: 'default' | 'primary' | 'warning';
   disabled?: boolean;
@@ -76,9 +75,8 @@ interface RibbonGroup {
 interface WorkspaceRibbonProps {
   activeSheetName: string;
   isProcessing: boolean;
-  onRunPrompt: (prompt: string) => void;
+  onManualAction: (actionId: string) => void;
   onOpenOperationModal: () => void;
-  onOpenCommandPalette: () => void;
   onUploadFile: (file: File) => void;
   onExport: () => void;
   onUndo: () => void;
@@ -103,10 +101,10 @@ const command = (
   id: string,
   label: string,
   icon: RibbonAction['icon'],
-  prompt: string,
+  description: string,
   hint?: string,
   tone?: RibbonAction['tone'],
-): RibbonAction => ({ id, label, icon, prompt, hint, tone });
+): RibbonAction => ({ id, label, icon, hint: hint ?? description, tone });
 
 const comingSoon = (
   id: string,
@@ -1316,9 +1314,8 @@ function FlagIcon({ size = 14 }: { size?: number }) {
 export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
   activeSheetName,
   isProcessing,
-  onRunPrompt,
+  onManualAction,
   onOpenOperationModal,
-  onOpenCommandPalette,
   onUploadFile,
   onExport,
   onUndo,
@@ -1339,14 +1336,9 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
     if (action.id === 'draw-redo') return onRedo();
     if (action.id === 'export') return onExport();
     if (action.id === 'get-data' || action.id === 'from-csv') return onUploadFileRequest();
-    if (
-      action.id === 'open-tools' ||
-      action.id === 'agent-tools' ||
-      action.id === 'find-select' ||
-      action.id === 'search-help'
-    )
-      return onOpenCommandPalette();
-    if (action.prompt) onRunPrompt(action.prompt);
+    if (action.id === 'find-select' || action.id === 'search-help')
+      return onManualAction(action.id);
+    onManualAction(action.id);
   };
 
   const uploadInput = useRef<HTMLInputElement>(null);
@@ -1376,7 +1368,7 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
                       action.hint ??
                       (action.disabled
                         ? 'Visible here; this capability needs richer workbook fidelity.'
-                        : `Ask the agent to ${action.label.toLowerCase()}`)
+                        : `Use ${action.label} manually on the selected cells`)
                     }
                     onClick={() => runAction(action)}
                   >

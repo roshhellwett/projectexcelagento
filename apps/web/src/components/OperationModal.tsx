@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { type Workbook, indexToColumn, maxColumnCount } from '@excel-agent/engine';
 
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
@@ -9,6 +9,7 @@ interface OperationModalProps {
   workbook: Workbook;
   activeSheetName: string;
   onExecute: (name: string, input: Record<string, unknown>) => void;
+  initialOperation?: string;
   operationCatalog?: ReadonlyArray<{
     name: string;
     description: string;
@@ -55,13 +56,17 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   activeSheetName,
   onExecute,
   operationCatalog = [],
+  initialOperation,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   // Every hook runs whether or not the modal is showing, so opening it is not a different
   // component as far as React is concerned.
   useDialogA11y(isOpen, cardRef, onClose);
 
-  const [selectedOp, setSelectedOp] = useState('format_dates');
+  const [selectedOp, setSelectedOp] = useState(initialOperation ?? 'format_dates');
+  useEffect(() => {
+    if (isOpen && initialOperation) setSelectedOp(initialOperation);
+  }, [initialOperation, isOpen]);
 
   // Form states
   const [col, setCol] = useState('A');

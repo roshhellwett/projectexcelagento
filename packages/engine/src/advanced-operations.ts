@@ -954,7 +954,7 @@ function coerceCell(cell: Cell, args: CleanToNewSheetArgs): Cell {
       value = v;
     }
   }
-  return createCell(value, { numberFormat: cell.numberFormat });
+  return createCell(value, { numberFormat: cell.numberFormat, style: cell.style });
 }
 
 function detectHeaderRowIndex(rows: Cell[][]): number {

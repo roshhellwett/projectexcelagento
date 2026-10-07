@@ -4,11 +4,27 @@ import type { DateSystem } from './formula/excel-date.js';
 export type CellValue = string | number | boolean | Date | null;
 export type CellType = 'blank' | 'string' | 'number' | 'boolean' | 'date' | 'formula';
 
+export type CellHorizontalAlignment = 'left' | 'center' | 'right';
+export type CellVerticalAlignment = 'top' | 'middle' | 'bottom';
+
+/** Workbook-native presentation properties that can be edited without involving a model. */
+export interface CellStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  fillColor?: string;
+  fontColor?: string;
+  horizontalAlignment?: CellHorizontalAlignment;
+  verticalAlignment?: CellVerticalAlignment;
+  wrapText?: boolean;
+}
+
 export interface Cell {
   value: CellValue;
   type: CellType;
   formula?: string;
   numberFormat?: string;
+  style?: CellStyle;
 }
 
 export interface Sheet {
@@ -112,10 +128,12 @@ export interface CellPatch {
   oldFormula?: string;
   oldType: CellType;
   oldNumberFormat?: string;
+  oldStyle?: CellStyle;
   newValue: CellValue;
   newFormula?: string;
   newType: CellType;
   newNumberFormat?: string;
+  newStyle?: CellStyle;
 }
 
 /** Structural operations use a snapshot entry because row/column shape can change. */

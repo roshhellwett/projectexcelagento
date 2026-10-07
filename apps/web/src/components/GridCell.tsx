@@ -239,10 +239,11 @@ const GridCellBase: React.FC<GridCellProps> = ({
   const valueKey = value instanceof Date ? value.getTime() : value;
   const formulaKey = cell?.formula;
   const formatKey = cell?.numberFormat;
+  const styleKey = cell?.style ? JSON.stringify(cell.style) : '';
 
   const display = useMemo(
     () => cellDisplay(cell, evaluate(cell, sheetName, colIdx, rowNumber), dateSystem),
-    [valueKey, formulaKey, formatKey, evaluate, dateSystem, colIdx, rowNumber, sheetName],
+    [valueKey, formulaKey, formatKey, styleKey, evaluate, dateSystem, colIdx, rowNumber, sheetName],
   );
 
   // A click that immediately follows this cell's own mousedown is the same gesture, already handled.
@@ -258,6 +259,19 @@ const GridCellBase: React.FC<GridCellProps> = ({
 
   const sizeStyle: React.CSSProperties = {
     height: `${rowHeight}px`,
+    ...(cell?.style?.fontColor ? { color: cell.style.fontColor } : {}),
+    ...(cell?.style?.fillColor ? { backgroundColor: cell.style.fillColor } : {}),
+    ...(cell?.style?.bold ? { fontWeight: 700 } : {}),
+    ...(cell?.style?.italic ? { fontStyle: 'italic' } : {}),
+    ...(cell?.style?.underline ? { textDecoration: 'underline' } : {}),
+    ...(cell?.style?.horizontalAlignment ? { textAlign: cell.style.horizontalAlignment } : {}),
+    ...(cell?.style?.verticalAlignment
+      ? {
+          verticalAlign:
+            cell.style.verticalAlignment === 'middle' ? 'middle' : cell.style.verticalAlignment,
+        }
+      : {}),
+    ...(cell?.style?.wrapText ? { whiteSpace: 'normal', overflowWrap: 'anywhere' } : {}),
     ...(width === undefined
       ? {}
       : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }),

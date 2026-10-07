@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { parseWorkbookBytes, workbookToXlsxBytes, MAX_IMPORTED_CELLS } from '../lib/workbook-io.js';
 
 export { MAX_IMPORTED_CELLS };

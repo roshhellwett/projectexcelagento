@@ -2,6 +2,7 @@ import type {
   Cell,
   CellLocation,
   CellPatch,
+  CellStyle,
   CellType,
   CellValue,
   Patch,
@@ -30,13 +31,14 @@ export function cellTypeForValue(value: CellValue, formula?: string): CellType {
 
 export function createCell(
   value: CellValue,
-  options: { formula?: string; numberFormat?: string; type?: CellType } = {},
+  options: { formula?: string; numberFormat?: string; type?: CellType; style?: CellStyle } = {},
 ): Cell {
   return {
     value,
     type: options.formula !== undefined ? 'formula' : (options.type ?? cellTypeForValue(value)),
     ...(options.formula !== undefined ? { formula: options.formula } : {}),
     ...(options.numberFormat !== undefined ? { numberFormat: options.numberFormat } : {}),
+    ...(options.style !== undefined ? { style: { ...options.style } } : {}),
   };
 }
 
@@ -45,6 +47,7 @@ export function cloneCell(cell: Cell): Cell {
     type: cell.formula === undefined ? cell.type : 'formula',
     ...(cell.formula !== undefined ? { formula: cell.formula } : {}),
     ...(cell.numberFormat !== undefined ? { numberFormat: cell.numberFormat } : {}),
+    ...(cell.style !== undefined ? { style: { ...cell.style } } : {}),
   });
 }
 
@@ -153,7 +156,21 @@ export function cellEquals(left: Cell, right: Cell): boolean {
     cellValueEquals(blankEquivalent(left.value), blankEquivalent(right.value)) &&
     effectiveCellType(left) === effectiveCellType(right) &&
     left.formula === right.formula &&
-    left.numberFormat === right.numberFormat
+    left.numberFormat === right.numberFormat &&
+    stylesEqual(left.style, right.style)
+  );
+}
+
+function stylesEqual(left: CellStyle | undefined, right: CellStyle | undefined): boolean {
+  return (
+    left?.bold === right?.bold &&
+    left?.italic === right?.italic &&
+    left?.underline === right?.underline &&
+    left?.fillColor === right?.fillColor &&
+    left?.fontColor === right?.fontColor &&
+    left?.horizontalAlignment === right?.horizontalAlignment &&
+    left?.verticalAlignment === right?.verticalAlignment &&
+    left?.wrapText === right?.wrapText
   );
 }
 
@@ -169,10 +186,12 @@ export function patchForChange(address: CellLocation, before: Cell, after: Cell)
     oldFormula: before.formula,
     oldType: effectiveCellType(before),
     oldNumberFormat: before.numberFormat,
+    oldStyle: before.style ? { ...before.style } : undefined,
     newValue: after.value instanceof Date ? new Date(after.value.getTime()) : after.value,
     newFormula: after.formula,
     newType: effectiveCellType(after),
     newNumberFormat: after.numberFormat,
+    newStyle: after.style ? { ...after.style } : undefined,
   };
 }
 
@@ -184,6 +203,7 @@ function cellFromPatch(patch: CellPatch, side: 'old' | 'new'): Cell {
         type: patch.oldType,
         ...(patch.oldFormula !== undefined ? { formula: patch.oldFormula } : {}),
         ...(patch.oldNumberFormat !== undefined ? { numberFormat: patch.oldNumberFormat } : {}),
+        ...(patch.oldStyle !== undefined ? { style: { ...patch.oldStyle } } : {}),
       },
     );
   }
@@ -193,6 +213,7 @@ function cellFromPatch(patch: CellPatch, side: 'old' | 'new'): Cell {
       type: patch.newType,
       ...(patch.newFormula !== undefined ? { formula: patch.newFormula } : {}),
       ...(patch.newNumberFormat !== undefined ? { numberFormat: patch.newNumberFormat } : {}),
+      ...(patch.newStyle !== undefined ? { style: { ...patch.newStyle } } : {}),
     },
   );
 }
@@ -228,10 +249,12 @@ function invertEntry(entry: Patch[number]): Patch[number] {
     oldFormula: entry.newFormula,
     oldType: entry.newType,
     oldNumberFormat: entry.newNumberFormat,
+    oldStyle: entry.newStyle ? { ...entry.newStyle } : undefined,
     newValue: entry.oldValue instanceof Date ? new Date(entry.oldValue.getTime()) : entry.oldValue,
     newFormula: entry.oldFormula,
     newType: entry.oldType,
     newNumberFormat: entry.oldNumberFormat,
+    newStyle: entry.oldStyle ? { ...entry.oldStyle } : undefined,
   };
 }
 

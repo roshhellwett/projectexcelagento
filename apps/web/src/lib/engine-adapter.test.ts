@@ -57,6 +57,56 @@ describe('xlsx adapter', () => {
     expect(sheet?.rows[2]?.[2]?.formula).toBe('B3*2');
   });
 
+  it('round-trips workbook-native cell styles', async () => {
+    const workbook: Workbook = {
+      sheets: [
+        {
+          name: 'Styled',
+          rows: [
+            [
+              createCell('Header', {
+                style: {
+                  bold: true,
+                  fillColor: '#FFF2CC',
+                  fontColor: '#20342B',
+                  horizontalAlignment: 'center',
+                  verticalAlignment: 'middle',
+                  wrapText: true,
+                },
+              }),
+            ],
+          ],
+        },
+      ],
+    };
+    const sheet = (await roundTrip(workbook)).sheets[0];
+
+    // xlsx-js-style exposes the fill on read; font and alignment are emitted in the XLSX
+    // styles table and are consumed by Excel/LibreOffice when opening the exported file.
+    expect(sheet?.rows[0]?.[0]?.style).toEqual({ fillColor: '#FFF2CC' });
+    const XLSX = await import('xlsx-js-style');
+    const parsed = XLSX.read(await workbookToXlsxBuffer(workbook), {
+      type: 'array',
+      cellStyles: true,
+    }) as unknown as {
+      Styles?: {
+        Fonts?: Array<{ bold?: number; color?: { rgb?: string } }>;
+        CellXf?: Array<{
+          alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean };
+        }>;
+      };
+    };
+    expect(parsed.Styles?.Fonts?.some((font) => font.bold === 1)).toBe(true);
+    expect(
+      parsed.Styles?.CellXf?.some(
+        (xf) =>
+          xf.alignment?.horizontal === 'center' &&
+          xf.alignment.vertical === 'center' &&
+          xf.alignment.wrapText === true,
+      ),
+    ).toBe(true);
+  });
+
   it('gives a date with no format of its own one that still reads as a date', async () => {
     const sheet = (
       await roundTrip({
@@ -104,7 +154,7 @@ describe('xlsx adapter', () => {
   });
 
   it('imports an Excel error code as an error instead of a magnitude', async () => {
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, { '!ref': 'A1', A1: { t: 'e', v: 7, f: '1/0' } }, 'Errors');
     const { workbook } = await xlsxToWorkbook(
@@ -166,7 +216,7 @@ describe('xlsx adapter', () => {
       const workbook: Workbook = {
         sheets: [{ name: 'Data', rows: [[createCell(999, { formula })], [createCell(5)]] }],
       };
-      const XLSX = await import('xlsx');
+      const XLSX = await import('xlsx-js-style');
       const bytes = await workbookToXlsxBuffer(workbook);
       const raw = XLSX.read(bytes, { type: 'array' }).Sheets['Data']!['A1'] as {
         f?: string;
@@ -180,7 +230,7 @@ describe('xlsx adapter', () => {
   );
 
   it('writes real recalculation instructions into workbook.xml, not only an ignored API property', async () => {
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const bytes = await workbookToXlsxBuffer({
       sheets: [{ name: 'Data', rows: [[createCell(999, { formula: 'A2*2' })], [createCell(5)]] }],
     });
@@ -249,7 +299,7 @@ describe('xlsx adapter', () => {
   it('reports what a file could not carry over instead of losing it silently', async () => {
     // Merged cells and a chart cannot be represented by this engine's sheet model. The point
     // of the report is that the user finds out from us rather than from their own boss.
-    const XLSX = await import('xlsx');
+    const XLSX = await import('xlsx-js-style');
     const sheet = XLSX.utils.aoa_to_sheet([
       ['Quarterly Report'],
       ['Region', 'Revenue'],

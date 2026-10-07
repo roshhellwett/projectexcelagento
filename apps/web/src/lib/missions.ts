@@ -227,6 +227,7 @@ export async function workbookSignature(workbook: Workbook): Promise<string> {
               : [typeof cell.value, cell.value],
           cell.formula ?? null,
           cell.numberFormat ?? null,
+          cell.style ?? null,
         ]),
       ),
     ]),

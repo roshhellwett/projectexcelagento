@@ -9,6 +9,7 @@ import {
   HistoryStack,
   cloneWorkbook,
   maxColumnCount,
+  indexToColumn,
   createWorkbookValueReader,
 } from '@excel-agent/engine';
 import { getCompactColumnProfiles } from '@excel-agent/agent';
@@ -21,7 +22,13 @@ import { WorkbookInsights } from './components/WorkbookInsights.js';
 import { WorkflowLibrary } from './components/WorkflowLibrary.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
 import type { CellSelection } from './lib/selection-context.js';
-import type { CellEdit } from './lib/grid-edit.js';
+import {
+  clipboardTextForRect,
+  editsForClipboardBlock,
+  parseClipboardGrid,
+  type CellEdit,
+  type CellRect,
+} from './lib/grid-edit.js';
 import { AgentChat, type ChatMessage, type TaskReceipt } from './components/AgentChat.js';
 import { OperationModal } from './components/OperationModal.js';
 import { HistoryDrawer } from './components/HistoryDrawer.js';
@@ -492,9 +499,16 @@ const AppWorkspace: React.FC<{
 
   // UI Modals
   const [isOpModalOpen, setIsOpModalOpen] = useState(false);
+  const [operationModalOperation, setOperationModalOperation] = useState<string | undefined>();
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [gridSelection, setGridSelection] = useState<CellRect>({
+    startRow: 1,
+    endRow: 1,
+    startColIdx: 0,
+    endColIdx: 0,
+  });
 
   // Cmd+K / Ctrl+K keyboard shortcut for Command Palette HUD
   useEffect(() => {
@@ -757,6 +771,147 @@ const AppWorkspace: React.FC<{
       executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
     },
     [executeOperation],
+  );
+
+  const openOperationModal = useCallback((operation?: string) => {
+    setOperationModalOperation(operation);
+    setIsOpModalOpen(true);
+  }, []);
+
+  /** Ribbon controls are local Excel-like actions. They never create a chat turn. */
+  const handleRibbonManualAction = useCallback(
+    (actionId: string) => {
+      if (isProcessing) return;
+      const sheet = currentSheet.name;
+      const startColumn = indexToColumn(gridSelection.startColIdx);
+      const endColumn = indexToColumn(gridSelection.endColIdx);
+      const range = {
+        sheet,
+        startRow: gridSelection.startRow,
+        endRow: gridSelection.endRow,
+        startColumn,
+        endColumn,
+      };
+      const cellsInSelection = (): CellEdit[] => {
+        const edits: CellEdit[] = [];
+        for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+          for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+            edits.push({ row, column: indexToColumn(col), value: null });
+          }
+        }
+        return edits.slice(0, 20_000);
+      };
+      const toggleStyle = (key: 'bold' | 'italic' | 'underline' | 'wrapText') => {
+        const selected = [];
+        for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+          for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+            selected.push(currentSheet.rows[row - 1]?.[col]?.style?.[key] === true);
+          }
+        }
+        return selected.length > 0 && selected.every(Boolean) ? false : true;
+      };
+      const styleActions: Record<string, Record<string, unknown>> = {
+        bold: { bold: toggleStyle('bold') },
+        italic: { italic: toggleStyle('italic') },
+        underline: { underline: toggleStyle('underline') },
+        wrap: { wrapText: toggleStyle('wrapText') },
+        fill: { fillColor: '#FFF2CC' },
+        'font-color': { fontColor: '#20342B' },
+        'align-left': { horizontalAlignment: 'left' },
+        'align-center': { horizontalAlignment: 'center' },
+        'align-right': { horizontalAlignment: 'right' },
+      };
+      if (styleActions[actionId]) {
+        executeOperation('format_cells', { ...range, style: styleActions[actionId] });
+        return;
+      }
+      const numberFormats: Record<string, string> = {
+        general: 'General',
+        currency: '$#,##0.00',
+        percent: '0.00%',
+        comma: '#,##0.00',
+        decimals: '0.00',
+      };
+      if (numberFormats[actionId]) {
+        executeOperation('format_cells', {
+          ...range,
+          style: {},
+          numberFormat: numberFormats[actionId],
+        });
+        return;
+      }
+      if (actionId === 'clear') {
+        executeOperation('edit_cells', { sheet, edits: cellsInSelection() }, undefined, false, {
+          quiet: true,
+        });
+        return;
+      }
+      if (actionId === 'copy' || actionId === 'cut') {
+        const text = clipboardTextForRect(
+          currentSheet,
+          gridSelection,
+          (cell) => cell?.formula ?? String(cell?.value ?? ''),
+        );
+        void navigator.clipboard?.writeText?.(text).catch?.(() => undefined);
+        if (actionId === 'cut') {
+          executeOperation('edit_cells', { sheet, edits: cellsInSelection() }, undefined, false, {
+            quiet: true,
+          });
+        }
+        pushToast('success', actionId === 'copy' ? 'Selection copied.' : 'Selection cut.');
+        return;
+      }
+      if (actionId === 'paste') {
+        void navigator.clipboard
+          ?.readText?.()
+          .then((text) => {
+            const block = parseClipboardGrid(text);
+            const edits = editsForClipboardBlock(
+              block,
+              gridSelection.startRow,
+              gridSelection.startColIdx,
+            );
+            if (edits.length > 0)
+              executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+          })
+          .catch(() =>
+            pushToast('warning', 'Clipboard access was denied. Use Ctrl+V in the grid.'),
+          );
+        return;
+      }
+      if (actionId === 'sort' || actionId === 'sort-filter') {
+        openOperationModal('sort_range');
+        return;
+      }
+      if (actionId === 'filter') {
+        openOperationModal('filter_rows');
+        return;
+      }
+      if (actionId === 'remove-duplicates') {
+        executeOperation('delete_duplicates', {
+          sheet,
+          columns: Array.from({ length: maxColumnCount(currentSheet.rows) }, (_, index) =>
+            indexToColumn(index),
+          ),
+          headerRow: 1,
+          keep: 'first',
+        });
+        return;
+      }
+      if (actionId === 'find-select') {
+        openOperationModal('find_replace');
+        return;
+      }
+      if (actionId === 'search-help' || actionId === 'open-tools' || actionId === 'agent-tools') {
+        openOperationModal();
+        return;
+      }
+      pushToast(
+        'info',
+        `${actionId.replace(/-/g, ' ')} is available as a manual operation or from chat. No chat request was created.`,
+      );
+    },
+    [currentSheet, executeOperation, gridSelection, isProcessing, openOperationModal, pushToast],
   );
 
   // Undo / Redo handlers
@@ -2492,7 +2647,7 @@ const AppWorkspace: React.FC<{
           onFileUpload={handleFileUpload}
           onExport={handleExport}
           onSelectFixture={handleSelectFixture}
-          onOpenOperationModal={() => setIsOpModalOpen(true)}
+          onOpenOperationModal={() => openOperationModal()}
           onToggleHistory={() => setIsHistoryDrawerOpen((prev) => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenUsage={() => navigate('usage')}
@@ -2617,9 +2772,8 @@ const AppWorkspace: React.FC<{
             <WorkspaceRibbon
               activeSheetName={currentSheet.name}
               isProcessing={isProcessing}
-              onRunPrompt={handleWorkflow}
-              onOpenOperationModal={() => setIsOpModalOpen(true)}
-              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              onManualAction={handleRibbonManualAction}
+              onOpenOperationModal={() => openOperationModal()}
               onUploadFile={handleFileUpload}
               onExport={handleExport}
               onUndo={handleUndo}
@@ -2671,6 +2825,7 @@ const AppWorkspace: React.FC<{
                 onQuickSort={handleQuickSort}
                 onFileDrop={handleFileUpload}
                 onAddSelectionContext={setSelectionContext}
+                onSelectionChange={setGridSelection}
                 onEditCells={handleEditCells}
               />
             </ErrorBoundary>
@@ -2779,6 +2934,7 @@ const AppWorkspace: React.FC<{
           onClose={() => setIsOpModalOpen(false)}
           workbook={workbook}
           activeSheetName={activeSheetName}
+          initialOperation={operationModalOperation}
           operationCatalog={orchestrator.tools}
           onExecute={(name, args) => executeOperation(name, args)}
         />

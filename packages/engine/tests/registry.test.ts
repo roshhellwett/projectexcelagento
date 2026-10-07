@@ -57,6 +57,7 @@ describe('operation registry', () => {
       'fill_series',
       'categorize_column',
       'reconcile_sheets',
+      'format_cells',
     ]);
     expect(registry.schemas.has('format_dates')).toBe(true);
     expect(registry.schemas.has('set_cells')).toBe(true);

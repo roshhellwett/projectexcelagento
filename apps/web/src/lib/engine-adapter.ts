@@ -7,7 +7,7 @@ import {
   type ImportReport,
 } from './workbook-io.js';
 
-type XlsxModule = typeof import('xlsx');
+type XlsxModule = typeof import('xlsx-js-style');
 
 export { MAX_IMPORTED_CELLS };
 export type { ImportReport };
@@ -21,7 +21,7 @@ let xlsxLoad: Promise<XlsxModule> | null = null;
  * browse, while repeat calls reuse the memoized module.
  */
 function loadXlsx(): Promise<XlsxModule> {
-  xlsxLoad ??= import('xlsx');
+  xlsxLoad ??= import('xlsx-js-style');
   return xlsxLoad;
 }
 

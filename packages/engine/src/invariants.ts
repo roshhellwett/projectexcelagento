@@ -41,7 +41,13 @@ function valueFingerprint(cell: Cell | undefined): string {
     return '<missing>';
   }
   const value = cell.value instanceof Date ? cell.value.toISOString() : cell.value;
-  return JSON.stringify([cell.type, value, cell.formula ?? null, cell.numberFormat ?? null]);
+  return JSON.stringify([
+    cell.type,
+    value,
+    cell.formula ?? null,
+    cell.numberFormat ?? null,
+    cell.style ?? null,
+  ]);
 }
 
 function rowFingerprint(row: Cell[] | undefined, startColumn: number, endColumn: number): string {

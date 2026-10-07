@@ -9,9 +9,8 @@ function renderRibbon() {
     <WorkspaceRibbon
       activeSheetName="Orders"
       isProcessing={false}
-      onRunPrompt={vi.fn()}
+      onManualAction={vi.fn()}
       onOpenOperationModal={vi.fn()}
-      onOpenCommandPalette={vi.fn()}
       onUploadFile={vi.fn()}
       onExport={vi.fn()}
       onUndo={vi.fn()}
@@ -45,15 +44,14 @@ describe('WorkspaceRibbon', () => {
     expect(screen.getByRole('button', { name: /Sort & Filter/i })).toBeInTheDocument();
   });
 
-  it('routes an active ribbon action through the agent request path', () => {
-    const onRunPrompt = vi.fn();
+  it('routes an active ribbon action through the manual action path', () => {
+    const onManualAction = vi.fn();
     render(
       <WorkspaceRibbon
         activeSheetName="Orders"
         isProcessing={false}
-        onRunPrompt={onRunPrompt}
+        onManualAction={onManualAction}
         onOpenOperationModal={vi.fn()}
-        onOpenCommandPalette={vi.fn()}
         onUploadFile={vi.fn()}
         onExport={vi.fn()}
         onUndo={vi.fn()}
@@ -65,8 +63,7 @@ describe('WorkspaceRibbon', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Currency/i }));
 
-    expect(onRunPrompt).toHaveBeenCalledWith(expect.stringContaining('currency'));
-    expect(onRunPrompt).toHaveBeenCalledWith(expect.stringContaining('Orders'));
+    expect(onManualAction).toHaveBeenCalledWith('currency');
   });
 
   it('shows unsupported workbook-fidelity controls without pretending they mutate files', () => {
@@ -76,5 +73,30 @@ describe('WorkspaceRibbon', () => {
     const pictures = screen.getByRole('button', { name: 'Pictures' });
     expect(pictures).toBeDisabled();
     expect(pictures).toHaveAttribute('title', expect.stringContaining('drawing layer'));
+  });
+
+  it('keeps search and help clicks on the manual operation surface', () => {
+    const onManualAction = vi.fn();
+    render(
+      <WorkspaceRibbon
+        activeSheetName="Orders"
+        isProcessing={false}
+        onManualAction={onManualAction}
+        onOpenOperationModal={vi.fn()}
+        onUploadFile={vi.fn()}
+        onExport={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        canUndo={false}
+        canRedo={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Find & Select/i }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Help' }));
+    fireEvent.click(screen.getByRole('button', { name: /Search Help/i }));
+
+    expect(onManualAction).toHaveBeenNthCalledWith(1, 'find-select');
+    expect(onManualAction).toHaveBeenNthCalledWith(2, 'search-help');
   });
 });

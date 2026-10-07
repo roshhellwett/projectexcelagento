@@ -41,6 +41,7 @@ interface SpreadsheetGridProps {
   onSelectCell?: (coord: { row: number; column: string; value: unknown }) => void;
   onFileDrop?: (file: File) => void;
   onAddSelectionContext?: (ctx: CellSelection) => void;
+  onSelectionChange?: (selection: CellRect) => void;
   /**
    * Applies a batch of cell writes to the named sheet. Without it the grid stays a viewer: cells
    * are `aria-readonly`, editing and the fill handle are refused, and nothing is lost by trying.
@@ -122,6 +123,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onSelectCell,
   onFileDrop,
   onAddSelectionContext,
+  onSelectionChange,
   onEditCells,
   dateSystem = '1900',
 }) => {
@@ -162,6 +164,10 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   const selection = useMemo(() => rectFromPositions(anchor, activeCell), [anchor, activeCell]);
   fillPreviewRef.current = fillPreview;
+
+  useEffect(() => {
+    onSelectionChange?.(selection);
+  }, [onSelectionChange, selection]);
 
   const totalRows = currentSheet.rows.length;
   const totalCols = maxColumnCount(currentSheet.rows);
