@@ -71,7 +71,7 @@ the operator's Supabase account, insert that user's UUID in the SQL editor:
 insert into public.license_admins (user_id, role)
 select id, 'owner'
 from auth.users
-where lower(email) = lower('zenithopensourceprojects@gmail.com')
+where lower(email) = lower('zenithprojects@icloud.com')
 on conflict (user_id) do update set role = excluded.role;
 ```
 
@@ -102,7 +102,7 @@ reset against the confirmed project ref `fsepapdadtrlddkyqqxu` in the Supabase d
 authenticated Supabase CLI session:
 
 1. Export a database backup and record the owner user's Auth UUID.
-2. Confirm `zenithopensourceprojects@gmail.com` exists and is email-confirmed. Do not delete this
+2. Confirm `zenithprojects@icloud.com` exists and is email-confirmed. Do not delete this
    user.
 3. Remove non-owner Auth users from **Authentication → Users** and clear application tables owned by
    the project. Review any tables outside the licensing migrations before truncating them.

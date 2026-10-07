@@ -239,10 +239,8 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
             <li>
               Device resets, transfers, extensions, revocations and bans are recorded in an
               administrator audit trail. Recovery is handled manually through{' '}
-              <a href="mailto:zenithopensourceprojects@gmail.com">
-                zenithopensourceprojects@gmail.com
-              </a>{' '}
-              after account and device ownership verification.
+              <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> after account
+              and device ownership verification.
             </li>
           </ul>
           <p>

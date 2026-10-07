@@ -24,7 +24,18 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
 }
 
-function stateCopy(state: string | undefined): { label: string; tone: string; detail: string } {
+function stateCopy(
+  state: string | undefined,
+  isAdmin?: boolean,
+): { label: string; tone: string; detail: string } {
+  if (isAdmin) {
+    return {
+      label: 'Super Admin / Owner',
+      tone: 'success',
+      detail:
+        'You have permanent, unrestricted administrative root access across the entire platform.',
+    };
+  }
   if (state === 'licensed')
     return {
       label: 'Activated',
@@ -90,15 +101,16 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
   const [copied, setCopied] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
   const deviceId = status?.deviceId || getInstallId();
-  const state = stateCopy(status?.state);
+  const state = stateCopy(status?.state, status?.isAdmin);
   const canEnterActivationKey =
-    !status ||
-    status.state === 'expired' ||
-    status.state === 'activation_required' ||
-    (locked &&
-      !['banned', 'device_banned', 'device_mismatch', 'email_unconfirmed', 'revoked'].includes(
-        status.state,
-      ));
+    !status?.isAdmin &&
+    (!status ||
+      status.state === 'expired' ||
+      status.state === 'activation_required' ||
+      (locked &&
+        !['banned', 'device_banned', 'device_mismatch', 'email_unconfirmed', 'revoked'].includes(
+          status.state,
+        )));
 
   const copyDeviceId = async () => {
     try {
@@ -166,7 +178,11 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
           <div>
             <span className="studio-eyebrow">EXCELAGENTO ACCESS CONTROL</span>
             <h1 id="license-title">
-              {locked ? 'Workspace access is locked' : 'Account & activation'}
+              {status?.isAdmin
+                ? 'Super Admin / System Owner'
+                : locked
+                  ? 'Workspace access is locked'
+                  : 'Account & activation'}
             </h1>
             <p>{state.detail}</p>
           </div>
@@ -191,7 +207,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             <div className="license-card-heading">
               <div>
                 <span className="studio-eyebrow">IDENTITY</span>
-                <h2>Signed-in account</h2>
+                <h2>{status?.isAdmin ? 'Root Administrator' : 'Signed-in account'}</h2>
               </div>
               <Laptop size={21} aria-hidden="true" />
             </div>
@@ -216,15 +232,29 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 </dd>
               </div>
               <div>
-                <dt>Trial expires</dt>
-                <dd>{formatDate(status?.trialExpiresAt)}</dd>
+                <dt>{status?.isAdmin ? 'Access Expiration' : 'Trial expires'}</dt>
+                <dd>
+                  {status?.isAdmin ? (
+                    <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
+                      Never Expires (Permanent ∞)
+                    </strong>
+                  ) : (
+                    formatDate(status?.trialExpiresAt)
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Current access</dt>
                 <dd>
-                  {status?.daysRemaining
-                    ? `${status.daysRemaining} day(s) remaining`
-                    : 'No active days'}
+                  {status?.isAdmin ? (
+                    <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
+                      Unlimited Lifetime Access
+                    </strong>
+                  ) : status?.daysRemaining ? (
+                    `${status.daysRemaining} day(s) remaining`
+                  ) : (
+                    'No active days'
+                  )}
                 </dd>
               </div>
             </dl>
@@ -240,7 +270,11 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             <div className="license-card-heading">
               <div>
                 <span className="studio-eyebrow">ENTITLEMENT</span>
-                <h2>{status?.license?.keyHint || '30-day evaluation'}</h2>
+                <h2>
+                  {status?.isAdmin
+                    ? 'Super Admin Permanent License'
+                    : status?.license?.keyHint || '30-day evaluation'}
+                </h2>
               </div>
               <KeyRound size={21} aria-hidden="true" />
             </div>
@@ -255,7 +289,15 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
               </div>
               <div>
                 <dt>Entitlement expires</dt>
-                <dd>{formatDate(status?.license?.expiresAt || status?.trialExpiresAt)}</dd>
+                <dd>
+                  {status?.isAdmin ? (
+                    <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
+                      Never Expires (Lifetime ∞)
+                    </strong>
+                  ) : (
+                    formatDate(status?.license?.expiresAt || status?.trialExpiresAt)
+                  )}
+                </dd>
               </div>
             </dl>
 
@@ -318,10 +360,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 <p style={{ margin: 0, fontSize: '0.85rem' }}>
                   Your 30-day access has ended. Contact{' '}
                   <a
-                    href={`mailto:zenithopensourceprojects@gmail.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
+                    href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
                     style={{ textDecoration: 'underline' }}
                   >
-                    zenithopensourceprojects@gmail.com
+                    zenithprojects@icloud.com
                   </a>{' '}
                   with your Unique Device ID (<code>{deviceId}</code>) to add days or purchase
                   extended access.
@@ -359,10 +401,8 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             )}
             <p className="license-muted" style={{ marginTop: '0.75rem' }}>
               Need a paid key, a duration change, or a recovery transfer? Contact{' '}
-              <a href="mailto:zenithopensourceprojects@gmail.com">
-                zenithopensourceprojects@gmail.com
-              </a>{' '}
-              and include your verified email and Unique Device ID.
+              <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and include
+              your verified email and Unique Device ID.
             </p>
           </article>
         </section>
@@ -383,7 +423,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             )}
             <a
               className="btn btn-ghost"
-              href="mailto:zenithopensourceprojects@gmail.com?subject=ExcelAgento%20activation%20support"
+              href="mailto:zenithprojects@icloud.com?subject=ExcelAgento%20activation%20support"
             >
               Contact support <ExternalLink size={14} />
             </a>

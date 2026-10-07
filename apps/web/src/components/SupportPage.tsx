@@ -280,9 +280,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
               </p>
               <div className="support-email-pill">
                 <Mail size={14} />
-                <a href="mailto:zenithopensourceprojects@gmail.com">
-                  zenithopensourceprojects@gmail.com
-                </a>
+                <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a>
               </div>
               <div className="support-sla-banner">
                 <Sparkles size={15} />

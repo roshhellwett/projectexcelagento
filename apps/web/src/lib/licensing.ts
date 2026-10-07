@@ -26,6 +26,9 @@ export interface LicenseStatus {
   state: LicenseState;
   canUse: boolean;
   isAdmin: boolean;
+  isOwner?: boolean;
+  isLifetime?: boolean;
+  role?: 'owner' | 'admin' | null;
   email: string;
   deviceId: string | null;
   deviceHint: string | null;
@@ -57,10 +60,12 @@ export interface AdminLicenseRecord {
 export interface AdminAccountRecord {
   user_id: string;
   email: string;
-  status: 'trial' | 'licensed' | 'expired' | 'banned';
+  status: 'owner' | 'admin' | 'trial' | 'licensed' | 'expired' | 'banned';
+  role?: 'owner' | 'admin' | null;
+  is_admin?: boolean;
   trial_started_at: string;
-  trial_expires_at: string;
-  days_remaining?: number;
+  trial_expires_at: string | null;
+  days_remaining?: number | null;
   ban_reason: string | null;
   banned_at: string | null;
   created_at: string;
@@ -217,6 +222,24 @@ export async function submitSupportTicket(ticket: {
   message: string;
   userId?: string | null;
 }): Promise<{ id: string }> {
+  // 1. Try secure RPC first (runs with SECURITY DEFINER to avoid RLS/permission errors)
+  try {
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('submit_support_ticket', {
+      p_name: ticket.name.trim(),
+      p_email: ticket.email.trim().toLowerCase(),
+      p_category: ticket.category || 'general',
+      p_subject: ticket.subject.trim(),
+      p_message: ticket.message.trim(),
+      p_user_id: ticket.userId || null,
+    });
+    if (!rpcErr && rpcData && typeof rpcData === 'object' && 'id' in rpcData) {
+      return { id: String((rpcData as { id: string }).id) };
+    }
+  } catch {
+    // proceed to fallback
+  }
+
+  // 2. Fallback to direct table insertion
   const { data, error } = await supabase
     .from('support_tickets')
     .insert({

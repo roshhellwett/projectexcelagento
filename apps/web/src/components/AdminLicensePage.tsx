@@ -14,6 +14,9 @@ import {
   Mail,
   Activity,
   Plus,
+  Crown,
+  Infinity as InfinityIcon,
+  Lock,
 } from 'lucide-react';
 import { useLicense } from '../lib/license-context.js';
 import {
@@ -35,6 +38,23 @@ interface AdminLicensePageProps {
 }
 
 type CmsTab = 'overview' | 'users' | 'keys' | 'support' | 'diagnostics';
+
+const SYSTEM_OWNER_EMAILS = new Set(['roshhellwett@gmail.com', 'zenithprojects@icloud.com']);
+
+function isSystemOwner(account: AdminAccountRecord): boolean {
+  if (
+    account.is_admin ||
+    account.role === 'owner' ||
+    account.role === 'admin' ||
+    account.status === 'owner'
+  ) {
+    return true;
+  }
+  if (account.email && SYSTEM_OWNER_EMAILS.has(account.email.toLowerCase())) {
+    return true;
+  }
+  return false;
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
@@ -259,7 +279,7 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
       `Re: [Ticket #${ticket.id.slice(0, 8).toUpperCase()}] ${ticket.subject}`,
     );
     const bodyContent = encodeURIComponent(
-      `Hi ${ticket.name},\n\nThank you for reaching out to ExcelAgento Support.\nRegarding your inquiry:\n"${ticket.message}"\n\n\n\nBest regards,\nExcelAgento Operations Team\nzenithopensourceprojects@gmail.com`,
+      `Hi ${ticket.name},\n\nThank you for reaching out to ExcelAgento Support.\nRegarding your inquiry:\n"${ticket.message}"\n\n\n\nBest regards,\nExcelAgento Operations Team\nzenithprojects@icloud.com`,
     );
     window.open(`mailto:${ticket.email}?subject=${subjectLine}&body=${bodyContent}`, '_blank');
     // Mark as in-progress or save reply timestamp
@@ -583,6 +603,51 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                   {filteredAccounts.map((account: AdminAccountRecord) => {
                     const days = account.days_remaining ?? 0;
                     const customDays = customDaysMap[account.user_id] || '30';
+                    const isOwner = isSystemOwner(account);
+
+                    if (isOwner) {
+                      return (
+                        <tr key={account.user_id} className="admin-owner-row">
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <strong>{account.email}</strong>
+                                <span className="admin-owner-pill">
+                                  <Crown size={11} /> Root Owner
+                                </span>
+                              </div>
+                              <small>{account.user_id}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="license-state-badge owner">
+                              <Crown size={12} /> SUPER ADMIN
+                            </span>
+                          </td>
+                          <td>
+                            <span className="days-remaining-pill lifetime">
+                              <InfinityIcon size={13} /> Lifetime Access
+                            </span>
+                          </td>
+                          <td>
+                            <span className="admin-permanent-text">
+                              Never Expires (Permanent ∞)
+                            </span>
+                          </td>
+                          <td>
+                            <div className="admin-root-privilege-chip">
+                              <ShieldCheck size={14} /> Full Root Privilege (Immortal)
+                            </div>
+                          </td>
+                          <td>
+                            <div className="admin-protected-btn">
+                              <Lock size={12} /> Root Protected
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     return (
                       <tr key={account.user_id}>
                         <td>
