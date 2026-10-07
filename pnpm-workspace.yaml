@@ -4,4 +4,3 @@ packages:
 confirmModulesPurge: false
 minimumReleaseAgeExclude:
   - eslint@10.12.0
-storeDir: A:\.pnpm-store\v11
