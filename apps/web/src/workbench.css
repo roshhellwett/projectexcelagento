@@ -525,6 +525,243 @@
   min-width: 0;
   position: relative;
 }
+
+/* Excel-style command ribbon. Commands that can mutate data are routed through the agent and
+   therefore still receive the normal preview, confirmation, invariant and history treatment. */
+.workspace-ribbon {
+  flex: none;
+  min-width: 0;
+  margin: 0 0 12px;
+  border: 1px solid var(--border-main);
+  border-radius: 11px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.workspace-ribbon-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-height: 35px;
+  padding: 3px 5px 0;
+  border-bottom: 1px solid var(--border-main);
+  background: var(--bg-elevated);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.workspace-ribbon-tab,
+.workspace-ribbon-more {
+  flex: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px !important;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workspace-ribbon-tab:hover,
+.workspace-ribbon-more:hover {
+  color: var(--text-main);
+  background: var(--bg-hover);
+}
+.workspace-ribbon-tab.active {
+  color: var(--brand-emerald);
+  border-bottom-color: var(--brand-emerald);
+  background: var(--bg-surface);
+}
+.workspace-ribbon-more {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+}
+.workspace-ribbon-toolbar {
+  display: flex;
+  align-items: stretch;
+  min-height: 98px;
+  padding: 5px 6px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.workspace-ribbon-quick-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 3px;
+  min-width: 74px;
+  padding: 0 7px 16px 2px;
+  border-right: 1px solid var(--border-subtle);
+}
+.workspace-ribbon-quick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 9px !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workspace-ribbon-quick:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+.workspace-ribbon-quick:disabled,
+.workspace-ribbon-action:disabled {
+  opacity: 0.43;
+  cursor: not-allowed;
+}
+.workspace-ribbon-file-input {
+  display: none;
+}
+.workspace-ribbon-groups {
+  display: flex;
+  align-items: stretch;
+  min-width: max-content;
+}
+.workspace-ribbon-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: max-content;
+  padding: 0 7px 3px;
+  border-right: 1px solid var(--border-subtle);
+}
+.workspace-ribbon-group:last-child {
+  border-right: 0;
+}
+.workspace-ribbon-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-height: 68px;
+}
+.workspace-ribbon-action {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 42px;
+  min-height: 55px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 4px 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 8px !important;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+}
+.workspace-ribbon-action span {
+  max-width: 64px;
+  white-space: normal;
+}
+.workspace-ribbon-action:hover:not(:disabled) {
+  color: var(--text-main);
+  border-color: var(--border-main);
+  background: var(--bg-hover);
+}
+.workspace-ribbon-action.is-primary {
+  color: var(--brand-emerald);
+}
+.workspace-ribbon-action.is-warning {
+  color: var(--accent-rose);
+}
+.workspace-ribbon-group-label,
+.workspace-ribbon-all-tab-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+.workspace-ribbon-all-tab-label {
+  align-self: stretch;
+  min-width: 55px;
+  padding: 6px 3px 0;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  border-right: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+}
+.workspace-ribbon-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 25px;
+  padding: 3px 10px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.workspace-ribbon-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.workspace-ribbon-busy {
+  color: var(--brand-emerald);
+}
+.operation-advanced-help {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.operation-advanced-help strong {
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.operation-advanced-help p,
+.operation-advanced-help small,
+.operation-advanced-help code {
+  margin: 0;
+}
+.operation-advanced-help code {
+  display: block;
+  max-height: 64px;
+  overflow: auto;
+  padding: 6px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  font: 10px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.operation-advanced-json {
+  min-height: 130px;
+  resize: vertical;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+}
+.operation-advanced-error {
+  color: var(--accent-rose) !important;
+}
 .studio-sheet-view[hidden] {
   display: none;
 }

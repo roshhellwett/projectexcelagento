@@ -16,6 +16,7 @@ import { MotionConfig } from 'framer-motion';
 
 import { TopNav } from './components/TopNav.js';
 import { WorkspaceShell, type StudioView } from './components/WorkspaceShell.js';
+import { WorkspaceRibbon } from './components/WorkspaceRibbon.js';
 import { WorkbookInsights } from './components/WorkbookInsights.js';
 import { WorkflowLibrary } from './components/WorkflowLibrary.js';
 import { SpreadsheetGrid } from './components/SpreadsheetGrid.js';
@@ -2612,6 +2613,21 @@ const AppWorkspace: React.FC<{
           sheetName={currentSheet.name}
           isProcessing={isProcessing}
           revealAgentRevision={revealAgentRevision}
+          ribbon={
+            <WorkspaceRibbon
+              activeSheetName={currentSheet.name}
+              isProcessing={isProcessing}
+              onRunPrompt={handleWorkflow}
+              onOpenOperationModal={() => setIsOpModalOpen(true)}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              onUploadFile={handleFileUpload}
+              onExport={handleExport}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              canUndo={historyStack.canUndo}
+              canRedo={historyStack.canRedo}
+            />
+          }
           agent={
             <ErrorBoundary variant="panel" label="the agent chat">
               <AgentChat
@@ -2763,6 +2779,7 @@ const AppWorkspace: React.FC<{
           onClose={() => setIsOpModalOpen(false)}
           workbook={workbook}
           activeSheetName={activeSheetName}
+          operationCatalog={orchestrator.tools}
           onExecute={(name, args) => executeOperation(name, args)}
         />
 

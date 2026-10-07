@@ -20,6 +20,7 @@ interface WorkspaceShellProps {
   isProcessing: boolean;
   agent: React.ReactNode;
   revealAgentRevision: number;
+  ribbon?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -36,6 +37,7 @@ export function WorkspaceShell({
   isProcessing,
   agent,
   revealAgentRevision,
+  ribbon,
   children,
 }: WorkspaceShellProps) {
   const [agentVisible, setAgentVisible] = useState(true);
@@ -156,6 +158,7 @@ export function WorkspaceShell({
               <span>{agentVisible ? 'Focus mode' : 'Show agent'}</span>
             </button>
           </div>
+          {ribbon}
           <div className="studio-stage-content">{children}</div>
         </section>
         {agentVisible && (

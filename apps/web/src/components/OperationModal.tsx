@@ -9,7 +9,18 @@ interface OperationModalProps {
   workbook: Workbook;
   activeSheetName: string;
   onExecute: (name: string, input: Record<string, unknown>) => void;
+  operationCatalog?: ReadonlyArray<{
+    name: string;
+    description: string;
+    example?: Record<string, unknown>;
+  }>;
 }
+
+type OperationCatalogItem = {
+  name: string;
+  description: string;
+  example?: Record<string, unknown>;
+};
 
 const OPERATIONS = [
   { id: 'format_dates', label: 'Format Dates (normalize date formats)' },
@@ -23,6 +34,8 @@ const OPERATIONS = [
   { id: 'add_column', label: 'Add New Column' },
   { id: 'set_cells', label: 'Set Cell Value' },
 ];
+
+const FORM_OPERATION_IDS = new Set(OPERATIONS.map((operation) => operation.id));
 
 type FilterOperator =
   | 'equals'
@@ -41,6 +54,7 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   workbook,
   activeSheetName,
   onExecute,
+  operationCatalog = [],
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   // Every hook runs whether or not the modal is showing, so opening it is not a different
@@ -66,6 +80,8 @@ export const OperationModal: React.FC<OperationModalProps> = ({
   const [fillValue, setFillValue] = useState('');
   const [cellCoord, setCellCoord] = useState('A2');
   const [cellVal, setCellVal] = useState('');
+  const [advancedJson, setAdvancedJson] = useState('{}');
+  const [advancedError, setAdvancedError] = useState('');
 
   if (!isOpen) return null;
 
@@ -73,10 +89,39 @@ export const OperationModal: React.FC<OperationModalProps> = ({
     workbook.sheets.find((s) => s.name === activeSheetName) || workbook.sheets[0];
   const totalCols = currentSheet ? maxColumnCount(currentSheet.rows) : 0;
   const colLetters = Array.from({ length: totalCols }).map((_, i) => indexToColumn(i));
+  const catalog: ReadonlyArray<OperationCatalogItem> =
+    operationCatalog.length > 0
+      ? operationCatalog
+      : OPERATIONS.map((operation) => ({ name: operation.id, description: operation.label }));
+  const selectedCatalogItem = catalog.find((operation) => operation.name === selectedOp);
+  const isAdvancedOperation = !FORM_OPERATION_IDS.has(selectedOp);
 
   const handleRun = () => {
     if (!currentSheet) return;
     const sheet = currentSheet.name;
+
+    if (isAdvancedOperation) {
+      try {
+        const parsed: unknown = JSON.parse(advancedJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Arguments must be a JSON object.');
+        }
+        const args = { ...(parsed as Record<string, unknown>) };
+        if (
+          args.sheet === undefined &&
+          selectedCatalogItem?.example &&
+          typeof selectedCatalogItem.example.sheet === 'string'
+        ) {
+          args.sheet = sheet;
+        }
+        setAdvancedError('');
+        onExecute(selectedOp, args);
+        onClose();
+      } catch (error) {
+        setAdvancedError(error instanceof Error ? error.message : 'Enter a valid JSON object.');
+      }
+      return;
+    }
 
     switch (selectedOp) {
       case 'format_dates':
@@ -238,13 +283,59 @@ export const OperationModal: React.FC<OperationModalProps> = ({
               value={selectedOp}
               onChange={(e) => setSelectedOp(e.target.value)}
             >
-              {OPERATIONS.map((op) => (
-                <option key={op.id} value={op.id}>
-                  {op.label}
-                </option>
-              ))}
+              <optgroup label="Guided operations">
+                {OPERATIONS.map((op) => (
+                  <option key={op.id} value={op.id}>
+                    {op.label}
+                  </option>
+                ))}
+              </optgroup>
+              {operationCatalog.length > 0 && (
+                <optgroup label="All agent operations">
+                  {operationCatalog
+                    .filter((operation) => !FORM_OPERATION_IDS.has(operation.name))
+                    .map((operation) => (
+                      <option key={operation.name} value={operation.name}>
+                        {operation.name}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
             </select>
           </div>
+
+          {isAdvancedOperation && (
+            <div className="operation-advanced-help">
+              <strong>{selectedCatalogItem?.name ?? selectedOp}</strong>
+              <p>{selectedCatalogItem?.description ?? 'Run this registered engine operation.'}</p>
+              {selectedCatalogItem?.example && (
+                <code>{JSON.stringify(selectedCatalogItem.example)}</code>
+              )}
+              <label className="form-label" htmlFor="op-advanced-json">
+                Operation arguments (JSON)
+              </label>
+              <textarea
+                id="op-advanced-json"
+                className="form-input operation-advanced-json"
+                value={advancedJson}
+                onChange={(event) => {
+                  setAdvancedJson(event.target.value);
+                  setAdvancedError('');
+                }}
+                spellCheck={false}
+                aria-describedby={advancedError ? 'op-advanced-error' : undefined}
+              />
+              <small>
+                Use the catalog description and examples to fill the arguments. The same engine
+                validation and history checks apply.
+              </small>
+              {advancedError && (
+                <p id="op-advanced-error" className="operation-advanced-error" role="alert">
+                  {advancedError}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Operation Specific Inputs */}
           {selectedOp === 'format_dates' && (

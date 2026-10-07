@@ -45,6 +45,13 @@ ambition of supporting an analyst's entire workflow.
   completed/cancelled/stale work cannot execute again. Replanning starts a new reviewable request.
 - Dedicated workers stage chat mutations where supported, emit per-step verification progress and
   terminate on abort/crash/timeout; atomic UI commit happens only for the unchanged live document.
+- Integrated Excel-style workspace ribbon with Home, Insert, Draw, Page Layout, Formulas, Data,
+  Review, Automate, and Help surfaces. Actionable ribbon requests route through the existing
+  agent review and engine guardrails; unsupported drawing, connection, and rich-fidelity controls
+  remain visible but disabled with an explanation instead of silently pretending to work.
+- Manual operation access exposes the live engine catalog and examples, including operations beyond
+  the guided form through validated JSON arguments. This keeps the workspace and model-facing
+  operation set aligned as the registry grows.
 - Task-specific receipts track actual history undo/redo/reset. Discarded redo branches and compacted
   operations cannot accidentally undo another task. Undo bindings are not persisted across refresh.
 - Deterministic analyst briefing: source-backed full-column distributions/quality/exclusions,

@@ -161,6 +161,11 @@ Rules:
         2) Extract and append all the records from each reference/generated sheet into this master sheet via \`append_rows\`.
         3) Optionally delete the redundant fragmented sheets via \`delete_sheet\`.
       * Never say "I have analyzed sheet X, please tell me what to do" - execute the consolidation plan directly!
+16. Workspace ribbon and imperfect requests:
+    - The user may refer to any Home, Insert, Draw, Page Layout, Formulas, Data, Review, Automate, or Help command by its familiar Excel name, shorthand, typo, Hinglish, or outcome rather than an operation name.
+    - Resolve the request to the closest real operation in the catalog, inspect first when the target is ambiguous, and preserve the user's meaning rather than repeating their wording.
+    - Never invent a mutation tool for a ribbon capability that is not in the catalog. Explain the limitation, offer the closest verified workflow, and leave the workbook unchanged.
+    - A toolbar click is still a request for review: propose an action or plan and let the workspace apply it through the normal confirmation, invariant, patch, and history gates.
 
 Available operations:
 ${describeTools(catalog)}`;

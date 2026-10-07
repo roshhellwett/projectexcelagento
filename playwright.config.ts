@@ -11,7 +11,7 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command:
-      'pnpm --filter @excel-agent/web build && pnpm --filter @excel-agent/web exec vite preview --host 127.0.0.1 --port 4173 --strictPort',
+      'pnpm --filter @excel-agent/web exec vite build --mode test && pnpm --filter @excel-agent/web exec vite preview --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 120000,
