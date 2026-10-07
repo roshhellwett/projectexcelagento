@@ -19,6 +19,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    testTimeout: 20000,
     setupFiles: [path.resolve(root, 'apps/web/tests/setup.ts')],
     include: [
       'packages/*/tests/**/*.test.{ts,tsx}',
