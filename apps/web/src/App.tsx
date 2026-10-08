@@ -158,15 +158,42 @@ function readViewFromHash(fallback: WorkspaceView = 'landing'): {
 } {
   try {
     if (typeof window === 'undefined') return { view: fallback };
-    const clean = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+
+    // 1. Inspect URL search query for explicit auth confirmation params (?auth=confirm, ?code=..., ?token_hash=...)
+    const searchParams = new URLSearchParams(window.location.search);
+    const hasAuthConfirm =
+      searchParams.get('auth') === 'confirm' ||
+      searchParams.has('code') ||
+      searchParams.has('token_hash');
+
+    // 2. Extract clean pathname and clean hash
+    const pathClean = (
+      (window.location.pathname.replace(/^\//, '').split('?')[0] ?? '').split('&')[0] ?? ''
+    ).toLowerCase();
+    const hashClean = (
+      (window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? '').split('&')[0] ?? ''
+    ).toLowerCase();
+
+    // Dedicated email verification routing
+    if (
+      hasAuthConfirm ||
+      pathClean === 'verify-email' ||
+      pathClean === 'verify' ||
+      pathClean === 'email-verification' ||
+      hashClean === 'verify-email' ||
+      hashClean === 'verify' ||
+      hashClean === 'email-verification'
+    ) {
+      return { view: 'verify-email' };
+    }
+
+    const clean = hashClean || pathClean;
     if (clean === 'workspace') return { view: 'workspace' };
     if (clean === 'landing') return { view: 'landing' };
     if (clean === 'auth' || clean === 'login' || clean === 'signin')
       return { view: 'auth', authMode: 'signin' };
     if (clean === 'signup' || clean === 'register') return { view: 'auth', authMode: 'signup' };
     if (clean === 'forgot-password') return { view: 'auth', authMode: 'reset' };
-    if (clean === 'verify-email' || clean === 'verify' || clean === 'email-verification')
-      return { view: 'verify-email' };
     if (clean === 'account' || clean === 'activation') return { view: 'account' };
     if (clean === 'admin' || clean === 'license-admin') return { view: 'admin' };
     if (clean === 'support' || clean === 'contact' || clean === 'help') return { view: 'support' };
@@ -388,7 +415,11 @@ const AppWorkspace: React.FC<{
       if (parsed.authMode) setAuthInitialMode(parsed.authMode);
     };
     window.addEventListener('hashchange', syncView);
-    return () => window.removeEventListener('hashchange', syncView);
+    window.addEventListener('popstate', syncView);
+    return () => {
+      window.removeEventListener('hashchange', syncView);
+      window.removeEventListener('popstate', syncView);
+    };
   }, []);
 
   useEffect(() => {

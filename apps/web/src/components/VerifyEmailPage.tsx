@@ -119,10 +119,20 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
         'signup' | 'email';
       if (tokenHash) {
         try {
-          const { data, error } = await supabase.auth.verifyOtp({
+          let { data, error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type: type,
           });
+          if (error && type === 'signup') {
+            const retry = await supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: 'email',
+            });
+            if (!retry.error) {
+              data = retry.data;
+              error = null;
+            }
+          }
           if (error) {
             if (!mounted) return;
             setStatus('error');
@@ -199,18 +209,33 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
     setFeedbackMessage('');
 
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
+      let { data, error } = await supabase.auth.verifyOtp({
         email: targetEmail.trim(),
         token: otpCode.trim(),
         type: 'signup',
       });
 
       if (error) {
+        const retry = await supabase.auth.verifyOtp({
+          email: targetEmail.trim(),
+          token: otpCode.trim(),
+          type: 'email',
+        });
+        if (!retry.error && retry.data) {
+          data = retry.data;
+          error = null;
+        }
+      }
+
+      if (error) {
         setErrorMessage(error.message || 'Invalid confirmation code. Please check and try again.');
-      } else if (data.session) {
+      } else if (data && data.session) {
         setStatus('success');
         setTargetEmail(data.session.user.email || targetEmail);
         setFeedbackMessage('Email verified successfully!');
+      } else {
+        setStatus('success');
+        setFeedbackMessage('Email verified successfully! You can now proceed to your workspace.');
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to verify code.');

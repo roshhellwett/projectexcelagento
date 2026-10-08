@@ -50,6 +50,9 @@ export function authEmailRedirectUrl(kind: AuthEmailKind, href?: string): string
   const url = !isTestMode && shouldUseConfigured ? new URL(configuredOrigin) : current;
   url.search = '';
   url.hash = '';
+  if (kind === 'confirm' && (url.pathname === '/' || url.pathname === '')) {
+    url.pathname = '/verify-email';
+  }
   url.searchParams.set('auth', kind);
   return url.toString();
 }
@@ -59,13 +62,23 @@ export function readAuthCallback(href: string): AuthCallbackInfo | null {
   const url = new URL(href);
   const fragment = new URLSearchParams(url.hash.slice(1));
   const marker = url.searchParams.get('auth');
+  const hasVerifyPath = url.pathname.includes('verify-email') || url.pathname.includes('/verify');
   const type = fragment.get('type') ?? url.searchParams.get('type');
   const errorCode = fragment.get('error_code') ?? url.searchParams.get('error_code');
   const errorDescription =
     fragment.get('error_description') ?? url.searchParams.get('error_description');
   const callbackError = fragment.get('error') ?? url.searchParams.get('error');
-  const hasSessionPayload = fragment.has('access_token') || url.searchParams.has('code');
-  if (marker !== 'confirm' && marker !== 'recovery' && !hasSessionPayload && !callbackError) {
+  const hasSessionPayload =
+    fragment.has('access_token') ||
+    url.searchParams.has('code') ||
+    url.searchParams.has('token_hash');
+  if (
+    marker !== 'confirm' &&
+    marker !== 'recovery' &&
+    !hasSessionPayload &&
+    !callbackError &&
+    !hasVerifyPath
+  ) {
     return null;
   }
   const hasError = Boolean(callbackError || errorCode || errorDescription);

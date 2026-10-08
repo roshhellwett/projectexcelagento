@@ -69,7 +69,7 @@ describe('account access', () => {
     expect(auth.signUp).toHaveBeenCalledWith(
       expect.objectContaining({
         options: expect.objectContaining({
-          emailRedirectTo: `${window.location.origin}/?auth=confirm`,
+          emailRedirectTo: `${window.location.origin}/verify-email?auth=confirm`,
         }),
       }),
     );
@@ -111,7 +111,7 @@ describe('account access', () => {
     expect(auth.resend).toHaveBeenCalledWith({
       type: 'signup',
       email: 'example@example.com',
-      options: { emailRedirectTo: `${window.location.origin}/?auth=confirm` },
+      options: { emailRedirectTo: `${window.location.origin}/verify-email?auth=confirm` },
     });
     expect(await screen.findByText(/use the newest email/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Send another link in/ })).toBeDisabled();

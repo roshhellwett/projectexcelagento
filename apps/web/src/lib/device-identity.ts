@@ -1,4 +1,4 @@
-const INSTALL_ID_STORAGE_KEY = 'excelagento_unique_id_v2';
+const INSTALL_ID_STORAGE_KEY = 'excelagento_install_id_v3';
 
 let cachedUniqueId: string | null = null;
 
@@ -28,8 +28,7 @@ function hashStringToUuid(str: string): string {
 
 /**
  * Derives a hardware-level raw signature from WebGL GPU vendor/renderer,
- * CPU cores, and screen characteristics (matching projectcortex HWID architecture).
- * This remains consistent across different browsers on the exact same device.
+ * CPU cores, and screen characteristics for diagnostics.
  */
 export function getRawHWID(): string {
   let renderer = 'unknown_renderer';
@@ -64,23 +63,58 @@ export function getRawHWID(): string {
 }
 
 /**
- * Returns a deterministic Unique Device ID formatted as a standard UUID.
- * The ID is derived from physical hardware characteristics so that opening different
- * browsers or incognito tabs on the same machine resolves to the same device identifier.
+ * Returns a persistent, collision-free Unique Installation ID formatted as a standard UUID.
+ * Stored in localStorage so it persists across sessions without colliding with other users.
  */
 export function getInstallId(): string {
   if (cachedUniqueId) return cachedUniqueId;
-  const hwid = getRawHWID();
-  const generated = hashStringToUuid(hwid);
 
+  // 1. Try reading existing installation ID from localStorage
   try {
-    window.localStorage.setItem(INSTALL_ID_STORAGE_KEY, generated);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const stored = window.localStorage.getItem(INSTALL_ID_STORAGE_KEY);
+      if (
+        stored &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stored)
+      ) {
+        cachedUniqueId = stored;
+        return stored;
+      }
+    }
   } catch {
-    // LocalStorage may be unavailable in some sandboxes
+    // LocalStorage restricted or in private mode
   }
 
-  cachedUniqueId = generated;
-  return generated;
+  // 2. Generate a cryptographically random, collision-free UUID
+  let uniqueId: string;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    uniqueId = crypto.randomUUID();
+  } else if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const b6 = bytes[6] ?? 0;
+    const b8 = bytes[8] ?? 0;
+    bytes[6] = (b6 & 0x0f) | 0x40; // version 4
+    bytes[8] = (b8 & 0x3f) | 0x80; // variant 1
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    uniqueId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  } else {
+    // Fallback combining timestamp, random, and hardware entropy
+    const hwid = getRawHWID();
+    const entropy = `${Date.now()}-${Math.random()}-${hwid}`;
+    uniqueId = hashStringToUuid(entropy);
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(INSTALL_ID_STORAGE_KEY, uniqueId);
+    }
+  } catch {
+    // Sandbox or restricted
+  }
+
+  cachedUniqueId = uniqueId;
+  return uniqueId;
 }
 
 export function getInstallIdHint(installId = getInstallId()): string {
