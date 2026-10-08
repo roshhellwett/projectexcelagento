@@ -480,8 +480,16 @@ function openAiCompatibleAdapter(
       try {
         while (true) {
           const { done, value } = await readWithTimeout(reader, config);
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          if (done) {
+            // A provider is allowed to close an SSE stream without a trailing newline. Flush the
+            // decoder and force the final buffered event through the same parser as every other
+            // chunk, otherwise the last answer token or usage record disappears silently.
+            buffer += decoder.decode();
+            if (buffer.length === 0) break;
+            buffer += '\n';
+          } else {
+            buffer += decoder.decode(value, { stream: true });
+          }
 
           const lines = buffer.split('\n');
           buffer = lines.pop() ?? '';
@@ -575,6 +583,7 @@ function openAiCompatibleAdapter(
               // Ignore non-json sse chunks
             }
           }
+          if (done) break;
         }
       } finally {
         reader.releaseLock();

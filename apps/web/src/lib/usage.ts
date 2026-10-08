@@ -51,6 +51,15 @@ export interface UsageSummary {
 }
 
 const MAX_QUERY_PREVIEW = 120;
+const USAGE_PROVIDERS = new Set<UsageEntry['provider']>([
+  'none',
+  'groq',
+  'openrouter',
+  'gemini',
+  'openai',
+  'custom',
+]);
+const USAGE_SOURCES = new Set<DecisionSource>(['memory', 'heuristic', 'llm', 'fallback']);
 
 function storage(): Storage | undefined {
   try {
@@ -73,9 +82,15 @@ function isUsageEntry(value: unknown): value is UsageEntry {
   return (
     typeof entry.id === 'string' &&
     typeof entry.timestamp === 'number' &&
+    Number.isFinite(entry.timestamp) &&
     typeof entry.model === 'string' &&
-    typeof entry.totalTokens === 'number'
+    typeof entry.totalTokens === 'number' &&
+    Number.isFinite(entry.totalTokens)
   );
+}
+
+function nonNegativeNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 /** Read the ledger, tolerating absent, corrupt, or partially-invalid storage. */
@@ -91,8 +106,25 @@ export function loadUsageLog(): UsageEntry[] {
       .filter(isUsageEntry)
       .map((e) => ({
         ...e,
-        latencyMs: typeof e.latencyMs === 'number' && !isNaN(e.latencyMs) ? e.latencyMs : 0,
+        timestamp: nonNegativeNumber(e.timestamp),
+        provider: USAGE_PROVIDERS.has(e.provider as UsageEntry['provider'])
+          ? e.provider
+          : LOCAL_PROVIDER,
+        source: USAGE_SOURCES.has(e.source as DecisionSource) ? e.source : 'fallback',
+        model: typeof e.model === 'string' ? e.model.slice(0, 300) : LOCAL_MODEL_LABEL,
+        promptTokens: nonNegativeNumber(e.promptTokens),
+        completionTokens: nonNegativeNumber(e.completionTokens),
+        totalTokens: nonNegativeNumber(e.totalTokens),
+        latencyMs: nonNegativeNumber(e.latencyMs),
+        llmUsed:
+          typeof e.llmUsed === 'boolean'
+            ? e.llmUsed &&
+              USAGE_PROVIDERS.has(e.provider as UsageEntry['provider']) &&
+              e.provider !== LOCAL_PROVIDER
+            : USAGE_PROVIDERS.has(e.provider as UsageEntry['provider']) &&
+              e.provider !== LOCAL_PROVIDER,
         ok: typeof e.ok === 'boolean' ? e.ok : true,
+        query: typeof e.query === 'string' ? e.query.slice(0, MAX_QUERY_PREVIEW) : '',
       }))
       .slice(-MAX_USAGE_ENTRIES);
   } catch {
@@ -156,14 +188,12 @@ export function createUsageEntry(input: {
   }
 
   const telemetry = input.telemetry;
-  const promptTokens = telemetry.promptTokens ?? 0;
-  const completionTokens = telemetry.completionTokens ?? 0;
+  const promptTokens = nonNegativeNumber(telemetry.promptTokens);
+  const completionTokens = nonNegativeNumber(telemetry.completionTokens);
   const latency =
-    typeof telemetry.latencyMs === 'number' && !isNaN(telemetry.latencyMs)
-      ? telemetry.latencyMs
-      : typeof (telemetry as unknown as { durationMs?: number }).durationMs === 'number'
-        ? (telemetry as unknown as { durationMs: number }).durationMs
-        : 0;
+    typeof telemetry.latencyMs === 'number' && Number.isFinite(telemetry.latencyMs)
+      ? nonNegativeNumber(telemetry.latencyMs)
+      : nonNegativeNumber((telemetry as unknown as { durationMs?: number }).durationMs);
 
   return {
     id: nextUsageId(),
@@ -177,7 +207,7 @@ export function createUsageEntry(input: {
       (telemetry.promptTokens !== undefined && telemetry.completionTokens !== undefined),
     promptTokens,
     completionTokens,
-    totalTokens: telemetry.totalTokens ?? promptTokens + completionTokens,
+    totalTokens: nonNegativeNumber(telemetry.totalTokens, promptTokens + completionTokens),
     latencyMs: latency,
     ok: telemetry.ok ?? true,
     ...(telemetry.error ? { error: telemetry.error } : {}),

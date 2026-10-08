@@ -5,6 +5,7 @@ let context: AudioContext | null = null;
 
 function soundEnabled(): boolean {
   try {
+    if (typeof window === 'undefined') return true;
     return window.localStorage.getItem(STORAGE_KEY) !== 'off';
   } catch {
     return true;
@@ -17,6 +18,7 @@ export function isSoundEnabled(): boolean {
 
 export function setSoundEnabled(enabled: boolean): void {
   try {
+    if (typeof window === 'undefined') return;
     window.localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off');
   } catch {
     // Sound is an enhancement; an unavailable storage API should not affect the workspace.

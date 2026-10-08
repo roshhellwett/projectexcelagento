@@ -124,6 +124,9 @@ export function useMissionLedger(store: MissionStore) {
       try {
         await enqueue(() => store.delete(id));
         unsaved.current.delete(id);
+        // A successful delete only removes this in-flight guard. Keeping the id here would make
+        // every future mission with the same id silently disappear from the in-memory ledger.
+        deletingIds.current.delete(id);
         refreshUnsaved();
         publish(records.current.filter((item) => item.id !== id));
         if (mounted.current && !unsaved.current.size) {
@@ -145,6 +148,7 @@ export function useMissionLedger(store: MissionStore) {
       await enqueue(() => store.clear());
       // Work created while deletion was in flight stays visible and is queued for a later save.
       for (const id of ids) unsaved.current.delete(id);
+      for (const id of ids) deletingIds.current.delete(id);
       refreshUnsaved();
       publish(records.current.filter((item) => !ids.has(item.id)));
       if (mounted.current && !unsaved.current.size) {

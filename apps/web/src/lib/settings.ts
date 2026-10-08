@@ -116,10 +116,15 @@ export function saveSettings(settings: AgentSettings): void {
     provider: 'openrouter',
     model: settings.model?.trim() || DEFAULT_OPENROUTER_MODEL,
   };
-  store.setItem(SETTINGS_KEY, JSON.stringify(sanitized));
-  // Legacy mirrors are migrated on read, so they are cleared rather than duplicated.
-  store.removeItem(LEGACY_KEY);
-  store.removeItem(LEGACY_PROVIDER);
+  try {
+    store.setItem(SETTINGS_KEY, JSON.stringify(sanitized));
+    // Legacy mirrors are migrated on read, so they are cleared rather than duplicated.
+    store.removeItem(LEGACY_KEY);
+    store.removeItem(LEGACY_PROVIDER);
+  } catch {
+    // Quota/private-mode failures must not make connecting the local agent crash the workspace.
+    // React state still keeps the current session usable; persistence can be retried later.
+  }
 }
 
 export function clearSettings(): void {

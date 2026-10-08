@@ -347,8 +347,17 @@ export function createMissionStore(
     list: () =>
       ordered(async () => {
         const values = (await transact('list')) as unknown[];
-        return values
-          .map(validateMission)
+        // A single damaged browser record must not make the entire mission ledger unavailable.
+        // Invalid records cannot be resumed safely, so retain only validated records for display.
+        const valid: MissionRecord[] = [];
+        for (const value of values) {
+          try {
+            valid.push(validateMission(value));
+          } catch {
+            // Ignore malformed legacy storage; future saves/retention will replace it.
+          }
+        }
+        return valid
           .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
           .slice(0, MAX_MISSIONS);
       }),

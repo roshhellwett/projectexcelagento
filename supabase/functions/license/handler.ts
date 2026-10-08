@@ -125,6 +125,7 @@ export function createLicenseHandler(
         'ticketId',
         'status',
         'adminNotes',
+        'markReplied',
         'replied',
       ]) {
         if (body[field] !== undefined) payload[field] = body[field];
@@ -192,10 +193,9 @@ export function createLicenseHandler(
       console.error('License handler caught error:', err);
       return respond(
         {
-          error:
-            err instanceof Error
-              ? `Service error: ${err.message}`
-              : 'The activation service could not verify access. Please retry.',
+          // Internal database/provider details belong in server logs, not in a public response.
+          // Leaking them makes recovery harder for users and gives attackers implementation data.
+          error: 'The activation service could not verify access. Please retry.',
           code: 'SERVICE_UNAVAILABLE',
         },
         503,

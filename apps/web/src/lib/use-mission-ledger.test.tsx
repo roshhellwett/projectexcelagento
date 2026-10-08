@@ -125,4 +125,19 @@ describe('mission ledger commit semantics', () => {
     expect(store.save).toHaveBeenCalledTimes(1);
     expect(store.delete).toHaveBeenCalledExactlyOnceWith('task');
   });
+  it('allows a mission id to be used again after a committed delete', async () => {
+    const store = memoryStore();
+    const { result } = renderHook(() => useMissionLedger(store));
+    await waitFor(() => expect(result.current.storageStatus).toBe('saved'));
+
+    act(() => result.current.upsert(record()));
+    await waitFor(() => expect(store.save).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await result.current.remove('task');
+    });
+
+    act(() => result.current.upsert(record()));
+    await waitFor(() => expect(result.current.missions).toHaveLength(1));
+    expect(store.save).toHaveBeenCalledTimes(2);
+  });
 });

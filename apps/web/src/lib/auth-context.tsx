@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { initialAuthCallback, supabase } from './supabase-client.js';
 import { authErrorMessage } from './auth-errors.js';
@@ -50,8 +50,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [callback, setCallback] = useState<AuthCallbackInfo | null>(initialAuthCallback);
+  const profileRequest = useRef(0);
+  const currentUserId = useRef<string | null>(null);
 
   const fetchProfile = useCallback(async (userId: string, userEmail?: string) => {
+    const requestId = ++profileRequest.current;
+    const isCurrent = () =>
+      requestId === profileRequest.current && currentUserId.current === userId;
     try {
       const { data, error: profileErr } = await supabase
         .from('profiles')
@@ -62,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (profileErr) {
         console.warn('Failed to load profile from Supabase:', profileErr.message);
         // Keep the workspace usable when the optional profile row is unavailable.
+        if (!isCurrent()) return;
         setProfile({
           id: userId,
           email: userEmail || '',
@@ -73,6 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      if (!isCurrent()) return;
       if (data) {
         setProfile(data as UserProfile);
       } else {
@@ -87,7 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
     } catch {
-      // Ignore network errors on offline startup
+      // Keep the account session usable when the optional profile request is offline. Do not let a
+      // late failure from an older account overwrite the current profile.
     }
   }, []);
 
@@ -99,16 +107,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let authEventReceived = false;
 
     // Check active session on initial load
     supabase.auth
       .getSession()
       .then(({ data: { session: currentSession }, error: sessionError }) => {
-        if (!mounted) return;
+        if (!mounted || authEventReceived) return;
         if (sessionError)
           setError(authErrorMessage(sessionError, 'The email link could not be verified.'));
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        currentUserId.current = currentSession?.user.id ?? null;
+        setProfile(null);
         if (currentSession?.user) {
           void fetchProfile(currentSession.user.id, currentSession.user.email);
         }
@@ -127,10 +138,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       data: { subscription: authListener },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
       if (!mounted) return;
+      authEventReceived = true;
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      const changedUser = currentUserId.current !== (newSession?.user.id ?? null);
+      currentUserId.current = newSession?.user.id ?? null;
+      if (changedUser) setProfile(null);
+      // Invalidate a profile request belonging to the previous account before starting the next one.
+      profileRequest.current += 1;
       if (newSession?.user) {
-        void fetchProfile(newSession.user.id, newSession.user.email);
+        // Supabase invokes auth callbacks while holding its auth lock. Start API work after the
+        // callback returns so acquiring a session for the profile query cannot deadlock that lock.
+        const nextUser = newSession.user;
+        setTimeout(() => {
+          if (mounted && currentUserId.current === nextUser.id)
+            void fetchProfile(nextUser.id, nextUser.email);
+        }, 0);
       } else {
         setProfile(null);
       }
@@ -139,6 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       mounted = false;
+      profileRequest.current += 1;
       authListener.unsubscribe();
     };
   }, [fetchProfile]);
@@ -158,6 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.session) {
+        currentUserId.current = data.session.user.id;
+        setProfile(null);
         setUser(data.session.user);
         setSession(data.session);
         void fetchProfile(data.session.user.id, data.session.user.email);
@@ -196,6 +222,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.session) {
+        currentUserId.current = data.session.user.id;
+        setProfile(null);
         setUser(data.session.user);
         setSession(data.session);
         void fetchProfile(data.session.user.id, data.session.user.email);
@@ -212,10 +240,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     try {
       await supabase.auth.signOut();
+      profileRequest.current += 1;
+      currentUserId.current = null;
       setUser(null);
       setSession(null);
       setProfile(null);
     } catch {
+      profileRequest.current += 1;
+      currentUserId.current = null;
       setUser(null);
       setSession(null);
       setProfile(null);

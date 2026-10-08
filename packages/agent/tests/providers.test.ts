@@ -312,6 +312,28 @@ describe('failure handling and retries', () => {
     expect(error).toBeInstanceOf(ProviderError);
   });
 
+  it('flushes an SSE event when the provider closes without a trailing newline', async () => {
+    const payload = `data: ${JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      choices: [{ delta: { content: 'final answer' } }],
+    })}`;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload));
+        controller.close();
+      },
+    });
+    stubFetch(
+      async () =>
+        new Response(stream, {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+    );
+
+    const result = await groqAdapter.completeStream(MESSAGES, BASE_CONFIG, {});
+    expect(result.content).toBe('final answer');
+  });
+
   it('rejects a 200 that is not valid JSON with a clear message', async () => {
     stubFetch(async () => new Response('<html>proxy error</html>', { status: 200 }));
 

@@ -38,7 +38,10 @@ export type MissionMutationResult =
 export function stageMissionMutation(
   request: MissionMutationRequest,
   progress?: (event: MissionProgress) => void,
+  signal?: AbortSignal,
 ): MissionMutationResult {
+  if (signal?.aborted)
+    throw new DOMException('Mission stopped. Nothing was committed.', 'AbortError');
   if (request.steps.length < 1 || request.steps.length > 25)
     return {
       ok: false,
@@ -52,8 +55,14 @@ export function stageMissionMutation(
   const result = applyOperationPlan(request.workbook, request.steps, {
     registry: createOperationRegistry(),
     confirmed: request.confirmed,
-    onStep: (index, phase) => progress?.({ index, phase }),
+    onStep: (index, phase) => {
+      if (signal?.aborted)
+        throw new DOMException('Mission stopped. Nothing was committed.', 'AbortError');
+      progress?.({ index, phase });
+    },
   });
+  if (signal?.aborted)
+    throw new DOMException('Mission stopped. Nothing was committed.', 'AbortError');
   if (!result.ok)
     return {
       ok: false,

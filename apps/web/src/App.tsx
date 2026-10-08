@@ -1355,7 +1355,12 @@ const AppWorkspace: React.FC<{
   const handleExport = async () => {
     const exportingGeneration = documentGeneration.current;
     const exportingRevision = workbookRevision.current;
-    const target = `${fileName.replace(/\.[^.]+$/, '')}-cleaned.xlsx`;
+    const safeBaseName =
+      fileName
+        .replace(/\.[^.]+$/, '')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .trim() || 'workbook';
+    const target = `${safeBaseName}-cleaned.xlsx`;
     if (await downloadWorkbookAsXlsx(workbook, target)) {
       if (
         exportingGeneration === documentGeneration.current &&

@@ -12,6 +12,7 @@ const STORAGE_KEY = 'excel_agent_theme';
 
 export function getStoredTheme(): Theme | null {
   try {
+    if (typeof window === 'undefined') return null;
     const stored = window.localStorage.getItem(STORAGE_KEY);
     return stored === 'dark' || stored === 'light' ? stored : null;
   } catch {

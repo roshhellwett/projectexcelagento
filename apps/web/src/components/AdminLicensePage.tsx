@@ -283,7 +283,15 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
     );
     window.open(`mailto:${ticket.email}?subject=${subjectLine}&body=${bodyContent}`, '_blank');
     // Mark as in-progress or save reply timestamp
-    void adminUpdateTicket(ticket.id, 'in_progress', undefined, true);
+    void adminUpdateTicket(ticket.id, 'in_progress', undefined, true)
+      .then(() => load())
+      .catch((requestError: unknown) => {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'The ticket was opened, but its reply status could not be saved.',
+        );
+      });
   };
 
   const generate = async (event: React.FormEvent) => {

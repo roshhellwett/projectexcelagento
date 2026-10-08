@@ -235,8 +235,21 @@ export async function submitSupportTicket(ticket: {
     if (!rpcErr && rpcData && typeof rpcData === 'object' && 'id' in rpcData) {
       return { id: String((rpcData as { id: string }).id) };
     }
-  } catch {
-    // proceed to fallback
+    if (
+      rpcErr &&
+      !/PGRST202|42883|function .*does not exist|could not find the function/i.test(rpcErr.message)
+    ) {
+      throw new Error(rpcErr.message || 'Failed to submit support ticket. Please try again.');
+    }
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !/PGRST202|42883|function .*does not exist|could not find the function/i.test(error.message)
+    ) {
+      throw error;
+    }
+    // Fall through only when the RPC is not deployed yet. A transient or validation error must not
+    // be retried through a second write, which could create duplicate tickets after a lost response.
   }
 
   // 2. Fallback to direct table insertion
@@ -279,7 +292,9 @@ export async function adminUpdateTicket(
     ticketId,
     status,
     adminNotes,
-    replied: replied ? 'true' : 'false',
+    // The current transactional function calls this flag `markReplied`. Keep the payload name in
+    // sync with the database contract so resolving a ticket actually records the reply timestamp.
+    markReplied: replied ? 'true' : 'false',
   });
 }
 

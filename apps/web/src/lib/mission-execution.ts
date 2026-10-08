@@ -20,7 +20,7 @@ export async function executeMissionMutation(
   if (options.signal?.aborted) throw aborted();
   if (typeof Worker === 'undefined') {
     // Tests and browsers without Worker use the identical engine contract, never a fake result.
-    return stageMissionMutation(request, options.onProgress);
+    return stageMissionMutation(request, options.onProgress, options.signal);
   }
   const worker = new Worker(new URL('../workers/mission-worker.ts', import.meta.url), {
     type: 'module',

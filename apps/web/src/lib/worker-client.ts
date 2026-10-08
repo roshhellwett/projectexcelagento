@@ -21,6 +21,18 @@ let workerInstance: Worker | null = null;
 let workerSupported: boolean | null = null;
 const pendingRequests = new Map<string, PendingRequest>();
 
+function disposeWorker(error?: WorkerRequestError): void {
+  const worker = workerInstance;
+  workerInstance = null;
+  worker?.terminate();
+  if (!error) return;
+  for (const request of pendingRequests.values()) {
+    clearTimeout(request.timer);
+    request.reject(error);
+  }
+  pendingRequests.clear();
+}
+
 function isWorkerSupported(): boolean {
   if (workerSupported !== null) return workerSupported;
   try {
@@ -61,12 +73,7 @@ function getWorker(): Worker | null {
     workerInstance.onerror = (e) => {
       // In case of fatal worker script error, reject all pending requests
       const err = new WorkerRequestError(e.message || 'Worker thread crashed', 'crash');
-      for (const req of pendingRequests.values()) {
-        clearTimeout(req.timer);
-        req.reject(err);
-      }
-      pendingRequests.clear();
-      workerInstance = null;
+      disposeWorker(err);
     };
 
     return workerInstance;
@@ -87,9 +94,14 @@ function postToWorker<T>(type: string, payload?: unknown, timeoutMs = 60000): Pr
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRequests.delete(id);
-      reject(
-        new WorkerRequestError(`Worker request ${type} timed out after ${timeoutMs}ms`, 'timeout'),
+      const error = new WorkerRequestError(
+        `Worker request ${type} timed out after ${timeoutMs}ms`,
+        'timeout',
       );
+      // A timed-out worker may still be parsing or serializing a large workbook. Terminate it so a
+      // failed request cannot continue consuming CPU in the background or race a later retry.
+      disposeWorker(error);
+      reject(error);
     }, timeoutMs);
 
     pendingRequests.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
