@@ -51,6 +51,8 @@ describe('coerceTypedValue', () => {
     expect(coerceTypedValue('ORD-1001')).toEqual({ value: 'ORD-1001' });
     expect(coerceTypedValue('1-2')).toEqual({ value: '1-2' });
     expect(coerceTypedValue('1,234')).toEqual({ value: '1,234' });
+    expect(coerceTypedValue('00123')).toEqual({ value: '00123' });
+    expect(coerceTypedValue('+00123')).toEqual({ value: '+00123' });
     expect(coerceTypedValue('2026-03-01')).toEqual({ value: '2026-03-01' });
   });
 
@@ -68,6 +70,14 @@ describe('coerceTypedValue', () => {
 describe('formula movement', () => {
   it('translates relative references while preserving absolute references', () => {
     expect(translateFormula('=A1+$B$2+C$3+$D4', 2, 1)).toBe('=B3+$B$2+D$3+$D6');
+  });
+
+  it('translates lowercase references typed by a user', () => {
+    expect(translateFormula('=sum(a1:b2)', 1, 1)).toBe('=sum(B2:C3)');
+  });
+
+  it('does not translate A1-like text inside sheet names', () => {
+    expect(translateFormula("='Q1 Sales'!A1+Sheet1!A1", 1, 1)).toBe("='Q1 Sales'!B2+Sheet1!B2");
   });
 
   it('fills formulas as formulas instead of pasted text', () => {

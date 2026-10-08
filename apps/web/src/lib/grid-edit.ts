@@ -104,9 +104,10 @@ export function coerceTypedValue(raw: string): { value?: CellValue; formula?: st
   if (raw.startsWith('=')) return { formula: raw };
 
   const trimmed = raw.trim();
-  if (NUMERIC_TEXT.test(trimmed)) {
+  if (NUMERIC_TEXT.test(trimmed) && !/^[-+]?0\d/.test(trimmed)) {
     const numeric = Number(trimmed);
-    if (Number.isFinite(numeric)) return { value: numeric };
+    if (Number.isFinite(numeric) && (!Number.isInteger(numeric) || Number.isSafeInteger(numeric)))
+      return { value: numeric };
   }
   if (trimmed.toUpperCase() === 'TRUE') return { value: true };
   if (trimmed.toUpperCase() === 'FALSE') return { value: false };
@@ -118,22 +119,30 @@ export function coerceTypedValue(raw: string): { value?: CellValue; formula?: st
  * Absolute row/column markers remain fixed. This deliberately leaves quoted string literals alone.
  */
 export function translateFormula(formula: string, rowDelta: number, colDelta: number): string {
-  const reference = /([$]?)([A-Z]{1,3})([$]?)(\d+)/g;
-  const parts = formula.split('"');
-  return parts
-    .map((part, index) => {
-      if (index % 2 === 1) return part;
-      return part.replace(reference, (_match, absoluteColumn, column, absoluteRow, row) => {
-        const columnIndex = columnToIndex(column);
-        const nextColumn =
-          absoluteColumn || columnIndex === undefined
-            ? column
-            : indexToColumn(Math.max(0, columnIndex + colDelta));
-        const nextRow = absoluteRow ? row : String(Math.max(1, Number(row) + rowDelta));
-        return `${absoluteColumn ? '$' : ''}${nextColumn}${absoluteRow ? '$' : ''}${nextRow}`;
-      });
-    })
-    .join('"');
+  // Consume literals, quoted sheet names, and structured-reference brackets before looking for
+  // A1 references. Identifier boundaries also protect named ranges and functions such as LOG10.
+  const reference =
+    /("(?:[^"]|"")*"|'(?:[^']|'')*'|\[[^\]]*\])|(?<![A-Za-z0-9_.])(\$?)([A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_.])/g;
+  return formula.replace(
+    reference,
+    (match, protectedText, absoluteColumn, column, absoluteRow, row, offset) => {
+      if (protectedText || /^\s*[!(]/.test(formula.slice(offset + match.length))) return match;
+      const columnIndex = columnToIndex(column);
+      const rowNumber = Number(row);
+      if (columnIndex === undefined || columnIndex > MAX_COLUMN_INDEX || rowNumber > MAX_ROW_NUMBER)
+        return match;
+      const nextColumn = columnIndex + (absoluteColumn ? 0 : colDelta);
+      const nextRow = rowNumber + (absoluteRow ? 0 : rowDelta);
+      if (
+        nextColumn < 0 ||
+        nextColumn > MAX_COLUMN_INDEX ||
+        nextRow < 1 ||
+        nextRow > MAX_ROW_NUMBER
+      )
+        return '#REF!';
+      return `${absoluteColumn}${indexToColumn(nextColumn)}${absoluteRow}${nextRow}`;
+    },
+  );
 }
 
 /**
@@ -219,6 +228,7 @@ export function editsForClipboardBlock(
  */
 function isBlankCell(cell: Cell | undefined): boolean {
   if (!cell) return true;
+  if (cell.formula !== undefined) return false;
   return cell.value === null || cell.value === undefined || cell.value === '';
 }
 
@@ -281,17 +291,16 @@ export function fillEditsFor(sheet: Sheet, source: CellRect, target: CellRect): 
       if (single) {
         const step = stepsByRow ? row - source.startRow : colIdx - source.startColIdx;
         write = seed
-          ? seriesValueFor(seed, step, stepsByRow ? step : 0, stepsByRow ? 0 : step)
+          ? seriesValueFor(seed, step, row - source.startRow, colIdx - source.startColIdx)
           : { value: null };
       } else {
-        const sourceCell =
-          sheet.rows[source.startRow - 1 + ((row - target.startRow) % sourceHeight)]?.[
-            source.startColIdx + ((colIdx - target.startColIdx) % sourceWidth)
-          ];
-        // A formula is copied as text: rewriting its references per cell is guesswork, and a
-        // repeated formula that still points at the source row is at least visible and correctable.
-        const sourceRow = source.startRow + ((row - target.startRow) % sourceHeight);
-        const sourceCol = source.startColIdx + ((colIdx - target.startColIdx) % sourceWidth);
+        const sourceRow =
+          source.startRow +
+          ((((row - source.startRow) % sourceHeight) + sourceHeight) % sourceHeight);
+        const sourceCol =
+          source.startColIdx +
+          ((((colIdx - source.startColIdx) % sourceWidth) + sourceWidth) % sourceWidth);
+        const sourceCell = sheet.rows[sourceRow - 1]?.[sourceCol];
         write = sourceCell
           ? sourceCell.formula !== undefined
             ? { formula: translateFormula(sourceCell.formula, row - sourceRow, colIdx - sourceCol) }

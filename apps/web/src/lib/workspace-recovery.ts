@@ -1,4 +1,5 @@
 import type { DateSystem, Workbook } from '@excel-agent/engine';
+import { MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, MAX_IMPORTED_CELLS } from './workbook-io.js';
 
 /** Only the document is checkpointed: no keys, conversations, selections or undo history. */
 export interface WorkspaceCheckpoint {
@@ -24,6 +25,8 @@ export type CheckpointStatus =
 const DATABASE = 'excelagento-workspace';
 const STORE = 'checkpoints';
 const KEY = 'latest';
+const MAX_CHECKPOINT_CELLS = MAX_IMPORTED_CELLS;
+const MAX_FORMULA_LENGTH = 8_192;
 
 function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
   const checkpoint = value as Partial<WorkspaceCheckpoint> | null;
@@ -36,6 +39,7 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
     typeof checkpoint.hasUserUploadedFile !== 'boolean' ||
     typeof checkpoint.savedAt !== 'number' ||
     !Number.isFinite(checkpoint.savedAt) ||
+    checkpoint.savedAt < 0 ||
     !checkpoint.workbook ||
     !Array.isArray(checkpoint.workbook.sheets) ||
     checkpoint.workbook.sheets.length === 0
@@ -44,14 +48,35 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
       'The local checkpoint could not be read. Export your current workbook or clear the stored checkpoint.',
     );
   }
+  if (
+    checkpoint.workbook.dateSystem !== undefined &&
+    checkpoint.workbook.dateSystem !== checkpoint.dateSystem
+  ) {
+    throw new Error('The local checkpoint contains an invalid date system.');
+  }
+  let cellCount = 0;
+  const sheetNames = new Set<string>();
   for (const sheet of checkpoint.workbook.sheets) {
-    if (!sheet || typeof sheet.name !== 'string' || !Array.isArray(sheet.rows)) {
+    if (
+      !sheet ||
+      typeof sheet.name !== 'string' ||
+      !sheet.name.trim() ||
+      sheetNames.has(sheet.name.toLowerCase()) ||
+      !Array.isArray(sheet.rows) ||
+      sheet.rows.length > MAX_EXCEL_ROWS
+    ) {
       throw new Error('The local checkpoint contains an invalid worksheet.');
     }
+    sheetNames.add(sheet.name.toLowerCase());
     for (const row of sheet.rows) {
+      cellCount += Array.isArray(row) ? row.length : 0;
+      if (cellCount > MAX_CHECKPOINT_CELLS) {
+        throw new Error('The local checkpoint exceeds the workbook cell safety limit.');
+      }
       if (
         !Array.isArray(row) ||
-        row.some((cell) => {
+        row.length > MAX_EXCEL_COLUMNS ||
+        Array.from(row).some((cell) => {
           if (
             !cell ||
             !['blank', 'string', 'number', 'boolean', 'date', 'formula'].includes(cell.type)
@@ -72,7 +97,9 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
             | undefined;
           const validStyle =
             style === undefined ||
-            (typeof style === 'object' &&
+            (style !== null &&
+              typeof style === 'object' &&
+              !Array.isArray(style) &&
               (style.bold === undefined || typeof style.bold === 'boolean') &&
               (style.italic === undefined || typeof style.italic === 'boolean') &&
               (style.underline === undefined || typeof style.underline === 'boolean') &&
@@ -83,8 +110,19 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
               (style.verticalAlignment === undefined ||
                 ['top', 'middle', 'bottom'].includes(String(style.verticalAlignment))) &&
               (style.wrapText === undefined || typeof style.wrapText === 'boolean'));
+          const formula = (cell as { formula?: unknown }).formula;
+          const numberFormat = (cell as { numberFormat?: unknown }).numberFormat;
+          const validFormula =
+            cell.type === 'formula'
+              ? typeof formula === 'string' && formula.length <= MAX_FORMULA_LENGTH
+              : formula === undefined;
+          const validNumberFormat =
+            numberFormat === undefined ||
+            (typeof numberFormat === 'string' && numberFormat.length <= 255);
           return (
             !validStyle ||
+            !validFormula ||
+            !validNumberFormat ||
             !(
               value === null ||
               typeof value === 'string' ||
@@ -98,7 +136,10 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
         throw new Error('The local checkpoint contains invalid cells.');
     }
   }
-  return checkpoint as WorkspaceCheckpoint;
+  return {
+    ...(checkpoint as WorkspaceCheckpoint),
+    workbook: { ...checkpoint.workbook, dateSystem: checkpoint.dateSystem },
+  };
 }
 
 /**
@@ -152,6 +193,7 @@ export function createIndexedDBRecoveryStore(
           }
           settled = true;
           clearTimeout(timer);
+          request.result.onversionchange = () => request.result.close();
           resolve(request.result);
         };
       } catch (error) {
@@ -198,10 +240,12 @@ export function createIndexedDBRecoveryStore(
         const value = await transact('readonly', 'load');
         return value === undefined ? null : validateCheckpoint(value);
       }),
-    save: (checkpoint) =>
-      ordered(async () => {
-        await transact('readwrite', 'save', checkpoint);
-      }),
+    save: async (checkpoint) => {
+      const snapshot = structuredClone(validateCheckpoint(checkpoint));
+      await ordered(async () => {
+        await transact('readwrite', 'save', snapshot);
+      });
+    },
     clear: () =>
       ordered(async () => {
         await transact('readwrite', 'clear');

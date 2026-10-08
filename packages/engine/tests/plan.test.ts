@@ -4,6 +4,7 @@ import {
   applyOperationPlan,
   createCell,
   HistoryStack,
+  MAX_OPERATION_PLAN_STEPS,
   type Workbook,
 } from '../src/index.js';
 
@@ -74,5 +75,17 @@ describe('atomic operation plans', () => {
     ]);
     expect(result.ok).toBe(true);
     expect(result.workbook.sheets[1]?.rows[1]?.[0]?.value).toBe('Ada');
+  });
+
+  it('rejects an oversized plan before simulating any operation', () => {
+    const before = workbook();
+    const result = applyOperationPlan(
+      before,
+      Array.from({ length: MAX_OPERATION_PLAN_STEPS + 1 }, () => trim),
+      { confirmed: true },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.messages[0]).toContain('no more than');
+    expect(before).toEqual(workbook());
   });
 });

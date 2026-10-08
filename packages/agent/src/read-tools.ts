@@ -16,6 +16,32 @@ function sheetMaxCols(rows: Cell[][]): number {
   return rows.reduce((max, r) => Math.max(max, r.length), 0);
 }
 
+function safeInteger(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.floor(value) : fallback;
+}
+
+function safeLimit(value: number, fallback: number, maximum: number): number {
+  return Math.min(maximum, Math.max(0, safeInteger(value, fallback)));
+}
+
+const MAX_READ_COLUMNS = 100;
+
+/** Keep duplicate or special header names from overwriting cells in a tool result. */
+function recordHeaders(headerRow: Cell[]): string[] {
+  const labels = headerRow.map(
+    (cell, index) => String(cell?.value ?? '').trim() || indexToColumn(index),
+  );
+  const counts = new Map<string, number>();
+  for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+  const used = new Set<string>();
+  return labels.map((label, index) => {
+    let key = counts.get(label) === 1 ? label : `${label} (${indexToColumn(index)})`;
+    while (used.has(key)) key = `${key} (${indexToColumn(index)})`;
+    used.add(key);
+    return key;
+  });
+}
+
 export interface WorkbookOverviewResult {
   sheets: {
     name: string;
@@ -156,17 +182,49 @@ export function readCellRange(
   const sheet = resolveSheet(workbook, sheetName);
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
 
-  const startColIdx = columnToIndex(startColumn) ?? 0;
+  const startColIdx = columnToIndex(startColumn);
+  if (startColIdx === undefined) {
+    return { error: `Invalid start column reference: "${startColumn}".` };
+  }
+  const requestedEndColIdx = endColumn === undefined ? undefined : columnToIndex(endColumn);
+  if (endColumn !== undefined && requestedEndColIdx === undefined) {
+    return { error: `Invalid end column reference: "${endColumn}".` };
+  }
+  if (requestedEndColIdx !== undefined && requestedEndColIdx < startColIdx) {
+    return { error: 'The end column must not come before the start column.' };
+  }
   const maxCol = sheetMaxCols(sheet.rows);
-  const endColIdx = endColumn
-    ? (columnToIndex(endColumn) ?? maxCol - 1)
-    : Math.min(startColIdx + 50, maxCol - 1);
+  if (maxCol === 0) {
+    const safeStartRow = Math.min(
+      Math.max(1, safeInteger(startRow, 1)),
+      Math.max(1, sheet.rows.length),
+    );
+    return {
+      sheet: sheet.name,
+      startRow: safeStartRow,
+      endRow: safeStartRow,
+      startColumn: 'A',
+      endColumn: 'A',
+      rows: [],
+    };
+  }
+  if (startColIdx >= maxCol) {
+    return { error: `Column "${startColumn}" not found in sheet "${sheet.name}".` };
+  }
+  const endColIdx = Math.min(
+    requestedEndColIdx ?? startColIdx + 49,
+    startColIdx + MAX_READ_COLUMNS - 1,
+    maxCol - 1,
+  );
 
-  const boundedStartRow = Math.max(1, startRow);
+  const boundedStartRow = Math.min(
+    Math.max(1, safeInteger(startRow, 1)),
+    Math.max(1, sheet.rows.length),
+  );
   const boundedEndRow = Math.min(
-    Math.max(boundedStartRow, endRow),
+    Math.max(boundedStartRow, safeInteger(endRow, boundedStartRow + 49)),
     sheet.rows.length,
-    boundedStartRow + 1000,
+    boundedStartRow + 999,
   );
 
   // Intelligently identify the best header row across the top 10 rows (handles sheets with title rows)
@@ -200,7 +258,7 @@ export function readCellRange(
       const colHeader = headers[c] || colLetter;
       const cell = rowCells[c];
       record[`${colLetter} (${colHeader})`] = cell?.formula
-        ? `=${cell.formula}`
+        ? `=${cell.formula.replace(/^=/, '')}`
         : (cell?.value ?? null);
     }
     rows.push({ rowNumber: r, cells: record });
@@ -227,6 +285,7 @@ export function searchSheet(
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
 
   const needle = query.trim().toLowerCase();
+  const boundedLimit = safeLimit(limit, 100, 500);
   if (!needle) return { sheet: sheet.name, query, matches: [], totalMatches: 0 };
 
   const matches: SearchSheetResult['matches'] = [];
@@ -248,30 +307,33 @@ export function searchSheet(
     }
   }
 
-  const headers = (sheet.rows[headerRowIndex] ?? []).map(
-    (c, i) => String(c?.value ?? '').trim() || indexToColumn(i),
-  );
+  const headers = recordHeaders(sheet.rows[headerRowIndex] ?? []);
   let totalMatches = 0;
+  const read = createWorkbookValueReader(workbook);
 
   for (let r = 0; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r] ?? [];
     for (let c = 0; c < row.length; c += 1) {
       const cell = row[c];
-      if (!cell || cell.value === null || cell.value === undefined) continue;
-      const strVal = String(cell.value).toLowerCase();
+      if (!cell) continue;
+      const value = read(sheet.name, c, r + 1);
+      if (value === null) continue;
+      const strVal = String(value).toLowerCase();
       if (strVal.includes(needle)) {
         totalMatches += 1;
-        if (matches.length < limit) {
+        if (matches.length < boundedLimit) {
           const colLetter = indexToColumn(c);
-          const rowContext: Record<string, unknown> = {};
-          row.forEach((cellItem, idx) => {
-            rowContext[headers[idx] || indexToColumn(idx)] = cellItem?.value ?? null;
-          });
+          const rowContext: Record<string, unknown> = Object.fromEntries(
+            row.map((_cell, idx) => [
+              headers[idx] || indexToColumn(idx),
+              read(sheet.name, idx, r + 1),
+            ]),
+          );
           matches.push({
             cell: `${colLetter}${r + 1}`,
             rowNumber: r + 1,
             columnLetter: colLetter,
-            value: cell.value,
+            value,
             rowContext,
           });
         }
@@ -359,14 +421,31 @@ export function querySheetRecords(
   if (!sheet) return { error: `Sheet "${sheetName ?? ''}" not found.` };
 
   const totalRows = sheet.rows.length;
+  const boundedLimit = safeLimit(limit, 100, 500);
   const headerRow = sheet.rows[0] ?? [];
   const headers = headerRow.map((c, i) => String(c?.value ?? indexToColumn(i)));
+  const sampleHeaders = recordHeaders(headerRow);
+  if (!Array.isArray(conditions) || conditions.length > 50) {
+    return { error: 'Supply an array of at most 50 query conditions.' };
+  }
 
   // Resolve condition column indexes
   const resolvedConditions = [];
   for (const cond of conditions) {
-    if (!cond || (typeof cond.value !== 'string' && typeof cond.value !== 'number')) {
+    if (
+      !cond ||
+      (typeof cond.value !== 'string' && typeof cond.value !== 'number') ||
+      (typeof cond.value === 'number' && !Number.isFinite(cond.value))
+    ) {
       return { error: 'Every condition must supply a string or numeric value.' };
+    }
+    if (
+      (cond.column !== undefined && (typeof cond.column !== 'string' || !cond.column.trim())) ||
+      (cond.header !== undefined && (typeof cond.header !== 'string' || !cond.header.trim())) ||
+      (cond.operator !== undefined &&
+        !['equals', 'contains', 'startsWith', 'endsWith', 'gt', 'lt'].includes(cond.operator))
+    ) {
+      return { error: 'Condition columns, headers, and comparison operators must be valid.' };
     }
     let colIdx = cond.column ? columnToIndex(cond.column) : undefined;
     if (cond.column && (colIdx === undefined || colIdx >= sheetMaxCols(sheet.rows))) {
@@ -401,6 +480,8 @@ export function querySheetRecords(
 
   const matchingRowNumbers: number[] = [];
   const sampleMatchingRows: { rowNumber: number; cells: Record<string, unknown> }[] = [];
+  const read = createWorkbookValueReader(workbook);
+  let totalMatchingRows = 0;
 
   for (let r = 1; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r] ?? [];
@@ -411,16 +492,13 @@ export function querySheetRecords(
       let cellNumVal: number | null = null;
 
       if (cond.colIdx !== undefined && cond.colIdx >= 0) {
-        const cell = row[cond.colIdx];
-        const val = cell?.value;
+        const val = read(sheet.name, cond.colIdx, r + 1);
         cellValStr = val !== null && val !== undefined ? String(val).trim().toLowerCase() : '';
         cellNumVal = toNumericOrNull(val);
       } else {
         // Search across all cells in the row if column not specified
         cellValStr = row
-          .map((c) =>
-            c?.value !== null && c?.value !== undefined ? String(c.value).toLowerCase() : '',
-          )
+          .map((_cell, column) => String(read(sheet.name, column, r + 1) ?? '').toLowerCase())
           .join(' ');
       }
 
@@ -454,12 +532,15 @@ export function querySheetRecords(
     }
 
     if (matchesAll) {
-      matchingRowNumbers.push(r + 1);
-      if (sampleMatchingRows.length < limit) {
-        const cells: Record<string, unknown> = {};
-        row.forEach((c, idx) => {
-          cells[headers[idx] || indexToColumn(idx)] = c?.value ?? null;
-        });
+      totalMatchingRows += 1;
+      if (matchingRowNumbers.length < 100) matchingRowNumbers.push(r + 1);
+      if (sampleMatchingRows.length < boundedLimit) {
+        const cells: Record<string, unknown> = Object.fromEntries(
+          row.map((_cell, idx) => [
+            sampleHeaders[idx] || indexToColumn(idx),
+            read(sheet.name, idx, r + 1),
+          ]),
+        );
         sampleMatchingRows.push({ rowNumber: r + 1, cells });
       }
     }
@@ -474,11 +555,11 @@ export function querySheetRecords(
 
   return {
     sheet: sheet.name,
-    totalMatchingRows: matchingRowNumbers.length,
+    totalMatchingRows,
     totalSheetRows: Math.max(0, totalRows - 1),
-    matchingRowNumbers: matchingRowNumbers.slice(0, 100),
+    matchingRowNumbers,
     sampleMatchingRows,
-    summary: `Found ${matchingRowNumbers.length} matching row(s) out of ${Math.max(0, totalRows - 1)} data rows in ${sheet.name} (${condDesc || 'all criteria'}).`,
+    summary: `Found ${totalMatchingRows} matching row(s) out of ${Math.max(0, totalRows - 1)} data rows in ${sheet.name} (${condDesc || 'all criteria'}).`,
   };
 }
 
@@ -561,6 +642,7 @@ const FORMULA_KNOWLEDGE_BASE: Array<{ keywords: string[]; title: string; snippet
 export async function searchWebKnowledge(query: string, limit = 4): Promise<WebSearchResult> {
   const needle = query.trim().toLowerCase();
   if (!needle) return { query, results: [], summary: 'No search term provided.' };
+  const boundedLimit = safeLimit(limit, 4, 20);
 
   const matchedKnowledge: { title: string; snippet: string }[] = [];
   for (const entry of FORMULA_KNOWLEDGE_BASE) {
@@ -581,7 +663,7 @@ export async function searchWebKnowledge(query: string, limit = 4): Promise<WebS
       const data = (await res.json()) as {
         query?: { search?: Array<{ title?: string; snippet?: string }> };
       };
-      wikiHits = (data.query?.search ?? []).slice(0, limit).map((item) => ({
+      wikiHits = (data.query?.search ?? []).slice(0, boundedLimit).map((item) => ({
         title: item.title ?? '',
         snippet: (item.snippet ?? '')
           .replace(/<[^>]+>/g, '')
@@ -593,7 +675,7 @@ export async function searchWebKnowledge(query: string, limit = 4): Promise<WebS
     // Network timeout or offline - rely on curated knowledge base
   }
 
-  const combined = [...matchedKnowledge, ...wikiHits].slice(0, limit);
+  const combined = [...matchedKnowledge, ...wikiHits].slice(0, boundedLimit);
   return {
     query,
     results: combined,

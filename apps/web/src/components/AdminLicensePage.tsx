@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Clipboard,
   Copy,
@@ -74,6 +74,9 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
   const [count, setCount] = useState('5');
   const [durationDays, setDurationDays] = useState('30');
   const [generatedKeys, setGeneratedKeys] = useState<string[]>([]);
+  const loadSequence = useRef(0);
+  const mounted = useRef(true);
+  const feedbackTimer = useRef<number | null>(null);
 
   // Search & Filters
   const [query, setQuery] = useState('');
@@ -95,23 +98,41 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
   } | null>(null);
 
   const load = async () => {
+    const requestId = ++loadSequence.current;
     setLoading(true);
     setError('');
     try {
       const res = await fetchAdminLicenseData();
-      setData(res);
+      if (mounted.current && requestId === loadSequence.current) setData(res);
     } catch (requestError) {
-      setError(
-        requestError instanceof Error ? requestError.message : 'The admin console could not load.',
-      );
+      if (mounted.current && requestId === loadSequence.current) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'The admin console could not load.',
+        );
+      }
     } finally {
-      setLoading(false);
+      if (mounted.current && requestId === loadSequence.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (status?.isAdmin) void load();
+    if (status?.isAdmin) {
+      void load();
+    } else {
+      loadSequence.current += 1;
+    }
   }, [status?.isAdmin]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      loadSequence.current += 1;
+      if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    };
+  }, []);
 
   const accountByUser = useMemo(
     () => new Map((data?.accounts ?? []).map((account) => [account.user_id, account])),
@@ -170,7 +191,11 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
 
   const showFeedback = (msg: string) => {
     setFeedback(msg);
-    setTimeout(() => setFeedback(''), 5000);
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = window.setTimeout(() => {
+      feedbackTimer.current = null;
+      if (mounted.current) setFeedback('');
+    }, 5000);
   };
 
   const run = async (

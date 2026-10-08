@@ -90,8 +90,13 @@ export function loadSettings(): AgentSettings {
         return {
           provider: 'openrouter',
           apiKey: parsed.apiKey,
-          model: parsed.model?.trim() || DEFAULT_OPENROUTER_MODEL,
-          ...(parsed.baseUrl ? { baseUrl: parsed.baseUrl } : {}),
+          model:
+            typeof parsed.model === 'string' && parsed.model.trim()
+              ? parsed.model.trim()
+              : DEFAULT_OPENROUTER_MODEL,
+          ...(typeof parsed.baseUrl === 'string' && parsed.baseUrl.trim()
+            ? { baseUrl: parsed.baseUrl.trim() }
+            : {}),
         };
       }
     }
@@ -130,7 +135,11 @@ export function saveSettings(settings: AgentSettings): void {
 export function clearSettings(): void {
   const store = storage();
   if (!store) return;
-  store.removeItem(SETTINGS_KEY);
-  store.removeItem(LEGACY_KEY);
-  store.removeItem(LEGACY_PROVIDER);
+  try {
+    store.removeItem(SETTINGS_KEY);
+    store.removeItem(LEGACY_KEY);
+    store.removeItem(LEGACY_PROVIDER);
+  } catch {
+    // Restricted storage is optional; clearing in-memory React state remains sufficient.
+  }
 }

@@ -1,6 +1,7 @@
 import { FORMULA_FUNCTIONS, getFormulaDateSystem, setFormulaDateSystem } from './functions.js';
-import { isFormulaError, type FormulaErrorCode } from './errors.js';
+import { FORMULA_ERROR_CODES, isFormulaError, type FormulaErrorCode } from './errors.js';
 import { daysBetween } from './excel-date.js';
+import { columnToIndex } from '../workbook.js';
 import type { FormulaContext, FormulaValue } from './types.js';
 
 type ParsedValue = FormulaValue | FormulaValue[][];
@@ -23,17 +24,34 @@ interface Token {
     | 'OP'
     | 'LPAREN'
     | 'RPAREN'
-    | 'COMMA';
+    | 'COMMA'
+    | 'ERROR'
+    | 'INVALID';
   value: string;
   sheet?: string;
 }
 
 const CELL_REGEX = /^(?:([A-Za-z0-9_]+)!)?\$?([A-Za-z]+)\$?(\d+)$/;
 const RANGE_REGEX = /^(?:([A-Za-z0-9_]+)!)?\$?([A-Za-z]+)\$?(\d+):\$?([A-Za-z]+)\$?(\d+)$/;
+const MAX_FORMULA_LENGTH = 8_192;
+
+function validReference(column: string, row: number): boolean {
+  const index = columnToIndex(column);
+  return (
+    index !== undefined &&
+    index <= 16_383 &&
+    Number.isSafeInteger(row) &&
+    row >= 1 &&
+    row <= 1_048_576
+  );
+}
 
 export function tokenize(formulaStr: string): Token[] {
   let str = formulaStr.trim();
   if (str.startsWith('=')) str = str.slice(1).trim();
+  if (str.length > MAX_FORMULA_LENGTH) {
+    return [{ type: 'INVALID', value: 'formula exceeds Excel length limit' }];
+  }
 
   const tokens: Token[] = [];
   let i = 0;
@@ -52,14 +70,21 @@ export function tokenize(formulaStr: string): Token[] {
       const quote = ch;
       let text = '';
       let j = i + 1;
-      while (j < str.length && str[j] !== quote) {
-        if (str[j] === '\\' && j + 1 < str.length) {
-          text += str[j + 1];
-          j += 2;
-        } else {
-          text += str[j];
-          j++;
+      while (j < str.length) {
+        if (str[j] === quote) {
+          if (str[j + 1] === quote) {
+            text += quote;
+            j += 2;
+            continue;
+          }
+          break;
         }
+        text += str[j];
+        j++;
+      }
+      if (j >= str.length) {
+        tokens.push({ type: 'INVALID', value: 'unterminated string' });
+        break;
       }
       if (quote === "'" && str[j + 1] === '!') {
         // Quoted sheet reference, e.g. 'My Sheet'!A1:B2
@@ -73,6 +98,8 @@ export function tokenize(formulaStr: string): Token[] {
           tokens.push({ type: 'RANGE', value: `${sheet}!${ref}`, sheet });
         } else if (cellMatch) {
           tokens.push({ type: 'CELL', value: `${sheet}!${ref}`, sheet });
+        } else {
+          tokens.push({ type: 'INVALID', value: ref });
         }
         i = k;
         continue;
@@ -80,6 +107,17 @@ export function tokenize(formulaStr: string): Token[] {
       i = j + 1; // closing quote
       tokens.push({ type: 'STRING', value: text });
       continue;
+    }
+
+    if (ch === '#') {
+      const error = FORMULA_ERROR_CODES.find(
+        (code) => str.slice(i, i + code.length).toUpperCase() === code,
+      );
+      if (error) {
+        tokens.push({ type: 'ERROR', value: error });
+        i += error.length;
+        continue;
+      }
     }
 
     // Numbers (incl. scientific notation 1E5, 1.5e-3)
@@ -137,7 +175,8 @@ export function tokenize(formulaStr: string): Token[] {
     }
 
     if (word === '') {
-      // Unrecognized single character - skip and advance cursor to prevent infinite loop
+      // Unsupported syntax must not disappear into a plausible partial result.
+      tokens.push({ type: 'INVALID', value: ch });
       i++;
       continue;
     }
@@ -177,6 +216,7 @@ function firstError(...values: ParsedValue[]): FormulaErrorCode | null {
 
 /** Excel's numeric coercion: booleans are 1/0, numeric text is parsed, anything else is `#VALUE!`. */
 function toNumeric(value: ParsedValue): number | FormulaErrorCode {
+  if (value === null) return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : '#NUM!';
   if (typeof value === 'boolean') return value ? 1 : 0;
   if (typeof value === 'string') {
@@ -230,7 +270,8 @@ function arithmetic(left: ParsedValue, right: ParsedValue, op: '*' | '/' | '^'):
 
   if (op === '/') {
     if (b === 0) return '#DIV/0!';
-    return a / b;
+    const result = a / b;
+    return Number.isFinite(result) ? result : '#NUM!';
   }
   const result = op === '*' ? a * b : Math.pow(a, b);
   return Number.isFinite(result) ? result : '#NUM!';
@@ -301,6 +342,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
 
     let cursor = 0;
     let depth = 0;
+    let malformed = tokens.some((token) => token.type === 'INVALID');
 
     /** Reports whether a sheet named in a reference actually exists, so typos become `#REF!`. */
     function sheetExists(sheet: string): boolean {
@@ -329,8 +371,10 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         cursor++;
         const right = parseAdditive();
         if (op === '=') left = formulaEquals(left, right);
-        else if (op === '<>') left = formulaEquals(left, right) === false;
-        else if (op === '<') left = orderedComparison(left, right, (n) => n < 0);
+        else if (op === '<>') {
+          const equality = formulaEquals(left, right);
+          left = isFormulaError(equality) ? equality : equality === false;
+        } else if (op === '<') left = orderedComparison(left, right, (n) => n < 0);
         else if (op === '>') left = orderedComparison(left, right, (n) => n > 0);
         else if (op === '<=') left = orderedComparison(left, right, (n) => n <= 0);
         else if (op === '>=') left = orderedComparison(left, right, (n) => n >= 0);
@@ -348,7 +392,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         const op = tokens[cursor]!.value;
         cursor++;
         const right = parseMultiplicative();
-        if (op === '&') left = String(left ?? '') + String(right ?? '');
+        if (op === '&') left = firstError(left, right) ?? String(left ?? '') + String(right ?? '');
         else left = addOrSubtract(left, right, op === '-');
       }
       return left;
@@ -416,13 +460,21 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
     }
 
     function parsePrimary(): ParsedValue {
-      if (cursor >= tokens.length) return null;
+      if (cursor >= tokens.length) {
+        malformed = true;
+        return '#ERROR!';
+      }
       const t = tokens[cursor]!;
 
       // Number literal
       if (t.type === 'NUMBER') {
         cursor++;
-        return parseFloat(t.value);
+        if (!/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(t.value)) {
+          malformed = true;
+          return '#ERROR!';
+        }
+        const numeric = Number(t.value);
+        return Number.isFinite(numeric) ? numeric : '#NUM!';
       }
 
       // String literal
@@ -437,17 +489,26 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         return t.value === 'TRUE';
       }
 
+      if (t.type === 'ERROR') {
+        cursor++;
+        return t.value as FormulaErrorCode;
+      }
+
       // Parentheses (expr)
       if (t.type === 'LPAREN') {
         depth += 1;
-        if (depth > MAX_EVALUATION_DEPTH) return '#ERROR!';
+        if (depth > MAX_EVALUATION_DEPTH) {
+          malformed = true;
+          depth -= 1;
+          return '#ERROR!';
+        }
         cursor++;
         const val = parseExpression();
+        const closed = cursor < tokens.length && tokens[cursor]?.type === 'RPAREN';
+        if (closed) cursor++;
+        else malformed = true;
         depth -= 1;
-        if (cursor < tokens.length && tokens[cursor]?.type === 'RPAREN') {
-          cursor++;
-        }
-        return val;
+        return closed ? val : '#ERROR!';
       }
 
       // Cell reference (A1, Sheet1!B2, 'My Sheet'!C3)
@@ -458,7 +519,7 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
           const sheet = t.sheet ?? match[1] ?? context.activeSheet;
           const col = match[2]!.toUpperCase();
           const row = parseInt(match[3]!, 10);
-          if (!sheetExists(sheet)) return '#REF!';
+          if (!sheetExists(sheet) || !validReference(col, row)) return '#REF!';
           return context.getCellValue(sheet, col, row);
         }
         return '#REF!';
@@ -474,9 +535,15 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
           const startRow = parseInt(match[3]!, 10);
           const endCol = match[4]!.toUpperCase();
           const endRow = parseInt(match[5]!, 10);
-          if (!sheetExists(sheet)) return '#REF!';
+          if (
+            !sheetExists(sheet) ||
+            !validReference(startCol, startRow) ||
+            !validReference(endCol, endRow)
+          )
+            return '#REF!';
           // A reversed range such as A5:A1 is a malformed reference, not an empty one.
-          if (endRow < startRow) return '#REF!';
+          if (endRow < startRow || columnToIndex(endCol)! < columnToIndex(startCol)!)
+            return '#REF!';
           return context.getRangeValues(sheet, startCol, startRow, endCol, endRow);
         }
         return '#REF!';
@@ -488,6 +555,12 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         cursor++;
 
         if (cursor < tokens.length && tokens[cursor]?.type === 'LPAREN') {
+          depth += 1;
+          if (depth > MAX_EVALUATION_DEPTH) {
+            malformed = true;
+            depth -= 1;
+            return '#ERROR!';
+          }
           cursor++; // consume '('
           const args: ParsedValue[] = [];
 
@@ -502,13 +575,18 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
             }
           }
 
-          if (cursor < tokens.length && tokens[cursor]?.type === 'RPAREN') {
-            cursor++; // consume ')'
+          const closed = cursor < tokens.length && tokens[cursor]?.type === 'RPAREN';
+          if (closed) cursor++; // consume ')'
+          depth -= 1;
+          if (!closed) {
+            malformed = true;
+            return '#ERROR!';
           }
 
           const fn = FORMULA_FUNCTIONS[fnName];
           if (fn) {
-            return fn(...args);
+            const value = fn(...args);
+            return typeof value === 'number' && !Number.isFinite(value) ? '#NUM!' : value;
           }
           // The canonical Excel code, so IFERROR/IFNA can actually catch an unknown name.
           return '#NAME?';
@@ -517,15 +595,21 @@ export function evaluateFormula(formula: string, context: FormulaContext): Formu
         return '#NAME?';
       }
 
+      if (t.type === 'INVALID') {
+        cursor++;
+        return '#ERROR!';
+      }
+
+      malformed = true;
       cursor++;
-      return null;
+      return '#ERROR!';
     }
 
     const result = parseExpression();
 
     // Trailing tokens mean the formula was malformed. Silently returning the prefix would
     // turn `=1+1)+DROP(A1)` into `2`, which is worse than reporting the problem.
-    if (cursor < tokens.length) return '#ERROR!';
+    if (malformed || cursor < tokens.length) return '#ERROR!';
 
     return result as FormulaValue;
   } catch {

@@ -29,13 +29,31 @@ export class ProviderError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_RETRIES = 2;
+const MAX_RETRIES = 5;
+const MAX_TIMEOUT_MS = 600_000;
+const MAX_STANDARD_TOKENS = 131_072;
 export const DEFAULT_MAX_TOKENS = 8192;
 
 export function resolveMaxTokens(provider: ProviderName, requested?: number): number {
-  if (provider === 'groq') {
-    return Math.min(requested ?? 8192, 8192);
-  }
-  return requested ?? DEFAULT_MAX_TOKENS;
+  const candidate = requested === undefined ? DEFAULT_MAX_TOKENS : requested;
+  const normalized = Number.isFinite(candidate) ? Math.floor(candidate) : DEFAULT_MAX_TOKENS;
+  const maximum = provider === 'groq' ? 8192 : MAX_STANDARD_TOKENS;
+  return Math.min(maximum, Math.max(1, normalized));
+}
+
+function resolveRetries(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_RETRIES;
+  return Math.min(MAX_RETRIES, Math.max(0, Math.floor(requested)));
+}
+
+function resolveTimeout(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_TIMEOUT_MS;
+  return Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.floor(requested)));
+}
+
+function resolveTemperature(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) return 0.2;
+  return Math.min(2, Math.max(0, requested));
 }
 
 export const FALLBACK_MODELS: Record<ProviderName, string[]> = {
@@ -85,8 +103,8 @@ async function requestWithRetry(
   init: RequestInit,
   config: ProviderConfig,
 ): Promise<Response> {
-  const retries = Math.max(0, config.retries ?? DEFAULT_RETRIES);
-  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const retries = resolveRetries(config.retries);
+  const timeoutMs = resolveTimeout(config.timeoutMs);
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -140,7 +158,7 @@ async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   config: ProviderConfig,
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
-  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = resolveTimeout(config.timeoutMs);
   throwIfCancelled(config.provider, config.signal);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -303,7 +321,7 @@ function openAiCompatibleAdapter(
       const requestBody: Record<string, unknown> = {
         model,
         messages: formatMessagesForOpenAI(messages),
-        temperature: config.temperature ?? 0.2,
+        temperature: resolveTemperature(config.temperature),
         max_tokens: resolveMaxTokens(name, config.maxTokens),
       };
       if (tools && tools.length > 0) {
@@ -381,7 +399,7 @@ function openAiCompatibleAdapter(
       const requestBody: Record<string, unknown> = {
         model,
         messages: formatMessagesForOpenAI(messages),
-        temperature: config.temperature ?? 0.2,
+        temperature: resolveTemperature(config.temperature),
         max_tokens: resolveMaxTokens(name, config.maxTokens),
         stream: true,
         stream_options: { include_usage: true },
@@ -764,7 +782,7 @@ export const geminiAdapter: ProviderAdapter = {
           contents: contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: '' }] }],
           tools: geminiTools,
           generationConfig: {
-            temperature: config.temperature ?? 0.2,
+            temperature: resolveTemperature(config.temperature),
             maxOutputTokens: resolveMaxTokens('gemini', config.maxTokens),
           },
         }),

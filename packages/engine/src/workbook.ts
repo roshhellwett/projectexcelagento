@@ -74,6 +74,7 @@ export function columnToIndex(column: string): number | undefined {
   let index = 0;
   for (const character of normalized) {
     index = index * 26 + character.charCodeAt(0) - 64;
+    if (!Number.isSafeInteger(index)) return undefined;
   }
   return index - 1;
 }

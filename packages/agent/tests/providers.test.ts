@@ -8,6 +8,7 @@ import {
   groqAdapter,
   listProviders,
   openRouterAdapter,
+  resolveMaxTokens,
   sleep,
   type ChatMessage,
   type ProviderConfig,
@@ -220,6 +221,22 @@ describe('gemini adapter', () => {
 });
 
 describe('failure handling and retries', () => {
+  it('bounds malformed generation, retry, timeout, and temperature settings', async () => {
+    expect(resolveMaxTokens('groq', -10)).toBe(1);
+    expect(resolveMaxTokens('openai', Number.POSITIVE_INFINITY)).toBe(8192);
+    const fetchMock = stubFetch(async () => jsonResponse(GROQ_FIXTURE));
+    await groqAdapter.complete(MESSAGES, {
+      ...BASE_CONFIG,
+      maxTokens: Number.NaN,
+      retries: Number.POSITIVE_INFINITY,
+      timeoutMs: Number.POSITIVE_INFINITY,
+      temperature: Number.NaN,
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as Record<string, unknown>;
+    expect(body.max_tokens).toBe(8192);
+    expect(body.temperature).toBe(0.2);
+  });
+
   it('does not retry a 401 and surfaces the provider message', async () => {
     const fetchMock = stubFetch(
       async () => new Response('{"error":{"message":"Invalid API Key"}}', { status: 401 }),

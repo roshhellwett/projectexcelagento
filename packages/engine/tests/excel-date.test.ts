@@ -209,6 +209,8 @@ describe('Error values', () => {
     expect(evaluateFormula('=1/0+1', context)).toBe('#DIV/0!');
     expect(evaluateFormula('=1/0*5', context)).toBe('#DIV/0!');
     expect(evaluateFormula('=5-(1/0)', context)).toBe('#DIV/0!');
+    expect(evaluateFormula('=ABS(1/0)', context)).toBe('#DIV/0!');
+    expect(evaluateFormula('=MOD(1/0, 2)', context)).toBe('#DIV/0!');
   });
 
   it('propagates an error operand through comparisons', () => {

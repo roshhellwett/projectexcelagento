@@ -71,6 +71,56 @@ describe('read tools for workbook inspection', () => {
     }
   });
 
+  it('evaluates formulas for search and keeps duplicate headers addressable', () => {
+    const wb: Workbook = {
+      sheets: [
+        {
+          name: 'FormulaData',
+          rows: [
+            [createCell('Value'), createCell('Value')],
+            [createCell(2), createCell(3, { formula: '=A2+1' })],
+          ],
+        },
+      ],
+    };
+    const range = readCellRange(wb, 'FormulaData', 2, 2, 'A', 'B');
+    expect('error' in range ? range : range.rows[0]?.cells).toEqual({
+      'A (Value)': 2,
+      'B (Value)': '=A2+1',
+    });
+    const search = searchSheet(wb, 'FormulaData', '3');
+    expect('error' in search ? search : search.matches[0]?.value).toBe(3);
+  });
+
+  it('rejects malformed or reversed range columns', () => {
+    expect(readCellRange(sampleWorkbook(), 'Sales', 1, 3, 'not-a-column')).toEqual({
+      error: 'Invalid start column reference: "not-a-column".',
+    });
+    expect(readCellRange(sampleWorkbook(), 'Sales', 1, 3, 'C', 'B')).toEqual({
+      error: 'The end column must not come before the start column.',
+    });
+  });
+
+  it('returns a safe empty result for an empty sheet', () => {
+    const result = readCellRange({ sheets: [{ name: 'Empty', rows: [] }] }, 'Empty', 1, 50);
+    expect(result).toEqual({
+      sheet: 'Empty',
+      startRow: 1,
+      endRow: 1,
+      startColumn: 'A',
+      endColumn: 'A',
+      rows: [],
+    });
+  });
+
+  it('clamps hostile read limits instead of returning malformed samples', () => {
+    const wb = sampleWorkbook();
+    const search = searchSheet(wb, 'Sales', 'Alice', -10);
+    expect('error' in search ? search : search.matches).toEqual([]);
+    const queried = querySheetRecords(wb, 'Sales', [], -10);
+    expect('error' in queried ? queried : queried.sampleMatchingRows).toEqual([]);
+  });
+
   it('searches for values across rows', () => {
     const wb = sampleWorkbook();
     const searchRes = searchSheet(wb, 'Sales', 'Alice');

@@ -7,9 +7,11 @@ import {
   classifyWorkbookBytes,
   decodeTextBytes,
   detectDelimiter,
+  parseCsvRecords,
   parseCsvField,
   workbookFromCsvText,
   MAX_IMPORTED_CELLS,
+  MAX_EXCEL_COLUMNS,
 } from './workbook-io.js';
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -323,6 +325,13 @@ describe('xlsx adapter', () => {
     expect(sheet?.rows[0]?.[0]?.value).toBe('c0');
     expect(sheet?.rows[0]?.[199]?.value).toBe('c199');
   });
+
+  it('refuses an export outside Excel addressable column limits', async () => {
+    const tooWide = Array.from({ length: MAX_EXCEL_COLUMNS + 1 }, () => createCell('x'));
+    await expect(
+      workbookToXlsxBuffer({ sheets: [{ name: 'Too wide', rows: [tooWide] }] }),
+    ).rejects.toThrow(/Excel supports at most/);
+  });
 });
 
 describe('byte classification', () => {
@@ -392,6 +401,25 @@ describe('delimiter detection', () => {
     expect(detectDelimiter('"Doe, John"')).toBeNull();
     expect(detectDelimiter('"Doe, John"\n"Kane, Sue"')).toBeNull();
     expect(detectDelimiter('Name,Amount')).toBe(',');
+  });
+
+  it('rejects unterminated quoted CSV instead of silently merging the rest of the file', () => {
+    expect(() => parseCsvRecords('Name,Note\nAda,"missing close\nGrace,ok', ',')).toThrow(
+      /unterminated quoted field/,
+    );
+  });
+
+  it('detects a delimiter when its bounded sample ends inside a long quoted field', () => {
+    const csv = `Name,Note\nAda,"${'x'.repeat(70_000)}"\nGrace,ok`;
+    expect(detectDelimiter(csv)).toBe(',');
+    expect(workbookFromCsvText(csv, ',', 'Data').rows[1]?.[1]?.value).toHaveLength(70_000);
+  });
+
+  it('preserves literal quotes in unquoted fields', () => {
+    expect(parseCsvRecords('Name,Note\nAda,12" screen', ',')).toEqual([
+      ['Name', 'Note'],
+      ['Ada', '12" screen'],
+    ]);
   });
 });
 

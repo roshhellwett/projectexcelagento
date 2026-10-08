@@ -93,6 +93,10 @@ function nonNegativeNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function safeTokenCount(value: unknown, fallback = 0): number {
+  return Math.min(1_000_000_000, Math.floor(nonNegativeNumber(value, fallback)));
+}
+
 /** Read the ledger, tolerating absent, corrupt, or partially-invalid storage. */
 export function loadUsageLog(): UsageEntry[] {
   const store = storage();
@@ -112,10 +116,10 @@ export function loadUsageLog(): UsageEntry[] {
           : LOCAL_PROVIDER,
         source: USAGE_SOURCES.has(e.source as DecisionSource) ? e.source : 'fallback',
         model: typeof e.model === 'string' ? e.model.slice(0, 300) : LOCAL_MODEL_LABEL,
-        promptTokens: nonNegativeNumber(e.promptTokens),
-        completionTokens: nonNegativeNumber(e.completionTokens),
-        totalTokens: nonNegativeNumber(e.totalTokens),
-        latencyMs: nonNegativeNumber(e.latencyMs),
+        promptTokens: safeTokenCount(e.promptTokens),
+        completionTokens: safeTokenCount(e.completionTokens),
+        totalTokens: safeTokenCount(e.totalTokens),
+        latencyMs: Math.min(86_400_000, nonNegativeNumber(e.latencyMs)),
         llmUsed:
           typeof e.llmUsed === 'boolean'
             ? e.llmUsed &&
@@ -188,18 +192,27 @@ export function createUsageEntry(input: {
   }
 
   const telemetry = input.telemetry;
-  const promptTokens = nonNegativeNumber(telemetry.promptTokens);
-  const completionTokens = nonNegativeNumber(telemetry.completionTokens);
+  const promptTokens = safeTokenCount(telemetry.promptTokens);
+  const completionTokens = safeTokenCount(telemetry.completionTokens);
   const latency =
     typeof telemetry.latencyMs === 'number' && Number.isFinite(telemetry.latencyMs)
-      ? nonNegativeNumber(telemetry.latencyMs)
-      : nonNegativeNumber((telemetry as unknown as { durationMs?: number }).durationMs);
+      ? Math.min(86_400_000, nonNegativeNumber(telemetry.latencyMs))
+      : Math.min(
+          86_400_000,
+          nonNegativeNumber((telemetry as unknown as { durationMs?: number }).durationMs),
+        );
+  const provider = USAGE_PROVIDERS.has(telemetry.provider) ? telemetry.provider : LOCAL_PROVIDER;
+  const model =
+    typeof telemetry.model === 'string' && telemetry.model.trim()
+      ? telemetry.model.trim().slice(0, 300)
+      : LOCAL_MODEL_LABEL;
+  const totalTokens = safeTokenCount(telemetry.totalTokens, promptTokens + completionTokens);
 
   return {
     id: nextUsageId(),
     timestamp: Date.now(),
-    provider: telemetry.provider,
-    model: telemetry.model,
+    provider,
+    model,
     source: input.source,
     llmUsed: true,
     tokenUsageReported:
@@ -207,7 +220,7 @@ export function createUsageEntry(input: {
       (telemetry.promptTokens !== undefined && telemetry.completionTokens !== undefined),
     promptTokens,
     completionTokens,
-    totalTokens: nonNegativeNumber(telemetry.totalTokens, promptTokens + completionTokens),
+    totalTokens,
     latencyMs: latency,
     ok: telemetry.ok ?? true,
     ...(telemetry.error ? { error: telemetry.error } : {}),

@@ -35,9 +35,33 @@ export async function executeWorkbookReadTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  const tool = WORKBOOK_READ_TOOLS.find((tool) => tool.function.name === name);
+  if (!tool) return { error: `Unknown read tool "${name}".` };
+  const schema = tool.function.parameters as {
+    required?: string[];
+    properties?: Record<string, { type?: string; enum?: unknown[] }>;
+  };
+  for (const field of schema.required ?? []) {
+    if (args[field] === undefined) return { error: `Read tool "${name}" requires "${field}".` };
+  }
+  for (const [field, rule] of Object.entries(schema.properties ?? {})) {
+    const value = args[field];
+    if (value === undefined) continue;
+    const valid =
+      rule.type === 'array'
+        ? Array.isArray(value)
+        : rule.type === 'integer'
+          ? typeof value === 'number' && Number.isSafeInteger(value)
+          : rule.type === 'number'
+            ? typeof value === 'number' && Number.isFinite(value)
+            : typeof value === rule.type;
+    if (!valid || (rule.enum && !rule.enum.includes(value))) {
+      return { error: `Invalid "${field}" argument for read tool "${name}".` };
+    }
+  }
   const sheet = typeof args.sheet === 'string' ? args.sheet : defaultSheet;
   const number = (value: unknown, fallback: number) =>
-    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+    typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback;
   switch (name) {
     case 'describe_column':
       return describeColumn(workbook, sheet, String(args.column ?? ''), number(args.headerRow, 1));

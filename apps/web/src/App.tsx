@@ -338,7 +338,8 @@ const AppWorkspace: React.FC<{
           setCheckpointError('');
         })
         .catch((error: unknown) => {
-          if (!current) return;
+          if (!current || !checkpointMounted.current || savingEpoch !== checkpointEpoch.current)
+            return;
           setCheckpointStatus('unavailable');
           setCheckpointError(
             error instanceof Error ? error.message : 'The workbook checkpoint was not saved.',

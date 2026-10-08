@@ -98,6 +98,8 @@ export interface OperationPlanStep {
   args: unknown;
 }
 
+export const MAX_OPERATION_PLAN_STEPS = 25;
+
 export type ApplyOperationPlanResult =
   | { ok: true; workbook: Workbook; steps: Extract<ApplyOperationResult, { ok: true }>[] }
   | (Extract<ApplyOperationResult, { ok: false }> & { failedStep: number });
@@ -115,14 +117,18 @@ export function applyOperationPlan(
     onStep?: (index: number, phase: 'verifying' | 'verified' | 'failed') => void;
   } = {},
 ): ApplyOperationPlanResult {
-  if (steps.length === 0) {
+  if (steps.length === 0 || steps.length > MAX_OPERATION_PLAN_STEPS) {
     return {
       ok: false,
       workbook: cloneWorkbook(workbook),
       failedStep: 0,
       error: {
         code: 'validation-error',
-        messages: ['A plan must contain at least one step.'],
+        messages: [
+          steps.length === 0
+            ? 'A plan must contain at least one step.'
+            : `A plan must contain no more than ${MAX_OPERATION_PLAN_STEPS} steps.`,
+        ],
         rolledBack: false,
       },
     };

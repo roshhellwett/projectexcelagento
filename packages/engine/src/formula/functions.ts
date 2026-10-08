@@ -34,7 +34,7 @@ function flatten(args: unknown[]): unknown[] {
   const result: unknown[] = [];
   for (const item of args) {
     if (Array.isArray(item)) {
-      result.push(...flatten(item));
+      for (const value of flatten(item)) result.push(value);
     } else {
       result.push(item);
     }
@@ -197,6 +197,10 @@ function firstErrorIn(values: unknown[]): FormulaErrorCode | null {
   return null;
 }
 
+function finiteFormulaNumber(value: number): FormulaValue {
+  return Number.isFinite(value) ? value : '#NUM!';
+}
+
 /** Extremum without spreading the array, which overflows the stack on large ranges. */
 function extremum(nums: number[], pick: (a: number, b: number) => number): number {
   if (nums.length === 0) return 0;
@@ -210,14 +214,14 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     const error = firstErrorIn(flat);
     if (error) return error;
     const nums = flat.filter(isNumeric).map(toNumber);
-    return nums.reduce((a, b) => a + b, 0);
+    return finiteFormulaNumber(nums.reduce((a, b) => a + b, 0));
   },
   AVERAGE: (...args: unknown[]) => {
     const flat = flatten(args);
     const error = firstErrorIn(flat);
     if (error) return error;
     const nums = flat.filter(isNumeric).map(toNumber);
-    return nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    return nums.length > 0 ? finiteFormulaNumber(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
   },
   MIN: (...args: unknown[]) => {
     const flat = flatten(args);
@@ -254,69 +258,122 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return nums.length % 2 !== 0 ? nums[mid]! : (nums[mid - 1]! + nums[mid]!) / 2;
   },
   ROUND: (num: unknown, digits: unknown = 0) => {
+    const error = firstErrorIn([num, digits]);
+    if (error) return error;
     const factor = Math.pow(10, toNumber(digits));
-    return Math.round(toNumber(num) * factor) / factor;
+    const numeric = toNumber(num);
+    return finiteFormulaNumber(
+      (Math.sign(numeric) * Math.round(Math.abs(numeric) * factor)) / factor,
+    );
   },
   ROUNDUP: (num: unknown, digits: unknown = 0) => {
+    const error = firstErrorIn([num, digits]);
+    if (error) return error;
     const factor = Math.pow(10, toNumber(digits));
-    return (Math.ceil(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1);
+    return finiteFormulaNumber(
+      (Math.ceil(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1),
+    );
   },
   ROUNDDOWN: (num: unknown, digits: unknown = 0) => {
+    const error = firstErrorIn([num, digits]);
+    if (error) return error;
     const factor = Math.pow(10, toNumber(digits));
-    return (Math.floor(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1);
+    return finiteFormulaNumber(
+      (Math.floor(Math.abs(toNumber(num)) * factor) / factor) * (toNumber(num) < 0 ? -1 : 1),
+    );
   },
-  ABS: (num: unknown) => Math.abs(toNumber(num)),
+  ABS: (num: unknown) => {
+    const error = firstErrorIn([num]);
+    return error ?? finiteFormulaNumber(Math.abs(toNumber(num)));
+  },
   SQRT: (num: unknown) => {
+    const error = firstErrorIn([num]);
+    if (error) return error;
     const n = toNumber(num);
-    return n < 0 ? '#NUM!' : Math.sqrt(n);
+    return n < 0 ? '#NUM!' : finiteFormulaNumber(Math.sqrt(n));
   },
-  POWER: (base: unknown, exp: unknown) => Math.pow(toNumber(base), toNumber(exp)),
-  MOD: (n: unknown, d: unknown) => (toNumber(d) === 0 ? 0 : toNumber(n) % toNumber(d)),
-  INT: (n: unknown) => Math.floor(toNumber(n)),
+  POWER: (base: unknown, exp: unknown) => {
+    const error = firstErrorIn([base, exp]);
+    return error ?? finiteFormulaNumber(Math.pow(toNumber(base), toNumber(exp)));
+  },
+  MOD: (n: unknown, d: unknown) => {
+    const error = firstErrorIn([n, d]);
+    if (error) return error;
+    const divisor = toNumber(d);
+    if (divisor === 0) return '#DIV/0!';
+    const remainder = toNumber(n) % divisor;
+    return finiteFormulaNumber(
+      remainder !== 0 && Math.sign(remainder) !== Math.sign(divisor)
+        ? remainder + divisor
+        : remainder,
+    );
+  },
+  INT: (n: unknown) => {
+    const error = firstErrorIn([n]);
+    return error ?? finiteFormulaNumber(Math.floor(toNumber(n)));
+  },
   TRUNC: (n: unknown, digits: unknown = 0) => {
+    const error = firstErrorIn([n, digits]);
+    if (error) return error;
     const factor = Math.pow(10, toNumber(digits));
-    return Math.trunc(toNumber(n) * factor) / factor;
+    return finiteFormulaNumber(Math.trunc(toNumber(n) * factor) / factor);
   },
   CEILING: (n: unknown, significance: unknown = 1) => {
+    const error = firstErrorIn([n, significance]);
+    if (error) return error;
     const sig = toNumber(significance);
     if (sig === 0) return 0;
-    return Math.ceil(toNumber(n) / sig) * sig;
+    return finiteFormulaNumber(Math.ceil(toNumber(n) / sig) * sig);
   },
   FLOOR: (n: unknown, significance: unknown = 1) => {
+    const error = firstErrorIn([n, significance]);
+    if (error) return error;
     const sig = toNumber(significance);
     if (sig === 0) return 0;
-    return Math.floor(toNumber(n) / sig) * sig;
+    return finiteFormulaNumber(Math.floor(toNumber(n) / sig) * sig);
   },
   EXP: (n: unknown) => {
+    const error = firstErrorIn([n]);
+    if (error) return error;
     const v = Math.exp(toNumber(n));
-    return isFinite(v) ? v : '#NUM!';
+    return finiteFormulaNumber(v);
   },
   LN: (n: unknown) => {
+    const error = firstErrorIn([n]);
+    if (error) return error;
     const v = toNumber(n);
     return v <= 0 ? '#NUM!' : Math.log(v);
   },
   LOG: (n: unknown, base: unknown = 10) => {
+    const error = firstErrorIn([n, base]);
+    if (error) return error;
     const v = toNumber(n);
     const b = toNumber(base);
-    return v <= 0 || b <= 0 || b === 1 ? '#NUM!' : Math.log(v) / Math.log(b);
+    return v <= 0 || b <= 0 || b === 1 ? '#NUM!' : finiteFormulaNumber(Math.log(v) / Math.log(b));
   },
   LOG10: (n: unknown) => {
+    const error = firstErrorIn([n]);
+    if (error) return error;
     const v = toNumber(n);
     return v <= 0 ? '#NUM!' : Math.log10(v);
   },
 
   // Conditionals
   IF: (cond: unknown, trueVal: unknown, falseVal: unknown = false) => {
+    const error = firstErrorIn([cond]);
+    if (error) return error;
     return (toBoolean(cond) ? trueVal : falseVal) as FormulaValue;
   },
   IFS: (...args: unknown[]) => {
     for (let i = 0; i < args.length; i += 2) {
+      const error = firstErrorIn([args[i]]);
+      if (error) return error;
       if (toBoolean(args[i])) return (args[i + 1] ?? null) as FormulaValue;
     }
     return null;
   },
   IFERROR: (val: unknown, fallback: unknown) => {
-    if (val === null || val === undefined) return fallback as FormulaValue;
+    if (val === null || val === undefined) return 0;
     if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) return fallback as FormulaValue;
     // Exact canonical-code match. A prefix test would swallow legitimate text such as the
     // SKU "#12345", which is exactly the kind of cell a user wraps in IFERROR.
@@ -324,12 +381,19 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     return val as FormulaValue;
   },
   AND: (...args: unknown[]) => {
+    const error = firstErrorIn(flatten(args));
+    if (error) return error;
     return flatten(args).every(toBoolean);
   },
   OR: (...args: unknown[]) => {
+    const error = firstErrorIn(flatten(args));
+    if (error) return error;
     return flatten(args).some(toBoolean);
   },
-  NOT: (val: unknown) => !toBoolean(val),
+  NOT: (val: unknown) => {
+    const error = firstErrorIn([val]);
+    return error ?? !toBoolean(val);
+  },
   XOR: (...args: unknown[]) => {
     const count = flatten(args).filter(toBoolean).length;
     return count % 2 === 1;
@@ -342,10 +406,12 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     let sum = 0;
     for (let i = 0; i < flatRange.length; i++) {
       if (matchesCriteria(flatRange[i], criteria)) {
+        const error = firstErrorIn([flatSum[i]]);
+        if (error) return error;
         sum += toNumber(flatSum[i]);
       }
     }
-    return sum;
+    return finiteFormulaNumber(sum);
   },
   COUNTIF: (range: unknown, criteria: unknown) => {
     const flatRange = flatten([range]);
@@ -358,11 +424,13 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     let count = 0;
     for (let i = 0; i < flatRange.length; i++) {
       if (matchesCriteria(flatRange[i], criteria)) {
+        const error = firstErrorIn([flatAvg[i]]);
+        if (error) return error;
         sum += toNumber(flatAvg[i]);
         count++;
       }
     }
-    return count > 0 ? sum / count : 0;
+    return count > 0 ? finiteFormulaNumber(sum / count) : 0;
   },
   SUMIFS: (sumRange: unknown, ...criteriaPairs: unknown[]) => {
     const flatSum = flatten([sumRange]);
@@ -373,9 +441,13 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     let sum = 0;
     for (let i = 0; i < flatSum.length; i++) {
       const match = pairs.every((p) => matchesCriteria(p.range[i], p.crit));
-      if (match) sum += toNumber(flatSum[i]);
+      if (match) {
+        const error = firstErrorIn([flatSum[i]]);
+        if (error) return error;
+        sum += toNumber(flatSum[i]);
+      }
     }
-    return sum;
+    return finiteFormulaNumber(sum);
   },
   COUNTIFS: (...criteriaPairs: unknown[]) => {
     const pairs: { range: unknown[]; crit: unknown }[] = [];
@@ -402,11 +474,13 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     let count = 0;
     for (let i = 0; i < flatAvg.length; i++) {
       if (pairs.every((p) => matchesCriteria(p.range[i], p.crit))) {
+        const error = firstErrorIn([flatAvg[i]]);
+        if (error) return error;
         sum += toNumber(flatAvg[i]);
         count++;
       }
     }
-    return count > 0 ? sum / count : 0;
+    return count > 0 ? finiteFormulaNumber(sum / count) : 0;
   },
 
   // Lookup & Reference
@@ -535,13 +609,15 @@ export const FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   SUMPRODUCT: (...arrays: unknown[]) => {
     const flats = arrays.map((a) => flatten([a]));
     if (flats.length === 0 || flats.some((f) => f.length !== flats[0]!.length)) return '#VALUE!';
+    const error = firstErrorIn(flats.flat());
+    if (error) return error;
     let sum = 0;
     for (let i = 0; i < flats[0]!.length; i++) {
       let product = 1;
       for (const f of flats) product *= toNumber(f[i]);
       sum += product;
     }
-    return sum;
+    return finiteFormulaNumber(sum);
   },
   GEOMEAN: (...args: unknown[]) => {
     const nums = flatten(args)

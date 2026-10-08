@@ -65,6 +65,16 @@ describe('Formula Evaluator Engine', () => {
 
     it('handles division by zero gracefully', () => {
       expect(evaluateFormula('=10 / 0', context)).toBe('#DIV/0!');
+      expect(evaluateFormula('=1 / 5E-324', context)).toBe('#NUM!');
+    });
+
+    it('propagates errors through not-equal comparisons', () => {
+      expect(
+        evaluateFormula('=Missing!A1 <> 1', {
+          ...context,
+          hasSheet: (sheet) => sheet === 'Sheet1' || sheet === 'Sales',
+        }),
+      ).toBe('#REF!');
     });
   });
 
@@ -104,6 +114,7 @@ describe('Formula Evaluator Engine', () => {
       expect(evaluateFormula('=CEILING(4.2, 1)', context)).toBe(5);
       expect(evaluateFormula('=FLOOR(4.9, 1)', context)).toBe(4);
       expect(evaluateFormula('=SQRT(16)', context)).toBe(4);
+      expect(evaluateFormula('=MOD(10, 0)', context)).toBe('#DIV/0!');
     });
   });
 
@@ -228,6 +239,16 @@ describe('Formula Evaluator Engine', () => {
         'STRING',
         'RPAREN',
       ]);
+    });
+
+    it('rejects malformed formulas instead of evaluating a valid prefix', () => {
+      expect(evaluateFormula('=SUM(1, 2', context)).toBe('#ERROR!');
+      expect(evaluateFormula('=(1 + 2', context)).toBe('#ERROR!');
+      expect(evaluateFormula('="unterminated', context)).toBe('#ERROR!');
+    });
+
+    it('supports escaped apostrophes in quoted sheet names', () => {
+      expect(tokenize("='O''Brien'!A1").map((token) => token.type)).toEqual(['CELL']);
     });
   });
 });

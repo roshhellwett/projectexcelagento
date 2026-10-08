@@ -232,8 +232,19 @@ export async function submitSupportTicket(ticket: {
       p_message: ticket.message.trim(),
       p_user_id: ticket.userId || null,
     });
-    if (!rpcErr && rpcData && typeof rpcData === 'object' && 'id' in rpcData) {
-      return { id: String((rpcData as { id: string }).id) };
+    if (!rpcErr) {
+      if (
+        rpcData &&
+        typeof rpcData === 'object' &&
+        'id' in rpcData &&
+        typeof (rpcData as { id?: unknown }).id === 'string' &&
+        (rpcData as { id: string }).id.trim()
+      ) {
+        return { id: (rpcData as { id: string }).id };
+      }
+      // A successful RPC must not fall through to a second write merely because its response was
+      // malformed. The first call may already have committed the ticket.
+      throw new Error('The support service returned an invalid ticket response. Please try again.');
     }
     if (
       rpcErr &&

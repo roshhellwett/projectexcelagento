@@ -17,6 +17,8 @@ type XlsxModule = typeof import('xlsx-js-style');
 
 /** Guard against pathological sheets that would freeze the browser tab. */
 export const MAX_IMPORTED_CELLS = 1_500_000;
+export const MAX_EXCEL_ROWS = 1_048_576;
+export const MAX_EXCEL_COLUMNS = 16_384;
 
 export interface ImportReport {
   /** How the bytes were interpreted, so the user is never guessing at what was loaded. */
@@ -136,6 +138,7 @@ export function parseCsvRecords(
   text: string,
   delimiter: string | null,
   maxRecords = Infinity,
+  requireClosedQuotes = true,
 ): string[][] {
   const records: string[][] = [];
   let currentRecord: string[] = [];
@@ -160,7 +163,7 @@ export function parseCsvRecords(
       continue;
     }
 
-    if (ch === '"') {
+    if (ch === '"' && currentField === '') {
       inQuotes = true;
     } else if (delimiter !== null && ch === delimiter) {
       currentRecord.push(currentField);
@@ -183,6 +186,10 @@ export function parseCsvRecords(
     } else {
       currentField += ch;
     }
+  }
+
+  if (inQuotes && requireClosedQuotes) {
+    throw new Error('CSV contains an unterminated quoted field.');
   }
 
   // Push remaining field and record if present
@@ -211,7 +218,8 @@ export function splitCsvLine(line: string, delimiter: string | null): string[] {
 }
 
 function countFieldsPerRecord(text: string, delimiter: string): number[] {
-  const records = parseCsvRecords(text, delimiter, 200);
+  // Delimiter detection uses a bounded prefix which may end inside a perfectly valid field.
+  const records = parseCsvRecords(text, delimiter, 200, false);
   return records.map((r) => r.length);
 }
 
@@ -264,7 +272,7 @@ export function detectDelimiter(text: string): string | null {
   // commas inside a quoted single-column value must never become column boundaries.
   if (!best) {
     for (const candidate of CANDIDATE_DELIMITERS) {
-      const records = parseCsvRecords(sample, candidate, 2);
+      const records = parseCsvRecords(sample, candidate, 2, false);
       if (records.length === 1 && records[0]!.length > bestScore) {
         bestScore = records[0]!.length;
         if (bestScore > 1) best = candidate;
@@ -366,6 +374,12 @@ export function workbookFromCsvText(
   for (const r of records) {
     if (r.length > maxCols) maxCols = r.length;
   }
+  if (records.length > MAX_EXCEL_ROWS) {
+    throw new Error(`CSV contains more than Excel's ${MAX_EXCEL_ROWS} row limit.`);
+  }
+  if (maxCols > MAX_EXCEL_COLUMNS) {
+    throw new Error(`CSV contains more than Excel's ${MAX_EXCEL_COLUMNS} column limit.`);
+  }
   if (records.length * maxCols > MAX_IMPORTED_CELLS) {
     throw new Error(`CSV contains more than the ${MAX_IMPORTED_CELLS} cell import limit.`);
   }
@@ -447,6 +461,11 @@ function sheetFromWorksheet(
   const rowCount = range.e.r + 1;
   const colCount = range.e.c + 1;
 
+  if (rowCount > MAX_EXCEL_ROWS || colCount > MAX_EXCEL_COLUMNS) {
+    throw new Error(
+      `Sheet "${sheetName}" exceeds Excel's ${MAX_EXCEL_ROWS} row by ${MAX_EXCEL_COLUMNS} column limits.`,
+    );
+  }
   if (rowCount * colCount > MAX_IMPORTED_CELLS) {
     throw new Error(
       `Sheet "${sheetName}" contains ${rowCount * colCount} cells, above the ${MAX_IMPORTED_CELLS} safety limit.`,
@@ -747,6 +766,13 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
   const read = createWorkbookValueReader(workbook);
 
   for (const [sheetIndex, sheet] of workbook.sheets.entries()) {
+    let widest = 0;
+    for (const row of sheet.rows) if (row.length > widest) widest = row.length;
+    if (sheet.rows.length > MAX_EXCEL_ROWS || widest > MAX_EXCEL_COLUMNS) {
+      throw new Error(
+        `Cannot export "${sheet.name}": Excel supports at most ${MAX_EXCEL_ROWS} rows and ${MAX_EXCEL_COLUMNS} columns per sheet.`,
+      );
+    }
     const aoa: unknown[][] = sheet.rows.map((row) =>
       row.map((cell) => valueForExport(cell, dateSystem)),
     );
@@ -802,8 +828,6 @@ export function workbookToXlsxBytes(XLSX: XlsxModule, workbook: Workbook): Uint8
 
     // A spread-based `Math.max(...rows.map(...))` overflows the stack past ~125k rows, which is
     // reachable at a fraction of the import cell limit. A linear scan has no such ceiling.
-    let widest = 0;
-    for (const row of sheet.rows) if (row.length > widest) widest = row.length;
     const rowCount = Math.max(1, sheet.rows.length);
     const columnCount = Math.max(1, widest);
     // Pin the used range so trailing blank columns and rows are not silently dropped.
