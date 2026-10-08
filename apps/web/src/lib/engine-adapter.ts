@@ -21,8 +21,18 @@ let xlsxLoad: Promise<XlsxModule> | null = null;
  * browse, while repeat calls reuse the memoized module.
  */
 function loadXlsx(): Promise<XlsxModule> {
-  xlsxLoad ??= import('xlsx-js-style');
+  xlsxLoad ??= loadSpreadsheetCodec();
   return xlsxLoad;
+}
+
+async function loadSpreadsheetCodec(): Promise<XlsxModule> {
+  // Vitest runs without Vite's emitted public codec asset. Keep the test fallback explicit so the
+  // production graph contains no static dependency on the monolithic package.
+  if (import.meta.env.MODE === 'test') return import('xlsx-js-style');
+  const module = (await import(
+    /* @vite-ignore */ new URL(/* @vite-ignore */ './xlsx-codec.js', import.meta.url).href
+  )) as { default?: XlsxModule } & XlsxModule;
+  return module.default ?? module;
 }
 
 /**

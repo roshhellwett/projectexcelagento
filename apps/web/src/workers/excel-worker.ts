@@ -1,19 +1,38 @@
-import * as XLSX from 'xlsx-js-style';
 import { parseWorkbookBytes, workbookToXlsxBytes, MAX_IMPORTED_CELLS } from '../lib/workbook-io.js';
+
+type XlsxModule = typeof import('xlsx-js-style');
 
 export { MAX_IMPORTED_CELLS };
 
-function parseXlsxInternal(arrayBuffer: ArrayBuffer): ReturnType<typeof parseWorkbookBytes> {
+let xlsxLoad: Promise<XlsxModule> | null = null;
+
+function loadXlsx(): Promise<XlsxModule> {
+  xlsxLoad ??= import(
+    /* @vite-ignore */ new URL(/* @vite-ignore */ './xlsx-codec.js', import.meta.url).href
+  ).then((module) => {
+    const loaded = module as { default?: XlsxModule } & XlsxModule;
+    return loaded.default ?? loaded;
+  });
+  return xlsxLoad;
+}
+
+async function parseXlsxInternal(
+  arrayBuffer: ArrayBuffer,
+): Promise<ReturnType<typeof parseWorkbookBytes>> {
+  const XLSX = await loadXlsx();
   return parseWorkbookBytes(XLSX, arrayBuffer);
 }
 
-function exportXlsxInternal(workbook: Parameters<typeof workbookToXlsxBytes>[1]): Uint8Array {
+async function exportXlsxInternal(
+  workbook: Parameters<typeof workbookToXlsxBytes>[1],
+): Promise<Uint8Array> {
+  const XLSX = await loadXlsx();
   return workbookToXlsxBytes(XLSX, workbook);
 }
 
 // Listen to messages when running inside Web Worker
 if (typeof self !== 'undefined' && 'addEventListener' in self) {
-  self.addEventListener('message', (e: MessageEvent) => {
+  self.addEventListener('message', async (e: MessageEvent) => {
     const { id, type, payload } = e.data || {};
     try {
       if (type === 'PING') {
@@ -24,10 +43,10 @@ if (typeof self !== 'undefined' && 'addEventListener' in self) {
         self.postMessage({
           id,
           type: 'PARSE_XLSX_SUCCESS',
-          payload: parseXlsxInternal(payload.arrayBuffer),
+          payload: await parseXlsxInternal(payload.arrayBuffer),
         });
       } else if (type === 'EXPORT_XLSX') {
-        const buffer = exportXlsxInternal(payload.workbook);
+        const buffer = await exportXlsxInternal(payload.workbook);
         (
           self as unknown as { postMessage: (message: unknown, transfer: Transferable[]) => void }
         ).postMessage({ id, type: 'EXPORT_XLSX_SUCCESS', payload: buffer }, [buffer.buffer]);
