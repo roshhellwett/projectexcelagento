@@ -178,6 +178,23 @@ describe('format_dates operation', () => {
     expect(rows[2]?.[1]?.value).toEqual(new Date(Date.UTC(1904, 0, 2)));
   });
 
+  it('uses the workbook date system when no operation override is supplied', () => {
+    const before: Workbook = {
+      dateSystem: '1904',
+      sheets: [
+        {
+          name: 'Orders',
+          rows: [
+            [cell('Order date'), cell('Ship date')],
+            [cell('A-1'), cell(1)],
+          ],
+        },
+      ],
+    };
+    const result = formatDatesOperation.apply(before, args());
+    expect(result.workbook.sheets[0]?.rows[1]?.[1]?.value).toEqual(new Date(Date.UTC(1904, 0, 2)));
+  });
+
   it('reports structural validation errors before applying', () => {
     const before = workbook([[cell('Order date')], [cell('A-1')]]);
     const invalidArgs = args({ column: 'C' });

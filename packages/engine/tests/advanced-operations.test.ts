@@ -666,6 +666,32 @@ describe('advanced operations', () => {
         expect(res.preview.affectedCells).toBe(4);
       }
     });
+
+    it('rejects oversized row payloads before cloning the workbook', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('Header')]);
+      const res = applyOperation(
+        before,
+        'append_rows',
+        { sheet: 'Data', rows: Array.from({ length: 20_001 }, () => ['value']) },
+        { registry: reg },
+      );
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error.messages.join(' ')).toMatch(/at most 20,?000 cells/);
+    });
+
+    it('rejects oversized create_sheet payloads instead of allocating them', () => {
+      const reg = createOperationRegistry();
+      const before = workbook([row('Header')]);
+      const res = applyOperation(
+        before,
+        'create_sheet',
+        { sheetName: 'TooLarge', rows: Array.from({ length: 20_001 }, () => ['value']) },
+        { registry: reg },
+      );
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error.messages.join(' ')).toMatch(/at most 20,?000 cells/);
+    });
   });
 
   describe('registry integration', () => {

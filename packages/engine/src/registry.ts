@@ -15,6 +15,7 @@ import {
   invertPatch,
   patchBetween,
   workbookEquals,
+  MAX_WORKBOOK_CELLS,
 } from './workbook.js';
 
 export class OperationRegistry {
@@ -238,6 +239,15 @@ export function applyOperation(
     }
 
     const result = operation.apply(cloneWorkbook(before), args);
+    const resultCellCount = result.workbook.sheets.reduce(
+      (total, sheet) => total + sheet.rows.reduce((count, row) => count + row.length, 0),
+      0,
+    );
+    if (resultCellCount > MAX_WORKBOOK_CELLS) {
+      return failure('validation-error', [
+        `The operation would exceed the workbook cell safety limit (${MAX_WORKBOOK_CELLS}).`,
+      ]);
+    }
     const check = operation.invariants(cloneWorkbook(before), cloneWorkbook(result.workbook), args);
     const errors = [
       ...check.errors,

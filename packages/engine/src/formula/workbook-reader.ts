@@ -1,5 +1,5 @@
 import type { Workbook } from '../types.js';
-import { columnToIndex } from '../workbook.js';
+import { columnToIndex, MAX_WORKBOOK_CELLS } from '../workbook.js';
 import { evaluateFormula } from './evaluator.js';
 import type { FormulaValue } from './types.js';
 
@@ -28,7 +28,7 @@ export function createWorkbookValueReader(workbook: Workbook) {
           const to = columnToIndex(endColumn) ?? -1;
           const count = (endRow - startRow + 1) * (to - from + 1);
           if (from < 0 || to < from || startRow < 1 || endRow < startRow) return [['#REF!']];
-          if (count > 1_500_000) return [['#NUM!']];
+          if (count > MAX_WORKBOOK_CELLS) return [['#NUM!']];
           const values: FormulaValue[][] = [];
           for (let row = startRow; row <= endRow; row += 1) {
             const line: FormulaValue[] = [];

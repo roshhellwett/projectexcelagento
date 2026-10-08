@@ -4,6 +4,9 @@ import {
   type CellValue,
   type Sheet,
   indexToColumn,
+  EXCEL_MAX_ROWS,
+  EXCEL_MAX_COLUMNS,
+  MAX_BULK_OPERATION_CELLS,
 } from '@excel-agent/engine';
 
 /**
@@ -40,14 +43,14 @@ export const MIN_COLUMN_WIDTH = 56;
 export const MAX_COLUMN_WIDTH = 640;
 
 /** Excel's own addressable limits, so a fill or paste cannot build a sheet nobody can open. */
-export const MAX_ROW_NUMBER = 1_048_576;
-export const MAX_COLUMN_INDEX = 16_383;
+export const MAX_ROW_NUMBER = EXCEL_MAX_ROWS;
+export const MAX_COLUMN_INDEX = EXCEL_MAX_COLUMNS - 1;
 
 /**
  * Ceiling on the cells one gesture may write. A drag across the whole sheet would otherwise build
  * a hundred million edit objects and lock the tab; the gesture is clamped to this instead.
  */
-export const MAX_BULK_EDITS = 20_000;
+export const MAX_BULK_EDITS = MAX_BULK_OPERATION_CELLS;
 
 export function rectContains(rect: CellRect, row: number, colIdx: number): boolean {
   return (

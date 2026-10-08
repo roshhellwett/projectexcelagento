@@ -6,6 +6,9 @@ import {
   isFormulaError,
   excelSerialToDate,
   isDateNumberFormat,
+  MAX_WORKBOOK_CELLS,
+  EXCEL_MAX_ROWS as ENGINE_MAX_EXCEL_ROWS,
+  EXCEL_MAX_COLUMNS as ENGINE_MAX_EXCEL_COLUMNS,
   type Cell,
   type CellStyle,
   type CellValue,
@@ -16,9 +19,9 @@ import {
 type XlsxModule = typeof import('xlsx-js-style');
 
 /** Guard against pathological sheets that would freeze the browser tab. */
-export const MAX_IMPORTED_CELLS = 1_500_000;
-export const MAX_EXCEL_ROWS = 1_048_576;
-export const MAX_EXCEL_COLUMNS = 16_384;
+export const MAX_IMPORTED_CELLS = MAX_WORKBOOK_CELLS;
+export const MAX_EXCEL_ROWS = ENGINE_MAX_EXCEL_ROWS;
+export const MAX_EXCEL_COLUMNS = ENGINE_MAX_EXCEL_COLUMNS;
 
 export interface ImportReport {
   /** How the bytes were interpreted, so the user is never guessing at what was loaded. */

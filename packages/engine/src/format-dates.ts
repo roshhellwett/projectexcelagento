@@ -39,7 +39,8 @@ export const formatDatesArgsSchema = z.object({
     .regex(/^[A-Za-z]+$/),
   format: z.enum(dateFormats),
   headerRow: z.number().int().positive().default(1),
-  dateSystem: z.enum(['1900', '1904']).default('1900'),
+  /** Defaults to the workbook epoch; callers may override it for explicitly foreign serial data. */
+  dateSystem: z.enum(['1900', '1904']).optional(),
 });
 
 export type FormatDatesArgs = z.infer<typeof formatDatesArgsSchema>;
@@ -221,6 +222,7 @@ function scan(workbook: Workbook, args: FormatDatesArgs): ScannedCell[] {
   }
 
   const scanned: ScannedCell[] = [];
+  const dateSystem = args.dateSystem ?? workbook.dateSystem ?? '1900';
   for (let rowIndex = args.headerRow; rowIndex < sheet.rows.length; rowIndex += 1) {
     const cell = sheet.rows[rowIndex]?.[columnIndex];
     if (!cell) {
@@ -229,7 +231,7 @@ function scan(workbook: Workbook, args: FormatDatesArgs): ScannedCell[] {
     scanned.push({
       location: locationFor(args.sheet, rowIndex + 1, columnIndex),
       cell,
-      parsed: parseDate(cell.value, args.dateSystem),
+      parsed: parseDate(cell.value, dateSystem),
     });
   }
   return scanned;

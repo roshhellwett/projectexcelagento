@@ -36,6 +36,10 @@ import {
   cloneWorkbook,
   columnToIndex,
   createCell,
+  EXCEL_MAX_COLUMNS,
+  EXCEL_MAX_ROWS,
+  MAX_BULK_OPERATION_CELLS,
+  MAX_WORKBOOK_CELLS,
   getSheet,
   indexToColumn,
   maxColumnCount,
@@ -1070,10 +1074,10 @@ export const cleanToNewSheetOperation = withFormulaStructureSafety<CleanToNewShe
 // ============================================================================
 
 /** Excel's own sheet limits. A grid edit must never be able to build a sheet no reader can open. */
-const MAX_ROW_NUMBER = 1_048_576;
-const MAX_COLUMN_INDEX = 16_383; // XFD
+const MAX_ROW_NUMBER = EXCEL_MAX_ROWS;
+const MAX_COLUMN_INDEX = EXCEL_MAX_COLUMNS - 1; // XFD
 /** A bound on one call, so a runaway paste fails loudly instead of allocating a million cells. */
-const MAX_EDITS_PER_OPERATION = 20_000;
+const MAX_EDITS_PER_OPERATION = MAX_BULK_OPERATION_CELLS;
 
 export const editCellsArgsSchema = z.object({
   sheet: z.string().trim().min(1),
@@ -1366,8 +1370,8 @@ export type CreateSheetArgs = z.infer<typeof createSheetArgsSchema>;
 function createSheetTarget(workbook: Workbook, args: CreateSheetArgs): CellRange[] {
   const name = uniqueSheetName(workbook, args.sheetName);
   const headerCols = args.headers?.length ?? 1;
-  const rowCols =
-    args.rows && args.rows.length > 0 ? Math.max(...args.rows.map((r) => r.length)) : 1;
+  let rowCols = 1;
+  for (const row of args.rows ?? []) if (row.length > rowCols) rowCols = row.length;
   const colCount = Math.max(1, headerCols, rowCols);
   const totalRows = (args.headers && args.headers.length > 0 ? 1 : 0) + (args.rows?.length ?? 0);
   return [
@@ -1381,8 +1385,43 @@ function createSheetTarget(workbook: Workbook, args: CreateSheetArgs): CellRange
   ];
 }
 
-function validateCreateSheet(_workbook: Workbook, _args: CreateSheetArgs): ValidationResult {
-  return validResult();
+function validateCreateSheet(workbook: Workbook, args: CreateSheetArgs): ValidationResult {
+  const errors: ValidationIssue[] = [];
+  let cells = args.headers?.length ?? 0;
+  let widest = args.headers?.length ?? 0;
+  for (const row of args.rows ?? []) {
+    cells += row.length;
+    if (row.length > widest) widest = row.length;
+  }
+  const rows = (args.headers?.length ? 1 : 0) + (args.rows?.length ?? 0);
+  if (rows > EXCEL_MAX_ROWS) {
+    errors.push(
+      issue('range-too-large', `A sheet cannot contain more than ${EXCEL_MAX_ROWS} rows.`),
+    );
+  }
+  if (widest > EXCEL_MAX_COLUMNS) {
+    errors.push(
+      issue('range-too-large', `A sheet cannot contain more than ${EXCEL_MAX_COLUMNS} columns.`),
+    );
+  }
+  if (cells > MAX_BULK_OPERATION_CELLS) {
+    errors.push(
+      issue(
+        'range-too-large',
+        `A single create_sheet operation accepts at most ${MAX_BULK_OPERATION_CELLS} cells.`,
+      ),
+    );
+  }
+  const existingCells = workbook.sheets.reduce(
+    (total, sheet) => total + sheet.rows.reduce((count, row) => count + row.length, 0),
+    0,
+  );
+  if (existingCells + cells > MAX_WORKBOOK_CELLS) {
+    errors.push(
+      issue('range-too-large', 'This sheet would exceed the workbook cell safety limit.'),
+    );
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
 }
 
 function applyCreateSheet(workbook: Workbook, args: CreateSheetArgs): OperationResult {
@@ -1440,7 +1479,8 @@ function appendRowsTarget(workbook: Workbook, args: AppendRowsArgs): CellRange[]
   const startRow = targetSheet.rows.length + 1;
   const endRow = startRow + args.rows.length - 1;
   const maxExistingCols = maxColumnCount(targetSheet.rows);
-  const maxNewCols = Math.max(1, ...args.rows.map((r) => r.length));
+  let maxNewCols = 1;
+  for (const row of args.rows) if (row.length > maxNewCols) maxNewCols = row.length;
   const colCount = Math.max(maxExistingCols, maxNewCols);
   return [
     {
@@ -1455,6 +1495,36 @@ function appendRowsTarget(workbook: Workbook, args: AppendRowsArgs): CellRange[]
 
 function validateAppendRows(workbook: Workbook, args: AppendRowsArgs): ValidationResult {
   const errors = validateSheet(workbook, args.sheet);
+  const targetSheet = getSheet(workbook, args.sheet);
+  let cells = 0;
+  let widest = 0;
+  for (const row of args.rows) {
+    cells += row.length;
+    if (row.length > widest) widest = row.length;
+  }
+  if (cells > MAX_BULK_OPERATION_CELLS) {
+    errors.push(
+      issue(
+        'range-too-large',
+        `A single append_rows operation accepts at most ${MAX_BULK_OPERATION_CELLS} cells.`,
+      ),
+    );
+  }
+  if ((targetSheet?.rows.length ?? 0) + args.rows.length > EXCEL_MAX_ROWS) {
+    errors.push(issue('range-too-large', `The sheet cannot exceed ${EXCEL_MAX_ROWS} rows.`));
+  }
+  if (widest > EXCEL_MAX_COLUMNS) {
+    errors.push(issue('range-too-large', `A sheet cannot exceed ${EXCEL_MAX_COLUMNS} columns.`));
+  }
+  const existingCells = workbook.sheets.reduce(
+    (total, sheet) => total + sheet.rows.reduce((count, row) => count + row.length, 0),
+    0,
+  );
+  if (existingCells + cells > MAX_WORKBOOK_CELLS) {
+    errors.push(
+      issue('range-too-large', 'These rows would exceed the workbook cell safety limit.'),
+    );
+  }
   return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
 }
 

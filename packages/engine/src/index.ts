@@ -21,6 +21,10 @@ export {
   effectiveCellType,
   workbookEquals,
   maxColumnCount,
+  EXCEL_MAX_ROWS,
+  EXCEL_MAX_COLUMNS,
+  MAX_WORKBOOK_CELLS,
+  MAX_BULK_OPERATION_CELLS,
 } from './workbook.js';
 export * from './history.js';
 export * from './invariants.js';

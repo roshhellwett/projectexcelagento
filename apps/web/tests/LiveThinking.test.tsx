@@ -302,6 +302,6 @@ describe('Live Thinking Button and Panel', () => {
     expect(writeTextMock).toHaveBeenCalledWith(
       expect.stringContaining('Internal model reasoning to copy.'),
     );
-    expect(screen.getByText('Copied')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Copied')).toBeInTheDocument());
   });
 });

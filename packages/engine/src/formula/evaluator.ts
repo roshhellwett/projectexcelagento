@@ -1,7 +1,7 @@
 import { FORMULA_FUNCTIONS, getFormulaDateSystem, setFormulaDateSystem } from './functions.js';
 import { FORMULA_ERROR_CODES, isFormulaError, type FormulaErrorCode } from './errors.js';
 import { daysBetween } from './excel-date.js';
-import { columnToIndex } from '../workbook.js';
+import { columnToIndex, EXCEL_MAX_COLUMNS, EXCEL_MAX_ROWS } from '../workbook.js';
 import type { FormulaContext, FormulaValue } from './types.js';
 
 type ParsedValue = FormulaValue | FormulaValue[][];
@@ -39,10 +39,10 @@ function validReference(column: string, row: number): boolean {
   const index = columnToIndex(column);
   return (
     index !== undefined &&
-    index <= 16_383 &&
+    index < EXCEL_MAX_COLUMNS &&
     Number.isSafeInteger(row) &&
     row >= 1 &&
-    row <= 1_048_576
+    row <= EXCEL_MAX_ROWS
   );
 }
 

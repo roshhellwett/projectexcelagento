@@ -17,12 +17,19 @@ import type {
   ValidationResult,
   Workbook,
 } from './types.js';
-import { columnToIndex, getSheet, maxColumnCount } from './workbook.js';
+import {
+  columnToIndex,
+  EXCEL_MAX_COLUMNS,
+  EXCEL_MAX_ROWS,
+  getSheet,
+  MAX_WORKBOOK_CELLS,
+  maxColumnCount,
+} from './workbook.js';
 
 export const RECONCILIATION_LIMITS = Object.freeze({
-  allocatedCells: 1_500_000,
-  sheetRows: 1_048_576,
-  sheetColumns: 16_384,
+  allocatedCells: MAX_WORKBOOK_CELLS,
+  sheetRows: EXCEL_MAX_ROWS,
+  sheetColumns: EXCEL_MAX_COLUMNS,
   cellTextLength: 32_767,
 });
 

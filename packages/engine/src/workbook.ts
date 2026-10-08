@@ -10,6 +10,12 @@ import type {
   WorkbookSnapshotPatch,
 } from './types.js';
 
+/** Excel address and browser-engine safety limits shared by import, formula, and operations. */
+export const EXCEL_MAX_ROWS = 1_048_576;
+export const EXCEL_MAX_COLUMNS = 16_384;
+export const MAX_WORKBOOK_CELLS = 1_500_000;
+export const MAX_BULK_OPERATION_CELLS = 20_000;
+
 export function cellTypeForValue(value: CellValue, formula?: string): CellType {
   if (formula !== undefined) {
     return 'formula';

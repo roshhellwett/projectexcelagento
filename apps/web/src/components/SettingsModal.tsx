@@ -51,6 +51,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   });
   const [learnedCount, setLearnedCount] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
+  const connectionAbortRef = useRef<AbortController | null>(null);
 
   useDialogA11y(isOpen, cardRef, onClose);
 
@@ -62,6 +63,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSavedSuccess(false);
     setTestStatus({ testing: false });
     setLearnedCount(learnedActionCount());
+    return () => {
+      connectionAbortRef.current?.abort();
+      connectionAbortRef.current = null;
+    };
   }, [isOpen, settings]);
 
   if (!isOpen) return null;
@@ -116,11 +121,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
 
     const startTime = performance.now();
+    const controller = new AbortController();
+    connectionAbortRef.current?.abort();
+    connectionAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 30_000);
 
     try {
       // Execute a real spreadsheet tool-calling probe against OpenRouter
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${trimmedKey}`,
@@ -274,6 +284,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         });
       }
     } catch (err) {
+      if (controller.signal.aborted) {
+        if (isOpen) {
+          setTestStatus({
+            testing: false,
+            ok: false,
+            message: 'Connection test timed out or was cancelled.',
+            diagnostics: {
+              authOk: false,
+              modelReachable: false,
+              toolEngagementOk: false,
+              advice: 'Check your network connection and try again.',
+            },
+          });
+        }
+        return;
+      }
       const raw = err instanceof Error ? err.message : String(err);
       const isNetworkBlock = /failed to fetch|networkerror|load failed/i.test(raw);
       setTestStatus({
@@ -289,6 +315,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           advice: 'Check your internet connection, firewall settings, or ad-blocker extensions.',
         },
       });
+    } finally {
+      window.clearTimeout(timeout);
+      if (connectionAbortRef.current === controller) connectionAbortRef.current = null;
     }
   };
 

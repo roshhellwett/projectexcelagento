@@ -32,6 +32,7 @@ import {
   type AdminAccountRecord,
   type SupportTicketRecord,
 } from '../lib/licensing.js';
+import { writeClipboardText } from '../lib/clipboard.js';
 
 interface AdminLicensePageProps {
   onBack?: () => void;
@@ -908,8 +909,11 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                     type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(generatedKeys.join('\n'));
-                      showFeedback('Copied key batch to clipboard!');
+                      void writeClipboardText(generatedKeys.join('\n')).then((copied) =>
+                        copied
+                          ? showFeedback('Copied key batch to clipboard!')
+                          : setError('Copy was blocked by the browser. Select the keys manually.'),
+                      );
                     }}
                   >
                     <Copy size={14} /> Copy batch
@@ -1007,8 +1011,13 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                                 className="btn btn-ghost btn-icon btn-sm"
                                 onClick={() => {
                                   if (plaintextKey) {
-                                    void navigator.clipboard?.writeText(plaintextKey);
-                                    showFeedback('Copied key to clipboard!');
+                                    void writeClipboardText(plaintextKey).then((copied) =>
+                                      copied
+                                        ? showFeedback('Copied key to clipboard!')
+                                        : setError(
+                                            'Copy was blocked by the browser. Select the key manually.',
+                                          ),
+                                    );
                                   } else {
                                     setError(
                                       'Older hashed key cannot be recovered in plaintext. Generate a replacement key to copy.',

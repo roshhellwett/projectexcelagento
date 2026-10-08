@@ -36,6 +36,7 @@ import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
 import { MarkdownText } from './MarkdownText.js';
 import { LiveThinkingProgressBar } from './LiveThinkingProgressBar.js';
+import { writeClipboardText } from '../lib/clipboard.js';
 
 export interface TaskReceipt {
   id: string;
@@ -214,11 +215,13 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleCopyThinking = (msgId: string, text: string) => {
     if (!text) return;
-    navigator.clipboard?.writeText?.(text).catch(() => {});
-    setCopiedThinkingId(msgId);
-    setTimeout(() => {
-      setCopiedThinkingId((curr) => (curr === msgId ? null : curr));
-    }, 2000);
+    void writeClipboardText(text).then((copied) => {
+      if (!copied) return;
+      setCopiedThinkingId(msgId);
+      window.setTimeout(() => {
+        setCopiedThinkingId((curr) => (curr === msgId ? null : curr));
+      }, 2000);
+    });
   };
 
   const getThinkingText = (msg: ChatMessage): string => {

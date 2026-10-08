@@ -17,6 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
+import { writeClipboardText } from '../lib/clipboard.js';
 
 interface AgentProfile {
   id: string;
@@ -259,9 +260,11 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
   ];
 
   const handleCopyPrompt = (prompt: string) => {
-    navigator.clipboard?.writeText(prompt);
-    setCopiedPrompt(prompt);
-    setTimeout(() => setCopiedPrompt(null), 2000);
+    void writeClipboardText(prompt).then((copied) => {
+      if (!copied) return;
+      setCopiedPrompt(prompt);
+      window.setTimeout(() => setCopiedPrompt(null), 2000);
+    });
   };
 
   const handleRunPrompt = (prompt: string) => {

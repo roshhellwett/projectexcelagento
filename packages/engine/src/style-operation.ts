@@ -18,7 +18,14 @@ import type {
   ValidationResult,
   Workbook,
 } from './types.js';
-import { cloneCell, cloneWorkbook, columnToIndex, getSheet, maxColumnCount } from './workbook.js';
+import {
+  cloneCell,
+  cloneWorkbook,
+  columnToIndex,
+  getSheet,
+  maxColumnCount,
+  MAX_BULK_OPERATION_CELLS,
+} from './workbook.js';
 
 const column = z
   .string()
@@ -86,9 +93,12 @@ function validateFormatCells(workbook: Workbook, args: FormatCellsArgs): Validat
     startColumn === undefined || endColumn === undefined
       ? Infinity
       : (args.endRow - args.startRow + 1) * (endColumn - startColumn + 1);
-  if (area > 20_000) {
+  if (area > MAX_BULK_OPERATION_CELLS) {
     errors.push(
-      issue('range-too-large', 'A single formatting gesture may affect at most 20,000 cells.'),
+      issue(
+        'range-too-large',
+        `A single formatting gesture may affect at most ${MAX_BULK_OPERATION_CELLS} cells.`,
+      ),
     );
   }
   if (Object.keys(args.style).length === 0 && args.numberFormat === undefined) {
