@@ -102,9 +102,9 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
           </div>
           <h1>How can we help your spreadsheet workflows?</h1>
           <p>
-            Have questions about activation keys, multi-device usage, calculation accuracy, or
-            custom enterprise requirements? Submit your ticket below and our team will get back to
-            your email directly.
+            Have questions about activation keys, trial duration, calculation accuracy, or custom
+            enterprise requirements? Submit your ticket below and our team will get back to your
+            email directly.
           </p>
         </header>
 
@@ -299,20 +299,21 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
 
               <div className="support-faq-list">
                 <details className="faq-item" open>
-                  <summary>How do I activate an offline or multi-device license?</summary>
+                  <summary>How do I activate an activation key?</summary>
                   <p>
-                    Go to <strong>Account &amp; Licensing</strong> in the top navigation bar, enter
-                    your <code>EXCEL-XXXX-XXXX...</code> license key, and click{' '}
-                    <strong>Activate Entitlement</strong>. The system will bind the entitlement to
-                    your workstation.
+                    Go to <strong>Account &amp; Activation</strong> in the top navigation bar, enter
+                    your <code>EXCEL-XXXX-XXXX...</code> activation key, and click{' '}
+                    <strong>Activate</strong>. The key adds 30 days, 60 days, or extended access
+                    directly to your account.
                   </p>
                 </details>
 
                 <details className="faq-item">
-                  <summary>How many days do trials include?</summary>
+                  <summary>How many days does the free trial include?</summary>
                   <p>
-                    All registered accounts come with full access. Administrators can extend trial
-                    periods or grant permanent licenses through the Operations Control Plane.
+                    All registered email accounts automatically receive a 30-day free trial. Once
+                    the 30 days complete, you can purchase an activation key for 30 days, 60 days,
+                    or longer periods to continue using your workspace.
                   </p>
                 </details>
 

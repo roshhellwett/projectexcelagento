@@ -169,7 +169,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     mode === 'signin'
       ? 'Sign in to load workbooks, ask for changes, and review every proposed operation.'
       : mode === 'signup'
-        ? 'Create an account to enter the open-source ExcelAgento workspace.'
+        ? 'Sign up with your email to receive an automatic 30-day free trial.'
         : mode === 'verify'
           ? 'Already registered? Request a fresh confirmation link using your account email.'
           : 'Enter your account email to request a password recovery link.';

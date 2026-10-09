@@ -30,6 +30,7 @@ import { useAuth } from '../lib/auth-context.js';
 import { getActiveTheme, toggleTheme } from '../lib/theme.js';
 import { isSoundEnabled, setSoundEnabled } from '../lib/sound-effects.js';
 import type { CheckpointStatus } from '../lib/workspace-recovery.js';
+import type { LicenseStatus } from '../lib/licensing.js';
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme());
@@ -110,6 +111,7 @@ interface TopNavProps {
   onOpenAccount?: () => void;
   onOpenAdmin?: () => void;
   isAdmin?: boolean;
+  licenseStatus?: LicenseStatus | null;
 }
 
 const FIXTURES = [
@@ -225,6 +227,29 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
                 <span className="studio-user-name">
                   {profile?.full_name || user.email?.split('@')[0]}
                 </span>
+                {props.licenseStatus && (
+                  <span
+                    className={`studio-tier-tag ${
+                      props.licenseStatus.isAdmin
+                        ? 'admin'
+                        : props.licenseStatus.state === 'licensed'
+                          ? 'pro'
+                          : props.licenseStatus.state === 'trial'
+                            ? (props.licenseStatus.daysRemaining ?? 0) <= 5
+                              ? 'warning'
+                              : 'trial'
+                            : 'expired'
+                    }`}
+                  >
+                    {props.licenseStatus.isAdmin
+                      ? 'Admin'
+                      : props.licenseStatus.state === 'licensed'
+                        ? `${props.licenseStatus.daysRemaining ?? 0}d Pro`
+                        : props.licenseStatus.state === 'trial'
+                          ? `${props.licenseStatus.daysRemaining ?? 0}d Trial`
+                          : 'Expired'}
+                  </span>
+                )}
               </button>
               {props.isAdmin && props.onOpenAdmin && (
                 <button

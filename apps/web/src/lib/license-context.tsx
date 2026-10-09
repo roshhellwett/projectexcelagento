@@ -114,8 +114,7 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return { success: false, error: 'The account changed. Verify access again.' };
         setVerified({ userId, status: next });
         if (!next.canUse) {
-          const message =
-            next.banReason || 'This account or installation does not have active access.';
+          const message = next.banReason || 'This account does not have active access.';
           setError(message);
           return { success: false, error: message };
         }

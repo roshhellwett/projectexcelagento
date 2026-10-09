@@ -1448,11 +1448,45 @@
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  padding: 1px 5px;
-  border-radius: var(--radius-xs, 3px);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs, 4px);
   background: rgba(16, 185, 129, 0.15);
   color: var(--brand-emerald, #10b981);
   letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.studio-tier-tag.admin {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.studio-tier-tag.pro {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.studio-tier-tag.trial {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.studio-tier-tag.warning {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.studio-tier-tag.expired {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .studio-auth-trigger {

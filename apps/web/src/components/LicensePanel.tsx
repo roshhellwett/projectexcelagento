@@ -4,12 +4,13 @@ import {
   Copy,
   ExternalLink,
   KeyRound,
-  Laptop,
   LockKeyhole,
+  Mail,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
+  UserCheck,
 } from 'lucide-react';
-import { getInstallId } from '../lib/device-identity.js';
 import { useLicense } from '../lib/license-context.js';
 import { writeClipboardText } from '../lib/clipboard.js';
 
@@ -22,71 +23,53 @@ interface LicensePanelProps {
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
+  return Number.isNaN(parsed.getTime())
+    ? '—'
+    : parsed.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
 }
 
 function stateCopy(
   state: string | undefined,
   isAdmin?: boolean,
+  daysRemaining?: number,
 ): { label: string; tone: string; detail: string } {
   if (isAdmin) {
     return {
-      label: 'Super Admin / Owner',
-      tone: 'success',
-      detail:
-        'You have permanent, unrestricted administrative root access across the entire platform.',
+      label: 'Super Admin',
+      tone: 'owner',
+      detail: 'You have permanent, unrestricted administrative access across the entire platform.',
     };
   }
-  if (state === 'licensed')
+  if (state === 'licensed') {
     return {
-      label: 'Activated',
+      label: 'Subscription Active',
       tone: 'success',
-      detail: 'This installation is licensed and verified.',
+      detail: `Your paid activation is verified with ${daysRemaining ?? 0} day(s) remaining.`,
     };
-  if (state === 'trial')
-    return { label: 'Trial active', tone: 'success', detail: 'Your 30-day evaluation is active.' };
-  if (state === 'activation_required')
+  }
+  if (state === 'trial') {
     return {
-      label: 'Activation required',
-      tone: 'warning',
-      detail:
-        'This key was transferred to your account. Activate it on this installation to continue.',
+      label: '30-Day Trial Active',
+      tone: 'success',
+      detail: `Your free 30-day evaluation is active with ${daysRemaining ?? 0} day(s) remaining.`,
     };
-  if (state === 'banned')
+  }
+  if (state === 'banned') {
     return {
-      label: 'Access suspended',
+      label: 'Access Suspended',
       tone: 'danger',
       detail: 'This account has been suspended by an administrator.',
     };
-  if (state === 'device_banned')
-    return {
-      label: 'Device suspended',
-      tone: 'danger',
-      detail: 'This browser installation has been suspended by an administrator.',
-    };
-  if (state === 'device_mismatch')
-    return {
-      label: 'Device transfer required',
-      tone: 'warning',
-      detail:
-        'Your account is bound to another installation. Contact support to verify a transfer.',
-    };
-  if (state === 'revoked')
-    return {
-      label: 'License revoked',
-      tone: 'danger',
-      detail: 'The activation assigned to this account was revoked. Contact support for review.',
-    };
-  if (state === 'email_unconfirmed')
-    return {
-      label: 'Confirm your email',
-      tone: 'warning',
-      detail: 'Confirm your Supabase account email before starting the trial.',
-    };
+  }
   return {
-    label: 'Activation required',
+    label: 'Activation Required',
     tone: 'danger',
-    detail: 'Your trial has ended. Enter a valid activation key to continue.',
+    detail:
+      'Your 30-day trial has ended. Enter an activation key (30 days, 60 days, etc.) to continue.',
   };
 }
 
@@ -99,42 +82,19 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
   const [key, setKey] = useState('');
   const [notice, setNotice] = useState('');
   const [activating, setActivating] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
-  const copyTimerRef = useRef<number | null>(null);
   const keyCopyTimerRef = useRef<number | null>(null);
 
   useEffect(
     () => () => {
-      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
       if (keyCopyTimerRef.current !== null) window.clearTimeout(keyCopyTimerRef.current);
     },
     [],
   );
-  const deviceId = status?.deviceId || getInstallId();
-  const state = stateCopy(status?.state, status?.isAdmin);
-  const canEnterActivationKey =
-    !status?.isAdmin &&
-    (!status ||
-      status.state === 'expired' ||
-      status.state === 'activation_required' ||
-      (locked &&
-        !['banned', 'device_banned', 'device_mismatch', 'email_unconfirmed', 'revoked'].includes(
-          status.state,
-        )));
 
-  const copyDeviceId = async () => {
-    if (await writeClipboardText(deviceId)) {
-      setCopied(true);
-      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = window.setTimeout(() => {
-        copyTimerRef.current = null;
-        setCopied(false);
-      }, 1600);
-    } else {
-      setNotice('Copy was blocked by the browser. Select the ID manually.');
-    }
-  };
+  const state = stateCopy(status?.state, status?.isAdmin, status?.daysRemaining);
+  const isExpired =
+    !status?.isAdmin && (status?.state === 'expired' || (status?.daysRemaining ?? 0) <= 0);
 
   const copyKeyText = async (textToCopy: string) => {
     if (await writeClipboardText(textToCopy)) {
@@ -157,7 +117,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
     const result = await activate(key);
     if (result.success) {
       setKey('');
-      setNotice('Activation verified. Your account is unlocked on this installation.');
+      setNotice('Activation successful! Your account access has been updated.');
     } else {
       setNotice(result.error || 'The activation key could not be verified.');
     }
@@ -176,7 +136,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
           >
             ← Back to workspace
           </button>
-          <span className="studio-eyebrow">ACCOUNT SECURITY · ACTIVATION</span>
+          <span className="studio-eyebrow">ACCOUNT &amp; SUBSCRIPTION</span>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -199,7 +159,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 ? 'Super Admin / System Owner'
                 : locked
                   ? 'Workspace access is locked'
-                  : 'Account & activation'}
+                  : 'Account & Activation'}
             </h1>
             <p>{state.detail}</p>
           </div>
@@ -220,108 +180,97 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
         )}
 
         <section className="license-grid">
+          {/* Account Profile Card */}
           <article className="license-card license-account-card">
             <div className="license-card-heading">
               <div>
-                <span className="studio-eyebrow">IDENTITY</span>
-                <h2>{status?.isAdmin ? 'Root Administrator' : 'Signed-in account'}</h2>
+                <span className="studio-eyebrow">ACCOUNT DETAILS</span>
+                <h2>{status?.isAdmin ? 'Root Administrator' : 'User Account'}</h2>
               </div>
-              <Laptop size={21} aria-hidden="true" />
+              <UserCheck size={21} aria-hidden="true" />
             </div>
             <dl className="license-details">
               <div>
-                <dt>Verified email</dt>
-                <dd>{status?.email || 'Waiting for account session…'}</dd>
-              </div>
-              <div>
-                <dt>Unique Device ID</dt>
-                <dd className="license-device-value">
-                  <code>{deviceId}</code>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon btn-sm"
-                    onClick={() => void copyDeviceId()}
-                    aria-label="Copy unique device ID"
-                    title="Copy unique device ID"
-                  >
-                    {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-                  </button>
+                <dt>Signed-in email</dt>
+                <dd>
+                  <strong>{status?.email || 'Loading account session…'}</strong>
                 </dd>
               </div>
               <div>
-                <dt>{status?.isAdmin ? 'Access Expiration' : 'Trial expires'}</dt>
+                <dt>Membership tier</dt>
                 <dd>
                   {status?.isAdmin ? (
-                    <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
-                      Never Expires (Permanent ∞)
-                    </strong>
+                    <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
+                      Lifetime Administrator (∞)
+                    </span>
+                  ) : status?.state === 'licensed' ? (
+                    <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
+                      Paid Subscription
+                    </span>
+                  ) : isExpired ? (
+                    <span style={{ color: '#ef4444', fontWeight: 600 }}>Evaluation Expired</span>
                   ) : (
-                    formatDate(status?.trialExpiresAt)
+                    <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
+                      Free 30-Day Trial
+                    </span>
                   )}
                 </dd>
               </div>
               <div>
-                <dt>Current access</dt>
+                <dt>Days remaining</dt>
                 <dd>
                   {status?.isAdmin ? (
                     <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
-                      Unlimited Lifetime Access
+                      Unlimited Lifetime
                     </strong>
-                  ) : status?.daysRemaining ? (
-                    `${status.daysRemaining} day(s) remaining`
+                  ) : status?.daysRemaining && status.daysRemaining > 0 ? (
+                    <strong>{status.daysRemaining} day(s)</strong>
                   ) : (
-                    'No active days'
+                    <strong style={{ color: '#ef4444' }}>0 days (Expired)</strong>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Access expires on</dt>
+                <dd>
+                  {status?.isAdmin ? (
+                    <span style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
+                      Never Expires
+                    </span>
+                  ) : (
+                    formatDate(
+                      status?.state === 'licensed'
+                        ? status?.license?.expiresAt || status?.trialExpiresAt
+                        : status?.trialExpiresAt,
+                    )
                   )}
                 </dd>
               </div>
             </dl>
-            <p className="license-muted">
-              Hardware-derived Unique Device ID (HWID) based on CPU cores, GPU WebGL rendering, and
-              display characteristics. Remains identical across all browsers and private browsing
-              sessions on this machine. If you lose your email access, support verifies this ID to
-              recover and restore your license.
+            <p className="license-muted" style={{ marginTop: '1rem' }}>
+              Every email registered automatically receives a full 30-day free trial. You can log in
+              from any browser, computer, or device with your email account anytime.
             </p>
           </article>
 
+          {/* Activation & Keys Card */}
           <article className="license-card">
             <div className="license-card-heading">
               <div>
-                <span className="studio-eyebrow">ENTITLEMENT</span>
+                <span className="studio-eyebrow">KEY ACTIVATION</span>
                 <h2>
                   {status?.isAdmin
-                    ? 'Super Admin Permanent License'
-                    : status?.license?.keyHint || '30-day evaluation'}
+                    ? 'Root Permanent Entitlement'
+                    : status?.license?.keyHint || 'Activation Key'}
                 </h2>
               </div>
               <KeyRound size={21} aria-hidden="true" />
             </div>
-            <dl className="license-details">
-              <div>
-                <dt>Status</dt>
-                <dd>{state.label}</dd>
-              </div>
-              <div>
-                <dt>Activation started</dt>
-                <dd>{formatDate(status?.license?.activatedAt || status?.trialStartedAt)}</dd>
-              </div>
-              <div>
-                <dt>Entitlement expires</dt>
-                <dd>
-                  {status?.isAdmin ? (
-                    <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
-                      Never Expires (Lifetime ∞)
-                    </strong>
-                  ) : (
-                    formatDate(status?.license?.expiresAt || status?.trialExpiresAt)
-                  )}
-                </dd>
-              </div>
-            </dl>
 
             {status?.license?.rawKey && (
               <div
                 style={{
-                  marginTop: '1rem',
+                  marginBottom: '1rem',
                   padding: '0.75rem',
                   background: 'var(--color-bg-secondary, rgba(255,255,255,0.04))',
                   borderRadius: '8px',
@@ -332,7 +281,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                   className="studio-eyebrow"
                   style={{ display: 'block', marginBottom: '0.35rem' }}
                 >
-                  YOUR ACTIVATION KEY
+                  ACTIVE KEY
                 </span>
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}
@@ -355,52 +304,82 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                     {keyCopied ? 'Copied' : 'Copy Key'}
                   </button>
                 </div>
-                <small className="license-muted" style={{ display: 'block', marginTop: '0.25rem' }}>
-                  Linked to your Google account and Unique Device ID. Save this for recovery.
-                </small>
               </div>
             )}
 
-            {status && status.daysRemaining <= 0 && (
+            {/* Trial Expiring Soon Warning */}
+            {status?.state === 'trial' &&
+              (status.daysRemaining ?? 0) <= 5 &&
+              (status.daysRemaining ?? 0) > 0 && (
+                <div
+                  style={{
+                    marginBottom: '1rem',
+                    padding: '0.85rem',
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <strong
+                    style={{
+                      display: 'block',
+                      color: 'var(--accent-amber, #f59e0b)',
+                      marginBottom: '0.25rem',
+                    }}
+                  >
+                    Trial Expiring Soon ({status.daysRemaining} days left)
+                  </strong>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '0.85rem',
+                      color: 'var(--color-text-secondary, #94a3b8)',
+                    }}
+                  >
+                    Your 30-day evaluation is coming to an end. Enter an activation key (30 days, 60
+                    days, etc.) below to ensure uninterrupted access.
+                  </p>
+                </div>
+              )}
+
+            {isExpired && (
               <div
                 style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  marginBottom: '1rem',
+                  padding: '0.85rem',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
                   borderRadius: '8px',
                 }}
               >
-                <strong style={{ display: 'block', color: '#f87171', marginBottom: '0.25rem' }}>
-                  Evaluation Expired
+                <strong style={{ display: 'block', color: '#ef4444', marginBottom: '0.25rem' }}>
+                  Your 30-Day Trial Has Ended
                 </strong>
-                <p style={{ margin: 0, fontSize: '0.85rem' }}>
-                  Your 30-day access has ended. Contact{' '}
-                  <a
-                    href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20License%20Extension&body=Email:%20${encodeURIComponent(status?.email || '')}%0D%0AUnique%20Device%20ID:%20${encodeURIComponent(deviceId)}`}
-                    style={{ textDecoration: 'underline' }}
-                  >
-                    zenithprojects@icloud.com
-                  </a>{' '}
-                  with your Unique Device ID (<code>{deviceId}</code>) to add days or purchase
-                  extended access.
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                  Enter an activation key below to unlock your workspace. Keys can be purchased for
+                  30 days, 60 days, or customized periods.
                 </p>
               </div>
             )}
 
-            {canEnterActivationKey && (
+            {!status?.isAdmin && (
               <form
                 className="license-activate-form"
                 onSubmit={(event) => void handleActivate(event)}
-                style={{ marginTop: '1rem' }}
               >
-                <label htmlFor="license-key">Enter new activation key</label>
+                <label htmlFor="license-key">
+                  {status?.state === 'licensed'
+                    ? 'Extend access with a new key'
+                    : 'Enter activation key'}
+                </label>
                 <div className="license-key-row">
                   <input
                     id="license-key"
                     className="form-input"
                     value={key}
-                    onChange={(event) => setKey(event.target.value.toUpperCase())}
+                    onChange={(event) =>
+                      setKey(event.target.value.toUpperCase().replace(/\s+/g, ''))
+                    }
                     placeholder="EXCEL-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX"
                     autoComplete="off"
                     spellCheck={false}
@@ -416,20 +395,55 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 </div>
               </form>
             )}
-            <p className="license-muted" style={{ marginTop: '0.75rem' }}>
-              Need a paid key, a duration change, or a recovery transfer? Contact{' '}
-              <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and include
-              your verified email and Unique Device ID.
-            </p>
+
+            <div
+              style={{
+                marginTop: '1.25rem',
+                padding: '0.85rem',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  marginBottom: '0.35rem',
+                }}
+              >
+                <Sparkles size={15} style={{ color: '#10b981' }} />
+                <strong style={{ fontSize: '0.88rem' }}>Need an activation key?</strong>
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.82rem',
+                  color: 'var(--color-text-secondary)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Activation keys are available for <strong>30 days</strong>, <strong>60 days</strong>
+                , or longer periods. To order or renew, contact{' '}
+                <a
+                  href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20Activation%20Key%20Request&body=Hello,%0D%0A%0D%0AI would like to purchase an activation key for ExcelAgento.%0D%0AMy registered email: ${encodeURIComponent(status?.email || '')}`}
+                  style={{ textDecoration: 'underline', color: 'var(--color-primary)' }}
+                >
+                  zenithprojects@icloud.com
+                </a>
+                .
+              </p>
+            </div>
           </article>
         </section>
 
         <section className="license-support-strip">
           <div>
-            <strong>Recovery and device transfer</strong>
+            <strong>Support &amp; Assistance</strong>
             <span>
-              Support can reassign an activation after verifying account ownership and device
-              details. Every transfer is recorded in the administrative audit log.
+              Need help with your account or activation key? Contact our support desk anytime with
+              your account email.
             </span>
           </div>
           <div className="license-support-actions">
@@ -440,9 +454,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             )}
             <a
               className="btn btn-ghost"
-              href="mailto:zenithprojects@icloud.com?subject=ExcelAgento%20activation%20support"
+              href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20Support&body=Account:%20${encodeURIComponent(status?.email || '')}`}
             >
-              Contact support <ExternalLink size={14} />
+              <Mail size={14} style={{ marginRight: '0.35rem' }} /> Contact support{' '}
+              <ExternalLink size={14} />
             </a>
           </div>
         </section>

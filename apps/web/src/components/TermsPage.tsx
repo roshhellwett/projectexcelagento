@@ -160,15 +160,15 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
         <section className="legal-section">
           <h2>8. Official deployment activation</h2>
           <p>
-            The official hosted deployment may provide a 30-day evaluation followed by device-bound
-            activation. Access state is determined by the server, not by editable browser storage.
-            Purchased keys are issued through{' '}
+            The official hosted deployment provides a 30-day evaluation upon email registration,
+            followed by paid activation keys (e.g. 30 days, 60 days). Access state is determined by
+            the server, not by editable browser storage. Purchased keys are issued through{' '}
             <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and are bound
-            to the verified account and installation at first activation.
+            to the verified user account.
           </p>
           <p>
-            Administrative transfers, device recovery, expiry changes, revocations and suspensions
-            require ownership verification and are recorded in an operational audit trail. Because
+            Administrative key extensions, expiry changes, revocations and suspensions require
+            ownership verification and are recorded in an operational audit trail. Because
             ExcelAgento is open source and browser-delivered, this licensing control protects the
             official deployment; a separately operated fork may choose different access rules.
           </p>

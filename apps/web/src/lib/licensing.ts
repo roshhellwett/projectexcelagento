@@ -1,16 +1,6 @@
 import { supabase } from './supabase-client.js';
-import { getInstallId } from './device-identity.js';
 
-export type LicenseState =
-  | 'trial'
-  | 'licensed'
-  | 'activation_required'
-  | 'expired'
-  | 'banned'
-  | 'device_banned'
-  | 'device_mismatch'
-  | 'email_unconfirmed'
-  | 'revoked';
+export type LicenseState = 'trial' | 'licensed' | 'expired' | 'banned';
 
 export interface LicenseEntitlement {
   id: string;
@@ -30,15 +20,14 @@ export interface LicenseStatus {
   isLifetime?: boolean;
   role?: 'owner' | 'admin' | null;
   email: string;
-  deviceId: string | null;
-  deviceHint: string | null;
   trialStartedAt: string | null;
   trialExpiresAt: string | null;
   daysRemaining: number;
   license: LicenseEntitlement | null;
   banReason: string | null;
   serverNow?: string;
-  verifyUntil?: string;
+  deviceId?: string | null;
+  deviceHint?: string | null;
 }
 
 export interface AdminLicenseRecord {
@@ -50,7 +39,6 @@ export interface AdminLicenseRecord {
   days_remaining?: number;
   bound_user_id: string | null;
   bound_email: string | null;
-  bound_device_id: string | null;
   activated_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
@@ -70,7 +58,6 @@ export interface AdminAccountRecord {
   banned_at: string | null;
   created_at: string;
   updated_at?: string;
-  active_device_id?: string | null;
 }
 
 export interface SupportTicketRecord {
@@ -96,23 +83,11 @@ export interface AdminStats {
   totalTickets: number;
 }
 
-export interface AdminDeviceRecord {
-  id: string;
-  user_id: string;
-  install_id_hint: string;
-  status: 'active' | 'retired' | 'banned';
-  ban_reason: string | null;
-  label: string | null;
-  first_seen_at: string;
-  last_seen_at: string;
-}
-
 export interface LicenseEventRecord {
   id: string;
   actor_user_id: string | null;
   target_user_id: string | null;
   license_id: string | null;
-  device_id: string | null;
   event_type: string;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -121,10 +96,10 @@ export interface LicenseEventRecord {
 export interface AdminLicenseData {
   keys: AdminLicenseRecord[];
   accounts: AdminAccountRecord[];
-  devices: AdminDeviceRecord[];
   events: LicenseEventRecord[];
   tickets?: SupportTicketRecord[];
   stats?: AdminStats;
+  devices?: unknown[];
 }
 
 /**
@@ -188,17 +163,16 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 export async function fetchLicenseStatus(): Promise<LicenseStatus> {
-  return invoke<LicenseStatus>({ action: 'status', installId: getInstallId() });
+  return invoke<LicenseStatus>({ action: 'status' });
 }
 
 export async function heartbeatLicense(): Promise<LicenseStatus> {
-  return invoke<LicenseStatus>({ action: 'heartbeat', installId: getInstallId() });
+  return invoke<LicenseStatus>({ action: 'heartbeat' });
 }
 
 export async function activateLicense(licenseKey: string): Promise<LicenseStatus> {
   return invoke<LicenseStatus>({
     action: 'activate',
-    installId: getInstallId(),
     licenseKey: licenseKey.trim(),
   });
 }
@@ -222,7 +196,6 @@ export async function submitSupportTicket(ticket: {
   message: string;
   userId?: string | null;
 }): Promise<{ id: string }> {
-  // 1. Try secure RPC first (runs with SECURITY DEFINER to avoid RLS/permission errors)
   try {
     const { data: rpcData, error: rpcErr } = await supabase.rpc('submit_support_ticket', {
       p_name: ticket.name.trim(),
@@ -242,8 +215,6 @@ export async function submitSupportTicket(ticket: {
       ) {
         return { id: (rpcData as { id: string }).id };
       }
-      // A successful RPC must not fall through to a second write merely because its response was
-      // malformed. The first call may already have committed the ticket.
       throw new Error('The support service returned an invalid ticket response. Please try again.');
     }
     if (
@@ -259,11 +230,8 @@ export async function submitSupportTicket(ticket: {
     ) {
       throw error;
     }
-    // Fall through only when the RPC is not deployed yet. A transient or validation error must not
-    // be retried through a second write, which could create duplicate tickets after a lost response.
   }
 
-  // 2. Fallback to direct table insertion
   const { data, error } = await supabase
     .from('support_tickets')
     .insert({
@@ -303,8 +271,6 @@ export async function adminUpdateTicket(
     ticketId,
     status,
     adminNotes,
-    // The current transactional function calls this flag `markReplied`. Keep the payload name in
-    // sync with the database contract so resolving a ticket actually records the reply timestamp.
     markReplied: replied ? 'true' : 'false',
   });
 }

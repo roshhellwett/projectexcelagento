@@ -2536,8 +2536,8 @@ const AppWorkspace: React.FC<{
           <span className="auth-gate-loading-mark">
             <img src="/excel-agent-logo.svg" alt="" />
           </span>
-          <strong>Checking activation access</strong>
-          <span>Verifying your account and installation…</span>
+          <strong>Checking account access</strong>
+          <span>Verifying your account access…</span>
         </div>
       </div>
     );
@@ -2878,6 +2878,7 @@ const AppWorkspace: React.FC<{
           onOpenAccount={() => navigate('account')}
           onOpenAdmin={() => navigate('admin')}
           isAdmin={licenseStatus?.isAdmin}
+          licenseStatus={licenseStatus}
           checkpointStatus={checkpointStatus}
           checkpointLabel={
             checkpointClearing ? 'Deleting checkpoint…' : checkpointLabel[checkpointStatus]

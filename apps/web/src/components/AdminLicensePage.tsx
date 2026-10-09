@@ -94,8 +94,6 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
     id: string;
     email: string;
     note: string;
-    installId: string;
-    preserveDevice: boolean;
   } | null>(null);
 
   const load = async () => {
@@ -347,8 +345,6 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
         licenseId: transfer.id,
         targetEmail: transfer.email,
         verificationNote: transfer.note,
-        installId: transfer.installId,
-        preserveDevice: transfer.preserveDevice,
       },
       'License transferred successfully.',
     );
@@ -873,8 +869,43 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                       value={durationDays}
                       onChange={(e) => setDurationDays(e.target.value)}
                     />
+                    <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.35rem' }}>
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${durationDays === '30' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setDurationDays('30')}
+                      >
+                        30d
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${durationDays === '60' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setDurationDays('60')}
+                      >
+                        60d
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${durationDays === '90' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setDurationDays('90')}
+                      >
+                        90d
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${durationDays === '365' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setDurationDays('365')}
+                      >
+                        365d
+                      </button>
+                    </div>
                   </label>
-                  <button type="submit" className="btn btn-primary" disabled={loading}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={loading}
+                    style={{ alignSelf: 'flex-start', marginTop: '1.4rem' }}
+                  >
                     <Plus size={15} /> Generate
                   </button>
                 </div>
@@ -1116,23 +1147,6 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                           </td>
                           <td>
                             <div className="admin-actions">
-                              {/* Reset Device */}
-                              {license.bound_device_id && (
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-sm"
-                                  onClick={() =>
-                                    void run(
-                                      'reset_device',
-                                      { licenseId: license.id },
-                                      'Device binding reset.',
-                                    )
-                                  }
-                                >
-                                  Reset device
-                                </button>
-                              )}
-
                               {/* Revoke */}
                               {license.status === 'active' && (
                                 <button
@@ -1180,8 +1194,6 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                                       id: license.id,
                                       email: '',
                                       note: '',
-                                      installId: '',
-                                      preserveDevice: false,
                                     })
                                   }
                                 >
@@ -1207,35 +1219,12 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
                                 />
                                 <input
                                   className="form-input"
-                                  required={!transfer.preserveDevice}
-                                  minLength={16}
-                                  placeholder="Destination install ID"
-                                  value={transfer.installId}
-                                  onChange={(e) =>
-                                    setTransfer({ ...transfer, installId: e.target.value })
-                                  }
-                                  disabled={transfer.preserveDevice}
-                                />
-                                <input
-                                  className="form-input"
-                                  required
-                                  minLength={12}
-                                  placeholder="Ownership verification note"
+                                  placeholder="Transfer note (optional)"
                                   value={transfer.note}
                                   onChange={(e) =>
                                     setTransfer({ ...transfer, note: e.target.value })
                                   }
                                 />
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={transfer.preserveDevice}
-                                    onChange={(e) =>
-                                      setTransfer({ ...transfer, preserveDevice: e.target.checked })
-                                    }
-                                  />{' '}
-                                  Keep verified device binding
-                                </label>
                                 <button
                                   className="btn btn-primary btn-sm"
                                   type="submit"
@@ -1398,59 +1387,172 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
         {/* 5. SYSTEM DIAGNOSTICS TAB */}
         {activeTab === 'diagnostics' && (
           <>
-            <section className="license-card admin-table-card" style={{ marginBottom: '20px' }}>
+            <section className="license-card" style={{ marginBottom: '20px' }}>
               <div className="license-card-heading">
                 <div>
-                  <span className="studio-eyebrow">HARDWARE BINDINGS</span>
-                  <h2>Device Installations Registry</h2>
+                  <span className="studio-eyebrow">SYSTEM ARCHITECTURE</span>
+                  <h2>Licensing &amp; Platform Health</h2>
+                </div>
+                <ShieldCheck size={21} style={{ color: 'var(--brand-emerald, #10b981)' }} />
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                  gap: '16px',
+                  marginBottom: '20px',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '16px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                  }}
+                >
+                  <strong
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      marginBottom: '8px',
+                      color: 'var(--brand-emerald-dark, #10b981)',
+                    }}
+                  >
+                    <CheckCircle2 size={15} /> Simplified Model Active
+                  </strong>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '12px',
+                      color: 'var(--text-muted)',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Hardware fingerprinting and machine lockouts are completely decommissioned.
+                    Accounts authenticate server-authoritatively via verified email.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    padding: '16px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                  }}
+                >
+                  <strong
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      marginBottom: '8px',
+                      color: '#a855f7',
+                    }}
+                  >
+                    <Crown size={15} /> System Root Owners
+                  </strong>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '12px',
+                      color: 'var(--text-muted)',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Permanent lifetime immunity enabled for{' '}
+                    <code style={{ fontSize: '11px', color: '#c084fc' }}>
+                      roshhellwett@gmail.com
+                    </code>{' '}
+                    and{' '}
+                    <code style={{ fontSize: '11px', color: '#c084fc' }}>
+                      zenithprojects@icloud.com
+                    </code>
+                    .
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    padding: '16px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                  }}
+                >
+                  <strong
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      marginBottom: '8px',
+                      color: '#60a5fa',
+                    }}
+                  >
+                    <Key size={15} /> Key Generation Presets
+                  </strong>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '12px',
+                      color: 'var(--text-muted)',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Cryptographic key generation supports 1-click presets for{' '}
+                    <strong>30 days</strong>, <strong>60 days</strong>, <strong>90 days</strong>,
+                    and <strong>365 days</strong>.
+                  </p>
                 </div>
               </div>
-              <p className="license-muted" style={{ marginTop: 0, marginBottom: '16px' }}>
-                Hardware hash identifiers bound to user workstations for anti-abuse and license
-                containment.
-              </p>
-              <div className="admin-device-list">
-                {(data?.devices ?? []).map((device) => (
-                  <div className="admin-device-row" key={device.id}>
-                    <code>{device.install_id_hint}</code>
-                    <span>{accountByUser.get(device.user_id)?.email || device.user_id}</span>
-                    <span
-                      className={`license-state-badge ${
-                        device.status === 'active'
-                          ? 'success'
-                          : device.status === 'banned'
-                            ? 'danger'
-                            : 'warning'
-                      }`}
-                    >
-                      {device.status}
-                    </span>
-                    <span className="admin-device-seen">
-                      Last seen {formatDate(device.last_seen_at)}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() =>
-                        void run(
-                          device.status === 'banned' ? 'unban_device' : 'ban_device',
-                          {
-                            deviceId: device.id,
-                            reason: 'Device access modified by administrator.',
-                          },
-                          `Device ${device.install_id_hint} ${device.status === 'banned' ? 'unbanned' : 'banned'}.`,
-                        )
-                      }
-                    >
-                      {device.status === 'banned' ? 'Unban device' : 'Ban device'}
-                    </button>
-                  </div>
-                ))}
-                {(data?.devices ?? []).length === 0 && (
-                  <div className="admin-empty-state">
-                    <UserRound size={22} /> No hardware device records.
-                  </div>
-                )}
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '24px',
+                  flexWrap: 'wrap',
+                  paddingTop: '12px',
+                  borderTop: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))',
+                  fontSize: '12px',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <span>
+                  Total Accounts:{' '}
+                  <strong style={{ color: 'var(--text-main)' }}>
+                    {data?.accounts?.length ?? 0}
+                  </strong>
+                </span>
+                <span>
+                  Active Trials:{' '}
+                  <strong style={{ color: 'var(--text-main)' }}>
+                    {data?.accounts?.filter((a) => a.status === 'trial').length ?? 0}
+                  </strong>
+                </span>
+                <span>
+                  Active Licenses:{' '}
+                  <strong style={{ color: 'var(--text-main)' }}>
+                    {data?.keys?.filter((k) => k.status === 'active').length ?? 0}
+                  </strong>
+                </span>
+                <span>
+                  Expired Accounts:{' '}
+                  <strong style={{ color: '#ef4444' }}>
+                    {data?.accounts?.filter((a) => a.status === 'expired').length ?? 0}
+                  </strong>
+                </span>
+                <span>
+                  Unused Keys:{' '}
+                  <strong style={{ color: 'var(--brand-emerald-dark, #10b981)' }}>
+                    {unusedKeysCount}
+                  </strong>
+                </span>
               </div>
             </section>
 
