@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Search,
@@ -205,6 +205,16 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   // Live thinking state per message
   const [openThinkingMap, setOpenThinkingMap] = useState<Record<string, boolean>>({});
   const [copiedThinkingId, setCopiedThinkingId] = useState<string | null>(null);
+  const copiedThinkingTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedThinkingTimerRef.current !== null) {
+        window.clearTimeout(copiedThinkingTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const toggleThinking = (messageId: string) => {
     setOpenThinkingMap((prev) => ({
@@ -218,7 +228,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     void writeClipboardText(text).then((copied) => {
       if (!copied) return;
       setCopiedThinkingId(msgId);
-      window.setTimeout(() => {
+      if (copiedThinkingTimerRef.current !== null) {
+        window.clearTimeout(copiedThinkingTimerRef.current);
+      }
+      copiedThinkingTimerRef.current = window.setTimeout(() => {
+        copiedThinkingTimerRef.current = null;
         setCopiedThinkingId((curr) => (curr === msgId ? null : curr));
       }, 2000);
     });

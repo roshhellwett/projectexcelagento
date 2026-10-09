@@ -26,13 +26,17 @@ function loadXlsx(): Promise<XlsxModule> {
 }
 
 async function loadSpreadsheetCodec(): Promise<XlsxModule> {
-  // Vitest runs without Vite's emitted public codec asset. Keep the test fallback explicit so the
-  // production graph contains no static dependency on the monolithic package.
-  if (import.meta.env.MODE === 'test') return import('xlsx-js-style');
-  const module = (await import(
-    /* @vite-ignore */ new URL(/* @vite-ignore */ './xlsx-codec.js', import.meta.url).href
-  )) as { default?: XlsxModule } & XlsxModule;
-  return module.default ?? module;
+  try {
+    const module = (await import(
+      /* @vite-ignore */ new URL(/* @vite-ignore */ __XLSX_CODEC_ASSET__, import.meta.url).href
+    )) as { default?: XlsxModule } & XlsxModule;
+    return module.default ?? module;
+  } catch (assetError) {
+    // Vitest executes the source module directly, so there is no emitted public asset beside it.
+    // Keep this fallback test-only; production must fail loudly if its hashed asset is missing.
+    if (import.meta.env.MODE !== 'test') throw assetError;
+    return import(/* @vite-ignore */ 'xlsx-js-style');
+  }
 }
 
 /**

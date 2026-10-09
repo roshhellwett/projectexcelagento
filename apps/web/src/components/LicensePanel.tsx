@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Copy,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getInstallId } from '../lib/device-identity.js';
 import { useLicense } from '../lib/license-context.js';
+import { writeClipboardText } from '../lib/clipboard.js';
 
 interface LicensePanelProps {
   onBack?: () => void;
@@ -100,6 +101,16 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
   const [activating, setActivating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+  const keyCopyTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+      if (keyCopyTimerRef.current !== null) window.clearTimeout(keyCopyTimerRef.current);
+    },
+    [],
+  );
   const deviceId = status?.deviceId || getInstallId();
   const state = stateCopy(status?.state, status?.isAdmin);
   const canEnterActivationKey =
@@ -113,21 +124,27 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
         )));
 
   const copyDeviceId = async () => {
-    try {
-      await navigator.clipboard.writeText(deviceId);
+    if (await writeClipboardText(deviceId)) {
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopied(false);
+      }, 1600);
+    } else {
       setNotice('Copy was blocked by the browser. Select the ID manually.');
     }
   };
 
   const copyKeyText = async (textToCopy: string) => {
-    try {
-      await navigator.clipboard.writeText(textToCopy);
+    if (await writeClipboardText(textToCopy)) {
       setKeyCopied(true);
-      window.setTimeout(() => setKeyCopied(false), 1600);
-    } catch {
+      if (keyCopyTimerRef.current !== null) window.clearTimeout(keyCopyTimerRef.current);
+      keyCopyTimerRef.current = window.setTimeout(() => {
+        keyCopyTimerRef.current = null;
+        setKeyCopied(false);
+      }, 1600);
+    } else {
       setNotice('Copy was blocked by the browser. Select the key manually.');
     }
   };

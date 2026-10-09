@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -7,6 +8,14 @@ import path from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
+const spreadsheetCodecSource = require('fs')
+  .readFileSync(require.resolve('xlsx-js-style/dist/xlsx.min.js'), 'utf8')
+  .replace(/\n\/\/#[#]? sourceMappingURL=.*$/u, '');
+const spreadsheetCodecHash = createHash('sha256')
+  .update(spreadsheetCodecSource)
+  .digest('hex')
+  .slice(0, 12);
+const spreadsheetCodecFileName = `assets/xlsx-codec-${spreadsheetCodecHash}.js`;
 
 /**
  * xlsx-js-style is distributed as one browser bundle. Emit it as a lazy ESM asset instead of
@@ -16,14 +25,10 @@ function emitSpreadsheetCodec() {
   return {
     name: 'emit-spreadsheet-codec',
     generateBundle() {
-      const sourcePath = require.resolve('xlsx-js-style/dist/xlsx.min.js');
-      const source = require('fs')
-        .readFileSync(sourcePath, 'utf8')
-        .replace(/\n\/\/#[#]? sourceMappingURL=.*$/u, '');
       this.emitFile({
         type: 'asset',
-        fileName: 'assets/xlsx-codec.js',
-        source: `${source}\nexport { XLSX as default };\n`,
+        fileName: spreadsheetCodecFileName,
+        source: `${spreadsheetCodecSource}\nexport { XLSX as default };\n`,
       });
     },
   };
@@ -31,6 +36,9 @@ function emitSpreadsheetCodec() {
 
 export default defineConfig({
   plugins: [react(), emitSpreadsheetCodec()],
+  define: {
+    __XLSX_CODEC_ASSET__: JSON.stringify(`./${spreadsheetCodecFileName.replace(/^assets\//u, '')}`),
+  },
   server: {
     port: 5173,
     host: true,

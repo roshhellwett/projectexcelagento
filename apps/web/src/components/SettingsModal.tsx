@@ -52,6 +52,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [learnedCount, setLearnedCount] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const connectionAbortRef = useRef<AbortController | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
 
   useDialogA11y(isOpen, cardRef, onClose);
 
@@ -69,6 +70,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
   }, [isOpen, settings]);
 
+  useEffect(() => {
+    if (isOpen) return;
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, [isOpen]);
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+    },
+    [],
+  );
+
   if (!isOpen) return null;
   const cloudMemory = getMemoryCloudStatus();
 
@@ -80,7 +96,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       model: trimmedModel,
     });
     setSavedSuccess(true);
-    setTimeout(onClose, 600);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, 600);
   };
 
   const handleClear = () => {
@@ -149,7 +168,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {
               role: 'user',
               content:
-                "In sheet 'Sales', column 'Order Date' contains dates in format 'MM/DD/YYYY'. Standardize them to 'YYYY-MM-DD' ISO format using the available tool.",
+                "In sheet 'Sales', column C contains dates in format 'MM/DD/YYYY'. Standardize them to 'YYYY-MM-DD' ISO format using the available tool.",
             },
           ],
           tools: [
@@ -162,13 +181,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type: 'object',
                   properties: {
                     sheet: { type: 'string', description: 'The target worksheet name' },
-                    column: { type: 'string', description: 'The column letter or header name' },
-                    targetFormat: {
+                    column: {
+                      type: 'string',
+                      description: 'The target column letter, for example C',
+                    },
+                    format: {
                       type: 'string',
                       description: 'Target date format, e.g. YYYY-MM-DD',
+                      enum: ['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY'],
                     },
                   },
-                  required: ['sheet', 'column', 'targetFormat'],
+                  required: ['sheet', 'column', 'format'],
                 },
               },
             },
@@ -177,6 +200,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }),
       });
 
+      if (connectionAbortRef.current !== controller) return;
       const latencyMs = Math.round(performance.now() - startTime);
 
       if (!res.ok) {
@@ -217,6 +241,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
 
       const data = await res.json();
+      if (connectionAbortRef.current !== controller) return;
       const choice = data.choices?.[0];
       const message = choice?.message;
       const toolCalls = message?.tool_calls;
@@ -240,7 +265,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const toolEngagementOk = Boolean(
         formatDatesCall &&
         parsedArgs &&
-        (parsedArgs.sheet || parsedArgs.column || parsedArgs.targetFormat),
+        typeof parsedArgs.sheet === 'string' &&
+        parsedArgs.sheet.trim() !== '' &&
+        typeof parsedArgs.column === 'string' &&
+        /^[A-Za-z]+$/.test(parsedArgs.column) &&
+        typeof parsedArgs.format === 'string' &&
+        ['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY'].includes(parsedArgs.format),
       );
 
       if (toolEngagementOk) {
@@ -284,6 +314,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         });
       }
     } catch (err) {
+      if (connectionAbortRef.current !== controller) return;
       if (controller.signal.aborted) {
         if (isOpen) {
           setTestStatus({

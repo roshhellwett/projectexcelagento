@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { playUiSound } from '../lib/sound-effects.js';
 
 export type ToastKind = 'success' | 'error' | 'info' | 'warning';
@@ -14,8 +14,20 @@ let toastSequence = 0;
 /** Minimal, dependency-free toast queue used instead of blocking `alert()` calls. */
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  useEffect(
+    () => () => {
+      for (const timer of timersRef.current.values()) clearTimeout(timer);
+      timersRef.current.clear();
+    },
+    [],
+  );
 
   const dismissToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    timersRef.current.delete(id);
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
@@ -29,7 +41,13 @@ export function useToasts() {
       const id = `toast-${Date.now().toString(36)}-${toastSequence.toString(36)}`;
       setToasts((prev) => [...prev.slice(-3), { id, kind, message }]);
       playUiSound(kind === 'success' ? 'success' : kind === 'error' ? 'error' : 'click');
-      setTimeout(() => dismissToast(id), ttlMs);
+      timersRef.current.set(
+        id,
+        setTimeout(() => {
+          timersRef.current.delete(id);
+          dismissToast(id);
+        }, ttlMs),
+      );
       return id;
     },
     [dismissToast],

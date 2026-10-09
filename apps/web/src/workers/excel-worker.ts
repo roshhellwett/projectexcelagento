@@ -8,7 +8,7 @@ let xlsxLoad: Promise<XlsxModule> | null = null;
 
 function loadXlsx(): Promise<XlsxModule> {
   xlsxLoad ??= import(
-    /* @vite-ignore */ new URL(/* @vite-ignore */ './xlsx-codec.js', import.meta.url).href
+    /* @vite-ignore */ new URL(/* @vite-ignore */ __XLSX_CODEC_ASSET__, import.meta.url).href
   ).then((module) => {
     const loaded = module as { default?: XlsxModule } & XlsxModule;
     return loaded.default ?? loaded;

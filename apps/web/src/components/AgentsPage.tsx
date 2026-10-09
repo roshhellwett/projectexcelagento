@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FORMULA_FUNCTIONS } from '@excel-agent/engine';
 import { getMemoryCloudStatus, orchestrator, registry } from '../lib/agent-runtime.js';
 import {
@@ -44,7 +44,17 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
   const [selectedFilter, setSelectedFilter] = useState<
     'all' | 'orchestration' | 'analytics' | 'safety' | 'data'
   >('all');
-  const [, setCopiedPrompt] = useState<string | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
+  const copiedPromptTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedPromptTimerRef.current !== null) {
+        window.clearTimeout(copiedPromptTimerRef.current);
+      }
+    },
+    [],
+  );
   const cloud = getMemoryCloudStatus();
   const agents: AgentProfile[] = [
     {
@@ -263,7 +273,13 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
     void writeClipboardText(prompt).then((copied) => {
       if (!copied) return;
       setCopiedPrompt(prompt);
-      window.setTimeout(() => setCopiedPrompt(null), 2000);
+      if (copiedPromptTimerRef.current !== null) {
+        window.clearTimeout(copiedPromptTimerRef.current);
+      }
+      copiedPromptTimerRef.current = window.setTimeout(() => {
+        copiedPromptTimerRef.current = null;
+        setCopiedPrompt(null);
+      }, 2000);
     });
   };
 
@@ -440,8 +456,12 @@ export const AgentsPage: React.FC<AgentsPageProps> = ({ onBack, onSelectPrompt }
                       onClick={() => handleRunPrompt(p)}
                       title="Run this prompt in the workspace"
                     >
-                      <ArrowRight size={12} />
-                      <span>{onSelectPrompt ? 'Run' : 'Copy'}</span>
+                      {onSelectPrompt || copiedPrompt !== p ? (
+                        <ArrowRight size={12} />
+                      ) : (
+                        <CheckCircle2 size={12} />
+                      )}
+                      <span>{onSelectPrompt ? 'Run' : copiedPrompt === p ? 'Copied' : 'Copy'}</span>
                     </button>
                   </div>
                 ))}

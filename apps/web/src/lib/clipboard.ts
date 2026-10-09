@@ -4,12 +4,17 @@
  * success state after this promise resolves true.
  */
 export async function writeClipboardText(text: string): Promise<boolean> {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
       await navigator.clipboard.writeText(text);
       return true;
+    } catch {
+      // Some browsers expose the async API but reject it in an insecure context or after a
+      // permission change. Continue to the older user-gesture fallback before reporting failure.
     }
+  }
 
+  try {
     if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return false;
     const textarea = document.createElement('textarea');
     textarea.value = text;

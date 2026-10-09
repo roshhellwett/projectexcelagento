@@ -8,7 +8,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!assets/|fixtures/|favicon\\.svg|robots\\.txt).*)",
+      "source": "/((?!assets/|fixtures/|favicon\\.svg|excel-agent-logo\\.svg|mascot\\.jpg|theme-bootstrap\\.js|robots\\.txt).*)",
       "destination": "/index.html"
     }
   ],

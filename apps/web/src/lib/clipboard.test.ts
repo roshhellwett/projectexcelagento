@@ -28,6 +28,22 @@ describe('writeClipboardText', () => {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('blocked')) },
     });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
     await expect(writeClipboardText('blocked')).resolves.toBe(false);
+  });
+
+  it('tries the legacy fallback after an async clipboard rejection', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('permission changed')) },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(true),
+    });
+    await expect(writeClipboardText('fallback-after-rejection')).resolves.toBe(true);
   });
 });
