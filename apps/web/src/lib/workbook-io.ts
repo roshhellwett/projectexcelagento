@@ -418,6 +418,12 @@ function styleFromSheetJs(raw: unknown): CellStyle | undefined {
       underline?: boolean | string;
       color?: { rgb?: string };
     };
+    border?: {
+      top?: unknown;
+      bottom?: unknown;
+      left?: unknown;
+      right?: unknown;
+    };
     fill?: { fgColor?: { rgb?: string } };
     alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean };
   };
@@ -429,6 +435,7 @@ function styleFromSheetJs(raw: unknown): CellStyle | undefined {
     ...(rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb)
       ? { fillColor: rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb) }
       : {}),
+    ...(style.border ? { borders: 'all' } : {}),
     ...(style.alignment?.horizontal &&
     ['left', 'center', 'right'].includes(style.alignment.horizontal)
       ? { horizontalAlignment: style.alignment.horizontal as CellStyle['horizontalAlignment'] }
@@ -681,9 +688,14 @@ function styleForExport(style: CellStyle | undefined): Record<string, unknown> |
       : {}),
     ...(style.wrapText !== undefined ? { wrapText: style.wrapText } : {}),
   };
+  const borderSide = { style: 'thin', color: { rgb: 'FFCBD5E1' } };
+  const border = style.borders
+    ? { top: borderSide, bottom: borderSide, left: borderSide, right: borderSide }
+    : undefined;
   return {
     ...(Object.keys(font).length > 0 ? { font } : {}),
     ...(fill ? { fill } : {}),
+    ...(border ? { border } : {}),
     ...(Object.keys(alignment).length > 0 ? { alignment } : {}),
   };
 }

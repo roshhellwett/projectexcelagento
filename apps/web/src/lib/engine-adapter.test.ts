@@ -71,6 +71,7 @@ describe('xlsx adapter', () => {
                   bold: true,
                   fillColor: '#FFF2CC',
                   fontColor: '#20342B',
+                  borders: 'all',
                   horizontalAlignment: 'center',
                   verticalAlignment: 'middle',
                   wrapText: true,
@@ -94,6 +95,8 @@ describe('xlsx adapter', () => {
       Styles?: {
         Fonts?: Array<{ bold?: number; color?: { rgb?: string } }>;
         CellXf?: Array<{
+          borderId?: number;
+          borderid?: string;
           alignment?: { horizontal?: string; vertical?: string; wrapText?: boolean };
         }>;
       };
@@ -107,6 +110,9 @@ describe('xlsx adapter', () => {
           xf.alignment.wrapText === true,
       ),
     ).toBe(true);
+    expect(parsed.Styles?.CellXf?.some((xf) => Number(xf.borderId ?? xf.borderid ?? 0) > 0)).toBe(
+      true,
+    );
   });
 
   it('gives a date with no format of its own one that still reads as a date', async () => {

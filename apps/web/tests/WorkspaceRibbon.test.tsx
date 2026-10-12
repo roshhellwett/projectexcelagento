@@ -66,6 +66,28 @@ describe('WorkspaceRibbon', () => {
     expect(onManualAction).toHaveBeenCalledWith('currency');
   });
 
+  it('routes the Borders command through the local formatting action path', () => {
+    const onManualAction = vi.fn();
+    render(
+      <WorkspaceRibbon
+        activeSheetName="Orders"
+        isProcessing={false}
+        onManualAction={onManualAction}
+        onOpenOperationModal={vi.fn()}
+        onUploadFile={vi.fn()}
+        onExport={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        canUndo={false}
+        canRedo={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Borders' }));
+
+    expect(onManualAction).toHaveBeenCalledWith('borders');
+  });
+
   it('shows unsupported workbook-fidelity controls without pretending they mutate files', () => {
     renderRibbon();
     fireEvent.click(screen.getByRole('tab', { name: 'Insert' }));

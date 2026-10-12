@@ -261,6 +261,7 @@ const GridCellBase: React.FC<GridCellProps> = ({
     height: `${rowHeight}px`,
     ...(cell?.style?.fontColor ? { color: cell.style.fontColor } : {}),
     ...(cell?.style?.fillColor ? { backgroundColor: cell.style.fillColor } : {}),
+    ...(cell?.style?.borders === 'all' ? { border: '1px solid #CBD5E1' } : {}),
     ...(cell?.style?.bold ? { fontWeight: 700 } : {}),
     ...(cell?.style?.italic ? { fontStyle: 'italic' } : {}),
     ...(cell?.style?.underline ? { textDecoration: 'underline' } : {}),

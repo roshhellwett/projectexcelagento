@@ -175,6 +175,7 @@ function stylesEqual(left: CellStyle | undefined, right: CellStyle | undefined):
     left?.underline === right?.underline &&
     left?.fillColor === right?.fillColor &&
     left?.fontColor === right?.fontColor &&
+    left?.borders === right?.borders &&
     left?.horizontalAlignment === right?.horizontalAlignment &&
     left?.verticalAlignment === right?.verticalAlignment &&
     left?.wrapText === right?.wrapText

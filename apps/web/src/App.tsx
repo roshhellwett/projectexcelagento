@@ -847,7 +847,21 @@ const AppWorkspace: React.FC<{
     setIsOpModalOpen(true);
   }, []);
 
-  /** Ribbon controls are local Excel-like actions. They never create a chat turn. */
+  const draftRibbonAgentRequest = useCallback(
+    (actionId: string) => {
+      const label = actionId.replace(/-/g, ' ');
+      const prompt = `Use the active workbook selection to ${label}. Inspect the relevant cells first, show a bounded preview, and wait for my approval before applying anything.`;
+      setRevealAgentRevision((revision) => revision + 1);
+      setAgentDraft((previous) => ({
+        text: prompt,
+        revision: (previous?.revision ?? 0) + 1,
+      }));
+      pushToast('info', `${label} request drafted in Copilot. Review it and send it to continue.`);
+    },
+    [pushToast],
+  );
+
+  /** Apply workbook-native ribbon actions locally; draft agent-assisted actions into Copilot. */
   const handleRibbonManualAction = useCallback(
     (actionId: string) => {
       if (isProcessing) return;
@@ -885,6 +899,7 @@ const AppWorkspace: React.FC<{
         underline: { underline: toggleStyle('underline') },
         wrap: { wrapText: toggleStyle('wrapText') },
         fill: { fillColor: '#FFF2CC' },
+        borders: { borders: 'all' },
         'font-color': { fontColor: '#20342B' },
         'align-left': { horizontalAlignment: 'left' },
         'align-center': { horizontalAlignment: 'center' },
@@ -1009,10 +1024,7 @@ const AppWorkspace: React.FC<{
         openOperationModal();
         return;
       }
-      pushToast(
-        'info',
-        `${actionId.replace(/-/g, ' ')} is available as a manual operation or from chat. No chat request was created.`,
-      );
+      draftRibbonAgentRequest(actionId);
     },
     [
       currentSheet,
@@ -1022,6 +1034,7 @@ const AppWorkspace: React.FC<{
       openOperationModal,
       pushToast,
       requestClipboardCommand,
+      draftRibbonAgentRequest,
     ],
   );
 

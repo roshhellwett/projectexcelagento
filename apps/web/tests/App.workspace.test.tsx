@@ -64,6 +64,34 @@ describe('workspace shell', () => {
 
     expect(await screen.findByPlaceholderText(/Type a command/i)).toBeInTheDocument();
   });
+
+  it('drafts agent-assisted ribbon actions into Copilot for review', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await user.click(screen.getByRole('tab', { name: 'Insert' }));
+    await user.click(screen.getByRole('button', { name: 'Recommended Charts' }));
+
+    expect(
+      await screen.findByDisplayValue(/Use the active workbook selection to recommended chart/i),
+    ).toBeInTheDocument();
+    expect(toastTexts(container).join(' ')).toMatch(
+      /recommended chart request drafted in Copilot/i,
+    );
+  });
+
+  it('applies Borders to the active workbook selection and renders the cell border', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Borders' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('gridcell', { name: /A1:/ })).toHaveStyle({
+        border: '1px solid #CBD5E1',
+      }),
+    );
+  });
 });
 
 describe('deterministic actions from chat', () => {

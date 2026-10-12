@@ -45,4 +45,29 @@ describe('format_cells operation', () => {
     expect(result.report.affectedCells).toBe(4);
     expect(applyPatch(result.workbook, result.inverse)).toEqual(workbook);
   });
+
+  it('supports the local Borders ribbon command as workbook-native style metadata', () => {
+    const workbook: Workbook = {
+      sheets: [{ name: 'Sheet1', rows: [[createCell('Name')]] }],
+    };
+    const result = applyOperation(
+      workbook,
+      'format_cells',
+      {
+        sheet: 'Sheet1',
+        startRow: 1,
+        endRow: 1,
+        startColumn: 'A',
+        endColumn: 'A',
+        style: { borders: 'all' },
+      },
+      { registry: createOperationRegistry() },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.workbook.sheets[0]?.rows[0]?.[0]?.style).toEqual({ borders: 'all' });
+    expect(result.report.affectedCells).toBe(1);
+    expect(applyPatch(result.workbook, result.inverse)).toEqual(workbook);
+  });
 });

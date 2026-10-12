@@ -53,6 +53,7 @@ export const formatCellsArgsSchema = z.object({
         .trim()
         .regex(/^#[0-9a-f]{6}$/i)
         .optional(),
+      borders: z.enum(['all']).optional(),
       horizontalAlignment: z.enum(['left', 'center', 'right']).optional(),
       verticalAlignment: z.enum(['top', 'middle', 'bottom']).optional(),
       wrapText: z.boolean().optional(),
