@@ -90,7 +90,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
   };
 
   return (
-    <div className="app-container app-page-scroll resource-page-container">
+    <div className="resource-page support-page-surface">
       <ResourcePageChrome current="support" onBack={onBack} />
 
       <main className="resource-body support-body">

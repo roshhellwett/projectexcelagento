@@ -92,3 +92,33 @@ test('responsive analyst briefing gives source ranges, chart alternatives and ex
   }));
   expect(width.scroll).toBeLessThanOrEqual(width.viewport + 1);
 });
+
+test('workspace chrome and verification card stay contained across desktop and phone widths', async ({
+  page,
+}) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 900 },
+    { width: 390, height: 844 },
+    { width: 320, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await expect(page.getByRole('grid')).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+      .toBeLessThanOrEqual(viewport.width + 1);
+
+    const resourceRight = await page.locator('.studio-resource-nav').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.right;
+    });
+    expect(resourceRight).toBeLessThanOrEqual(viewport.width + 1);
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/#/verify-email');
+  const verificationCard = page.locator('.verify-email-card');
+  await expect(verificationCard).toBeVisible();
+  await expect.poll(() => verificationCard.boundingBox()).toMatchObject({ width: 520 });
+});

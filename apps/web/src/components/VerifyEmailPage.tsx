@@ -24,6 +24,12 @@ interface VerifyEmailPageProps {
 
 type VerificationStatus = 'verifying' | 'success' | 'pending' | 'error';
 
+function isConfirmedSession(
+  candidate: { user?: { email_confirmed_at?: string; confirmed_at?: string } } | null,
+) {
+  return Boolean(candidate?.user?.email_confirmed_at || candidate?.user?.confirmed_at);
+}
+
 export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
   onContinue,
   onSignIn,
@@ -51,6 +57,10 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCooldown]);
+
+  useEffect(() => {
+    if (initialEmail.trim()) setTargetEmail(initialEmail.trim());
+  }, [initialEmail]);
 
   // Main verification logic from URL or session
   useEffect(() => {
@@ -87,9 +97,18 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
         return;
       }
 
-      // 2. Check for PKCE auth code (?code=...)
+      // Supabase's browser client automatically consumes standard confirmation links. Wait for
+      // that initialization before touching a code/token, otherwise this page can race the SDK and
+      // report a valid link as already used.
+      if (authLoading) {
+        if (mounted) setStatus('verifying');
+        return;
+      }
+
+      // 2. Check for PKCE auth code (?code=...). This is a fallback for a link the SDK did not
+      // consume during initialization.
       const authCode = queryParams.get('code');
-      if (authCode) {
+      if (authCode && !session) {
         try {
           const { data, error } = await supabase.auth.exchangeCodeForSession(authCode);
           if (error) {
@@ -98,7 +117,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
             setErrorMessage(error.message || 'Failed to exchange verification code.');
             return;
           }
-          if (data.session) {
+          if (data.session && isConfirmedSession(data.session)) {
             if (!mounted) return;
             setStatus('success');
             setTargetEmail(data.session.user.email || targetEmail);
@@ -117,7 +136,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
       const tokenHash = queryParams.get('token_hash') || hashParams.get('token_hash');
       const type = (queryParams.get('type') || hashParams.get('type') || 'signup') as
         'signup' | 'email';
-      if (tokenHash) {
+      if (tokenHash && !session) {
         try {
           let { data, error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
@@ -139,7 +158,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
             setErrorMessage(error.message || 'Token verification failed.');
             return;
           }
-          if (data.session) {
+          if (data.session && isConfirmedSession(data.session)) {
             if (!mounted) return;
             setStatus('success');
             setTargetEmail(data.session.user.email || targetEmail);
@@ -156,7 +175,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
 
       // 4. Check if session already exists and user email is confirmed
       if (session?.user) {
-        if (session.user.email_confirmed_at) {
+        if (isConfirmedSession(session)) {
           if (!mounted) return;
           setStatus('success');
           setTargetEmail(session.user.email || targetEmail);
@@ -164,14 +183,15 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
         }
       }
 
-      // 5. If arrived via explicit auth=confirm without tokens or just pending verification
+      // 5. If arrived via explicit auth=confirm without tokens or just pending verification. Give
+      // the SDK one final short window to publish its auth event before showing the inbox state.
       const authMarker = queryParams.get('auth');
       if (authMarker === 'confirm' && !session) {
-        // Wait a brief moment in case Supabase client handles tokens in background
+        setStatus('verifying');
         authTimer = setTimeout(() => {
           if (!mounted) return;
           supabase.auth.getSession().then(({ data: { session: s } }) => {
-            if (s?.user?.email_confirmed_at) {
+            if (s?.user && isConfirmedSession(s)) {
               setStatus('success');
               setTargetEmail(s.user.email || targetEmail);
             } else {
@@ -276,11 +296,12 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
   };
 
   const isAdmin = Boolean(licenseStatus?.isAdmin);
+  const linkExpired = /expired|already/i.test(errorMessage);
 
   return (
     <div className="auth-page verify-email-page">
       <div className="auth-page-grid" aria-hidden="true" />
-      <div className="auth-layout" style={{ maxWidth: 540 }}>
+      <div className="auth-layout">
         <section className="auth-card verify-email-card" aria-labelledby="verify-title">
           {/* Brand header */}
           <div className="verify-card-top">
@@ -307,14 +328,14 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
 
           {/* Alerts */}
           {errorMessage && (
-            <div className="auth-alert is-error" role="alert" style={{ marginTop: '1.25rem' }}>
+            <div className="auth-alert is-error" role="alert">
               <AlertCircle size={17} />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {feedbackMessage && (
-            <div className="auth-alert is-success" role="status" style={{ marginTop: '1.25rem' }}>
+            <div className="auth-alert is-success" role="status">
               <CheckCircle2 size={17} />
               <span>{feedbackMessage}</span>
             </div>
@@ -341,9 +362,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
               <div className="verify-icon-circle success">
                 <CheckCircle2 size={44} />
               </div>
-              <span className="studio-eyebrow text-emerald" style={{ letterSpacing: '0.08em' }}>
-                VERIFICATION COMPLETE
-              </span>
+              <span className="studio-eyebrow text-emerald">VERIFICATION COMPLETE</span>
               <h1 id="verify-title" className="verify-title">
                 Email Confirmed Successfully!
               </h1>
@@ -360,7 +379,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
                 </div>
               )}
 
-              <div className="verify-actions" style={{ marginTop: '1.75rem' }}>
+              <div className="verify-actions">
                 {isAdmin ? (
                   <button
                     type="button"
@@ -391,9 +410,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
               <div className="verify-icon-circle pending">
                 <Mail size={40} />
               </div>
-              <span className="studio-eyebrow" style={{ letterSpacing: '0.08em' }}>
-                ACTION REQUIRED
-              </span>
+              <span className="studio-eyebrow">ACTION REQUIRED</span>
               <h1 id="verify-title" className="verify-title">
                 Check Your Inbox
               </h1>
@@ -407,7 +424,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
                   <strong>{targetEmail}</strong>
                 </div>
               ) : (
-                <div className="verify-input-group" style={{ marginBottom: '1rem' }}>
+                <div className="verify-input-group">
                   <label htmlFor="target-email" className="auth-label">
                     Your Account Email
                   </label>
@@ -453,11 +470,14 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
                 <div className="verify-otp-row">
                   <input
                     type="text"
-                    maxLength={8}
+                    maxLength={6}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
                     className="auth-input verify-otp-input"
-                    placeholder="Enter code"
+                    placeholder="6-digit code"
                     value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   />
                   <button
                     type="submit"
@@ -470,7 +490,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
               </form>
 
               {/* Resend button */}
-              <div className="verify-actions" style={{ marginTop: '1.25rem' }}>
+              <div className="verify-actions">
                 <button
                   type="button"
                   className="auth-submit-btn"
@@ -505,17 +525,18 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
                 <AlertCircle size={42} />
               </div>
               <span className="studio-eyebrow text-amber" style={{ letterSpacing: '0.08em' }}>
-                LINK EXPIRED OR INVALID
+                {linkExpired ? 'LINK EXPIRED OR INVALID' : 'VERIFICATION UNSUCCESSFUL'}
               </span>
               <h1 id="verify-title" className="verify-title">
-                Verification Link Expired
+                {linkExpired ? 'Verification Link Expired' : 'We Couldn’t Verify That Link'}
               </h1>
               <p className="verify-subtitle">
-                Email verification links expire after 24 hours or after being clicked. If you
-                already verified your account, you can sign in directly.
+                {linkExpired
+                  ? 'Email verification links expire after 24 hours or after being clicked. If you already verified your account, you can sign in directly.'
+                  : 'This verification link could not be completed. Request a fresh link below, then use the newest email from your inbox.'}
               </p>
 
-              <div className="verify-input-group" style={{ margin: '1.25rem 0 1rem' }}>
+              <div className="verify-input-group">
                 <label htmlFor="resend-email" className="auth-label">
                   Enter your email address for a fresh link:
                 </label>

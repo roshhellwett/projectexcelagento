@@ -2740,6 +2740,36 @@
     flex-wrap: wrap;
   }
 }
+
+/* The second toolbar row contains more navigation than a narrow viewport can display inline.
+   Keep it inside the row as a horizontally scrollable resource strip instead of letting buttons
+   hang past the viewport edge. */
+@media (max-width: 1150px) {
+  .workbench .studio-toolbar {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .workbench .studio-resource-nav {
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 0;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  /* The ribbon and command palette carry these actions on compact screens. Reclaim the toolbar
+     width for navigation instead of reducing every resource button to an unreadable sliver. */
+  .workbench .studio-checkpoint-status,
+  .workbench .studio-toolbar-tools {
+    display: none;
+  }
+
+  .workbench .studio-resource-nav .btn {
+    flex: 0 0 auto;
+  }
+}
 @media (max-width: 700px) {
   .studio-checkpoint-status {
     width: 100%;
@@ -3536,5 +3566,90 @@
   .workbench .studio-mobile-tabs button:hover:not([aria-pressed='true']) {
     animation: none;
     transform: none;
+  }
+}
+
+/* Keep the workbook as the primary surface on compact laptops. The side-by-side agent panel
+   consumes the width needed for usable columns long before a phone-sized breakpoint is reached.
+   The existing Workbook / Agent tabs preserve access to the assistant without shrinking the
+   spreadsheet into a narrow strip. */
+@media (max-width: 1200px) {
+  .workbench .studio-layout {
+    position: relative;
+    flex-direction: column;
+  }
+
+  .workbench .studio-mobile-tabs {
+    flex: none;
+    display: flex;
+    align-self: flex-start;
+    gap: 3px;
+    padding: 3px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border-main);
+    border-radius: 8px;
+    background: var(--bg-surface);
+  }
+
+  .workbench .studio-mobile-tabs button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 10px !important;
+  }
+
+  .workbench .studio-mobile-tabs button[aria-pressed='true'] {
+    background: var(--studio-tint);
+    color: var(--brand-emerald);
+  }
+
+  .workbench .studio-panel-splitter,
+  .workbench .studio-agent-toggle,
+  .workbench .studio-agent-reopen {
+    display: none;
+  }
+
+  .workbench .studio-workspace[data-mobile-panel='data'] .studio-agent-area {
+    display: none;
+  }
+
+  .workbench .studio-workspace[data-mobile-panel='agent'] .studio-data-area {
+    display: none;
+  }
+
+  .workbench .studio-agent-area {
+    flex: 1;
+    width: 100%;
+    padding: 0;
+  }
+
+  .workbench .studio-agent-area .agent-panel {
+    flex: 1;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .workbench .studio-stage-content {
+    overflow: hidden;
+  }
+}
+
+/* Between a compact desktop and the stacked layout, reclaim just enough width from the agent so
+   the workbook remains a useful working surface while the assistant stays immediately visible. */
+@media (min-width: 1201px) and (max-width: 1280px) {
+  .workbench .studio-agent-area {
+    flex-basis: 320px;
+    width: 320px;
+  }
+
+  .workbench .studio-panel-splitter {
+    flex-basis: 10px;
   }
 }

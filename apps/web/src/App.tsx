@@ -113,6 +113,7 @@ import {
   type WorkspaceCheckpoint,
   type WorkspaceRecoveryStore,
 } from './lib/workspace-recovery.js';
+import { clearAuthCallbackUrl } from './lib/auth-redirect.js';
 
 const initialWorkbook = createSampleWorkbook();
 
@@ -432,6 +433,7 @@ const AppWorkspace: React.FC<{
   const navigate = useCallback((next: WorkspaceView) => {
     setView(next);
     try {
+      if (next !== 'verify-email') clearAuthCallbackUrl();
       window.location.hash = `#/${next}`;
     } catch {
       // Hash updates are best-effort; the in-memory view state still switches.

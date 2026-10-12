@@ -371,7 +371,7 @@ export const AdminLicensePage: React.FC<AdminLicensePageProps> = ({ onBack }) =>
             <XCircle size={17} />
             {licenseError || 'Administrator access is required.'}
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+          <div className="admin-access-actions">
             <button type="button" className="btn btn-secondary" onClick={() => void refresh()}>
               <RefreshCw size={14} /> Retry verification
             </button>

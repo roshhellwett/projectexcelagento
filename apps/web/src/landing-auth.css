@@ -5040,6 +5040,440 @@
   }
 }
 
+/* --------------------------------------------------------------------------
+   Precision pass: shared rhythm, containment, and breakpoint behavior.
+   Every public/resource surface keeps the same reading width and touch target
+   language while content-heavy tables remain intentionally scrollable.
+   -------------------------------------------------------------------------- */
+.product-page,
+.auth-page,
+.resource-page,
+.support-page-surface,
+.license-page {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.product-page > main,
+.resource-page > main,
+.support-page-surface > main {
+  min-width: 0;
+}
+
+.product-page button,
+.auth-page button,
+.resource-page button,
+.support-page-surface button,
+.license-page button,
+.product-page a,
+.auth-page a,
+.resource-page a,
+.support-page-surface a,
+.license-page a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.product-page input,
+.product-page textarea,
+.product-page select,
+.auth-page input,
+.auth-page textarea,
+.auth-page select,
+.resource-page input,
+.resource-page textarea,
+.resource-page select,
+.support-page-surface input,
+.support-page-surface textarea,
+.support-page-surface select,
+.license-page input,
+.license-page textarea,
+.license-page select {
+  max-width: 100%;
+}
+
+.product-page .product-nav-inner {
+  min-width: 0;
+}
+
+.product-page .product-brand-button,
+.product-page .product-nav-links,
+.product-page .product-nav-actions {
+  flex-shrink: 0;
+}
+
+.product-page .product-nav-actions .product-button {
+  min-height: 38px;
+}
+
+.resource-page .docs-content,
+.resource-page .legal-content,
+.resource-page .usage-panel,
+.resource-page .mission-list,
+.support-page-surface .support-body {
+  min-width: 0;
+}
+
+.resource-page .docs-code-block pre,
+.resource-page .docs-ops-table-wrapper,
+.resource-page .usage-table-wrap,
+.resource-page .admin-table-wrap {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.resource-page .docs-tabs,
+.resource-page .agents-filter-pills {
+  row-gap: 8px;
+}
+
+.support-page-surface {
+  min-height: 100%;
+}
+
+.admin-access-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.support-page-surface .support-card,
+.support-page-surface .support-success-card {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .product-page .product-nav-inner {
+    gap: 16px;
+  }
+
+  .product-page .product-nav-links {
+    gap: 14px;
+  }
+
+  .product-page .product-hero {
+    gap: 42px;
+  }
+
+  .product-page .product-workflow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .resource-page .resource-nav {
+    gap: 16px;
+  }
+
+  .support-page-surface .support-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .product-page .product-nav-links {
+    display: none;
+  }
+
+  .product-page .product-nav-actions {
+    margin-left: auto;
+  }
+
+  .product-page .product-hero {
+    padding-top: 56px;
+  }
+
+  .product-page .product-section {
+    padding-top: 84px;
+    padding-bottom: 84px;
+  }
+
+  .resource-page .resource-nav {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px;
+  }
+
+  .resource-page .resource-links {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    padding-bottom: 8px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .resource-page .resource-nav-actions {
+    min-width: 0;
+  }
+
+  .resource-page .resource-current-label {
+    display: none;
+  }
+
+  .support-page-surface .support-body {
+    padding-top: 24px;
+  }
+
+  .support-page-surface .support-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .support-page-surface .support-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .product-page .product-container,
+  .product-page .product-nav-inner,
+  .auth-page .auth-layout {
+    width: min(100% - 32px, 620px);
+  }
+
+  .product-page .product-hero {
+    min-height: 0;
+    padding-top: 46px;
+    padding-bottom: 42px;
+  }
+
+  .product-page .product-hero h1 {
+    font-size: clamp(38px, 12vw, 58px);
+  }
+
+  .product-page .product-hero-lede {
+    font-size: 14px;
+  }
+
+  .product-page .product-workflow {
+    grid-template-columns: 1fr;
+  }
+
+  .product-page .product-workflow-step {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-main);
+  }
+
+  .product-page .product-workflow-step:last-child {
+    border-bottom: 0;
+  }
+
+  .auth-page .auth-layout {
+    gap: 32px;
+  }
+
+  .verify-email-page .auth-layout {
+    width: 100%;
+  }
+
+  .auth-page .auth-context-copy {
+    margin: 40px 0 28px;
+  }
+
+  .auth-page .auth-panel {
+    max-width: none;
+  }
+
+  .resource-page .resource-nav {
+    padding-inline: 16px;
+  }
+
+  .resource-page .resource-brand strong {
+    font-size: 15px;
+  }
+
+  .resource-page .resource-links a {
+    min-height: 34px;
+    padding: 7px 9px;
+    font-size: 10px;
+  }
+
+  .resource-page > .agents-hero,
+  .resource-page > .docs-header,
+  .resource-page > .legal-header,
+  .resource-page > .mission-hero {
+    padding-top: 42px;
+    padding-bottom: 28px;
+  }
+
+  .resource-page .agents-hero-title,
+  .resource-page .docs-title,
+  .resource-page .legal-title,
+  .resource-page .mission-hero h1 {
+    font-size: clamp(32px, 10vw, 48px);
+  }
+
+  .resource-page .docs-section,
+  .resource-page .legal-section,
+  .resource-page .usage-panel,
+  .resource-page .agents-arch-section,
+  .resource-page .compliance-highlight-card {
+    padding: 18px;
+  }
+
+  .support-page-surface .support-body {
+    width: 100%;
+    padding: 22px 16px 40px;
+  }
+
+  .support-page-surface .support-hero h1 {
+    font-size: clamp(28px, 8vw, 38px);
+  }
+
+  .support-page-surface .support-hero p {
+    font-size: 13px;
+  }
+
+  .support-page-surface .support-card {
+    padding: 20px 16px;
+  }
+
+  .support-page-surface .support-sidebar {
+    display: flex;
+  }
+
+  .support-page-surface .support-card-header,
+  .support-page-surface .support-submit-row,
+  .support-page-surface .support-success-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .support-page-surface .support-priority-tag {
+    align-self: flex-start;
+  }
+
+  .support-page-surface .support-category-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .support-page-surface .support-submit-btn,
+  .support-page-surface .support-success-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .license-shell,
+  .admin-license-shell {
+    width: min(100% - 24px, 680px);
+  }
+
+  .license-hero {
+    padding: 18px;
+  }
+
+  .license-hero h1 {
+    font-size: 25px;
+  }
+
+  .license-hero p {
+    line-height: 1.55;
+  }
+
+  .license-state-badge {
+    margin-left: 0;
+  }
+
+  .license-details > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .license-key-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .license-key-row .btn {
+    width: 100%;
+  }
+
+  .admin-cms-nav {
+    margin-top: 14px;
+    padding: 4px;
+  }
+
+  .admin-cms-tab-btn {
+    padding: 8px 11px;
+    font-size: 11px;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-access-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-access-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .product-page .product-nav-inner,
+  .product-page .product-container,
+  .auth-page .auth-layout {
+    width: min(100% - 20px, 620px);
+  }
+
+  .product-page .product-brand small,
+  .auth-page .auth-brand small {
+    letter-spacing: 1px;
+  }
+
+  .product-page .product-brand strong,
+  .auth-page .auth-brand strong {
+    font-size: 17px;
+  }
+
+  .product-page .product-nav-actions .product-button-primary {
+    padding-inline: 10px;
+    font-size: 10px;
+  }
+
+  .product-page .product-console-topbar small,
+  .product-page .product-console-chip + .product-console-chip {
+    display: none;
+  }
+
+  .resource-page .resource-back-button {
+    padding-inline: 8px;
+    font-size: 10px;
+  }
+
+  .resource-page .resource-brand-mark {
+    width: 30px;
+    height: 32px;
+  }
+
+  .resource-page .resource-brand-mark img {
+    width: 20px;
+    height: 20px;
+  }
+
+  .auth-page .auth-card {
+    padding: 20px 15px;
+  }
+
+  .verify-email-page .auth-layout {
+    width: 100%;
+  }
+
+  .auth-page .auth-heading h2 {
+    font-size: 24px;
+  }
+}
+
 /* ==========================================================================
    EMAIL VERIFICATION PAGE STYLES
    ========================================================================== */
@@ -5050,6 +5484,15 @@
   justify-content: center;
   min-height: 100vh;
   padding: 24px 16px;
+}
+
+/* Verification is a single focused task. Do not let it inherit the two-column marketing/auth
+   layout used by sign-in; on wide screens that would squeeze the card between the column minimums. */
+.verify-email-page .auth-layout {
+  display: block;
+  width: min(100%, 540px);
+  min-height: 0;
+  padding: 0;
 }
 
 .verify-email-card {
@@ -5064,6 +5507,10 @@
     0 0 35px -5px rgba(16, 185, 129, 0.12);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+}
+
+.verify-email-page .auth-alert {
+  margin-top: 20px;
 }
 
 .verify-card-top {
@@ -5094,6 +5541,24 @@
   align-items: center;
   text-align: center;
   padding: 12px 4px 4px;
+}
+
+.verify-state-box .studio-eyebrow {
+  letter-spacing: 0.08em;
+}
+
+.verify-state-box.success .verify-actions {
+  margin-top: 28px;
+}
+
+.verify-state-box.pending .verify-input-group {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.verify-state-box.error .verify-input-group {
+  width: 100%;
+  margin: 20px 0 16px;
 }
 
 .verify-icon-pulse {
@@ -5298,4 +5763,125 @@
 
 .verify-help-link:hover {
   color: #34d399;
+}
+
+@media (max-width: 600px) {
+  .verify-email-page {
+    align-items: flex-start;
+    padding: 16px 10px 28px;
+  }
+
+  .verify-email-page .auth-layout {
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .verify-email-card {
+    padding: 22px 16px;
+    border-radius: 13px;
+  }
+
+  .verify-card-top {
+    align-items: flex-start;
+    gap: 10px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+
+  .verify-security-badge {
+    flex: 0 0 auto;
+    font-size: 9px;
+    padding: 4px 7px;
+  }
+
+  .verify-title {
+    font-size: 21px;
+  }
+
+  .verify-subtitle {
+    font-size: 12px;
+  }
+
+  .verify-account-pill {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+  }
+
+  .verify-guide-list {
+    padding: 12px;
+  }
+
+  .verify-otp-row {
+    flex-direction: column;
+  }
+
+  .verify-otp-row .verify-otp-input,
+  .verify-otp-row .btn {
+    width: 100%;
+  }
+
+  .verify-footer-help {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    line-height: 1.5;
+  }
+}
+
+/* Mobile landing navigation remains discoverable instead of disappearing with the desktop links. */
+.product-mobile-menu {
+  display: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .product-page .product-nav-inner {
+    position: relative;
+  }
+
+  .product-page .product-mobile-menu {
+    display: grid;
+    margin-left: auto;
+  }
+
+  .product-page .product-nav-links.is-open {
+    position: absolute;
+    top: calc(100% + 1px);
+    right: 0;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--border-main);
+    border-radius: 0 0 10px 10px;
+    background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
+    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .product-page .product-nav-links.is-open button {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    text-align: left;
+  }
+
+  .product-page .product-nav-links.is-open button:hover {
+    background: var(--bg-hover);
+  }
 }

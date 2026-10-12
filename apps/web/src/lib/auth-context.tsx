@@ -52,6 +52,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [callback, setCallback] = useState<AuthCallbackInfo | null>(initialAuthCallback);
   const profileRequest = useRef(0);
   const currentUserId = useRef<string | null>(null);
+  const dismissCallback = useCallback(() => {
+    setCallback(null);
+    // Route changes only update the hash, so explicitly remove callback query parameters when a
+    // user leaves the verification/recovery surface.
+    if (initialAuthCallback) clearAuthCallbackUrl();
+  }, []);
 
   const fetchProfile = useCallback(async (userId: string, userEmail?: string) => {
     const requestId = ++profileRequest.current;
@@ -124,13 +130,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           void fetchProfile(currentSession.user.id, currentSession.user.email);
         }
         setLoading(false);
-        if (initialAuthCallback) clearAuthCallbackUrl();
+        // Supabase may still be processing a confirmation/recovery URL when the initial session
+        // check resolves. Do not remove a token-bearing URL until a session (or an explicit
+        // callback error) has been observed; the verification screen needs the URL as a fallback.
+        if (initialAuthCallback && (currentSession || initialAuthCallback.error)) {
+          clearAuthCallbackUrl();
+        }
       })
       .catch((sessionError: unknown) => {
         if (!mounted) return;
         setError(authErrorMessage(sessionError, 'The account session could not be loaded.'));
         setLoading(false);
-        if (initialAuthCallback) clearAuthCallbackUrl();
+        if (initialAuthCallback?.error) clearAuthCallbackUrl();
       });
 
     // Listen for auth state changes (login, logout, token refresh)
@@ -147,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Invalidate a profile request belonging to the previous account before starting the next one.
       profileRequest.current += 1;
       if (newSession?.user) {
+        if (initialAuthCallback) clearAuthCallbackUrl();
         // Supabase invokes auth callbacks while holding its auth lock. Start API work after the
         // callback returns so acquiring a session for the profile query cannot deadlock that lock.
         const nextUser = newSession.user;
@@ -322,7 +334,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         error,
         callback,
-        dismissCallback: () => setCallback(null),
+        dismissCallback,
         signIn,
         signUp,
         signOut,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
@@ -8,12 +8,14 @@ import {
   Clock3,
   FileSpreadsheet,
   LockKeyhole,
+  Menu,
   Orbit,
   ScanSearch,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Undo2,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context.js';
 
@@ -127,8 +129,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 }) => {
   const { user, profile, signOut } = useAuth();
   const reducedMotion = useReducedMotion();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const goToSection = (id: string) => {
+    setMobileNavOpen(false);
     document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
   };
 
@@ -138,6 +142,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     } else {
       onOpenAuth('signup');
     }
+    setMobileNavOpen(false);
   };
 
   return (
@@ -153,7 +158,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <Brand />
           </button>
 
-          <nav className="product-nav-links" aria-label="Product navigation">
+          <nav
+            className={`product-nav-links ${mobileNavOpen ? 'is-open' : ''}`}
+            aria-label="Product navigation"
+          >
             <button type="button" onClick={() => goToSection('capabilities')}>
               Capabilities
             </button>
@@ -172,6 +180,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </button>
             )}
           </nav>
+
+          <button
+            type="button"
+            className="product-mobile-menu"
+            aria-label={mobileNavOpen ? 'Close product navigation' : 'Open product navigation'}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
 
           <div className="product-nav-actions">
             {user ? (
