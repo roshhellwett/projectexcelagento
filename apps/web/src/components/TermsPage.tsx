@@ -158,19 +158,27 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack }) => {
         </section>
 
         <section className="legal-section">
-          <h2>8. Official deployment activation</h2>
+          <h2>8. Official deployment evaluation and activation</h2>
           <p>
-            The official hosted deployment provides a 30-day evaluation upon email registration,
-            followed by paid activation keys (e.g. 30 days, 60 days). Access state is determined by
-            the server, not by editable browser storage. Purchased keys are issued through{' '}
-            <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a> and are bound
-            to the verified user account.
+            The official hosted deployment provides a 30-day evaluation upon verified email
+            registration. After the evaluation, the operator may issue server-validated activation
+            keys for paid or extended access (for example, 30 or 60 days). Access state is
+            determined by the server, not by editable browser storage. Request an activation key
+            through <a href="mailto:zenithprojects@icloud.com">zenithprojects@icloud.com</a>; issued
+            keys are bound to the verified user account.
           </p>
           <p>
             Administrative key extensions, expiry changes, revocations and suspensions require
             ownership verification and are recorded in an operational audit trail. Because
             ExcelAgento is open source and browser-delivered, this licensing control protects the
             official deployment; a separately operated fork may choose different access rules.
+          </p>
+          <p>
+            This release does not provide in-app checkout, payment-card collection, automatic
+            renewal, or a recurring card subscription. Activation grants access to the hosted
+            deployment; it does not include model-provider usage. Deterministic workbook operations
+            can run without an AI key where the workspace is available, while BYOK provider accounts
+            and costs remain separate.
           </p>
         </section>
 

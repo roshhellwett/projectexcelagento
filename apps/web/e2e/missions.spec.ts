@@ -14,6 +14,27 @@ async function missions(page: Page) {
   );
 }
 
+test('first-run starter carries a new user through review, apply and export', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Get your first workbook result' })).toBeVisible();
+  await page.getByRole('button', { name: 'Try sample cleanup' }).click();
+  const composer = page.getByPlaceholder(/Ask ExcelAgento/i);
+  await expect(composer).toHaveValue('remove duplicate rows');
+  await page.getByRole('button', { name: /^Send$/i }).click();
+  await page
+    .getByRole('button', { name: /Apply Changes/i })
+    .last()
+    .click();
+  await expect(page.getByRole('group', { name: 'Confirm destructive change' })).toBeVisible();
+  await page.getByRole('button', { name: 'Yes, apply this change' }).click();
+  await expect(page.getByText('Task completed', { exact: true })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/i);
+});
+
 test('prepared mission survives reload, matches restored checkpoint, reconfirms and reverses the actual worker commit', async ({
   page,
 }) => {

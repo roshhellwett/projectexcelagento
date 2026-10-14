@@ -8,17 +8,21 @@ is 100% local in-browser with zero external database dependencies.
 
 ## Report a vulnerability
 
-Please do not publish exploit details in a public issue. Contact the project maintainers through
-the security contact listed by the repository owner, or use the private security-reporting channel
-provided by the hosting organization. Include:
+Please do not publish exploit details in a public issue or pull request. Open the repository's
+[Security tab](https://github.com/roshhellwett/projectexcelagento/security) and use **Report a
+vulnerability** when GitHub private vulnerability reporting is enabled. If that private form is
+not available, contact the repository owner through [GitHub](https://github.com/roshhellwett) and
+request a private channel before sharing details.
+
+Include:
 
 - affected version or commit;
 - a minimal reproduction using synthetic data only;
 - impact and prerequisites;
 - any suggested mitigation.
 
-Remove secrets and personal/customer data before sending a report. We will acknowledge reports when
-we can, investigate with a reproducible case, and coordinate disclosure for confirmed issues.
+Remove secrets and personal/customer data before sending a report. Use enough detail to support
+investigation; disclosure coordination can be discussed after an issue is confirmed.
 
 ## Safe disclosure boundaries
 

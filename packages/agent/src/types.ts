@@ -144,6 +144,8 @@ export interface ExecutionPlan {
   id: string;
   title: string;
   description: string;
+  /** Explicit workbook/data assumptions surfaced by deterministic workflow templates. */
+  assumptions?: string[];
   steps: ExecutionPlanStep[];
   status: 'pending' | 'applied' | 'error';
   totalAffectedCells?: number;

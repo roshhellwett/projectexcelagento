@@ -20,6 +20,7 @@ import {
   ArrowUpRight,
   Shapes,
   Square,
+  Download,
 } from 'lucide-react';
 import type { CompactColumnProfile } from '@excel-agent/agent';
 import { workspaceWorkflows } from '../lib/workflows.js';
@@ -31,12 +32,27 @@ import {
   type EvidenceItem,
   type ExecutionPlan,
   type ClarificationQuestion,
+  type GuardrailReport,
 } from '../lib/agent-helper.js';
 import type { Preview } from '@excel-agent/engine';
 import { TypewriterText } from './TypewriterText.js';
 import { MarkdownText } from './MarkdownText.js';
 import { LiveThinkingProgressBar } from './LiveThinkingProgressBar.js';
+import { TaskFeedback } from './TaskFeedback.js';
 import { writeClipboardText } from '../lib/clipboard.js';
+import {
+  feedbackCategoryForOperation,
+  type FeedbackInput,
+  type FeedbackResult,
+} from '../lib/feedback.js';
+import {
+  actionScope,
+  planAffectedCells,
+  planAssumptions,
+  planRequiresConfirmation,
+  planSafeguards,
+  singleActionSafeguards,
+} from '../lib/trust-summary.js';
 
 export interface TaskReceipt {
   id: string;
@@ -45,7 +61,8 @@ export interface TaskReceipt {
   createdAt: number;
   completedAt?: number;
   workbookContext?: { generation: number; revision: number; fileName: string; sheetName: string };
-  operations: { name: string; affectedCells: number; warnings: string[] }[];
+  changedWorkbook?: boolean;
+  operations: { name: string; affectedCells: number; warnings: string[]; summary?: string }[];
 }
 
 export interface ChatMessage {
@@ -63,6 +80,8 @@ export interface ChatMessage {
   sourceQuery?: string;
   proposedAction?: ProposedAction;
   preview?: Preview;
+  /** The engine/orchestrator safety result that backs a proposal or refusal. */
+  guardrail?: GuardrailReport;
   /** Every preview/confirmation belongs to exactly one document revision. */
   workbookContext?: { generation: number; revision: number };
   status?: 'pending' | 'applied' | 'error' | 'confirming' | 'stale';
@@ -95,6 +114,7 @@ interface AgentChatProps {
   onApplyPlan?: (messageId: string, plan: ExecutionPlan, confirmed?: boolean) => void;
   onCancelAction?: (messageId: string) => void;
   onUndoLast: () => void;
+  onExportWorkbook?: () => void;
   canUndo: boolean;
   /** Only the receipt bound to the current history boundary can undo its own task. */
   undoableMessageId?: string;
@@ -105,6 +125,7 @@ interface AgentChatProps {
   draftPrompt?: { text: string; revision: number };
   workflowProfiles?: CompactColumnProfile[];
   onOpenWorkflows?: () => void;
+  onSubmitFeedback?: (feedback: FeedbackInput) => void;
 }
 
 export const AgentChat: React.FC<AgentChatProps> = ({
@@ -120,6 +141,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   onApplyPlan,
   onCancelAction,
   onUndoLast,
+  onExportWorkbook,
   canUndo,
   undoableMessageId,
   onStop,
@@ -129,6 +151,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   draftPrompt,
   workflowProfiles = [],
   onOpenWorkflows,
+  onSubmitFeedback,
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -156,6 +179,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const [setupModel, setSetupModel] = useState('anthropic/claude-3.5-sonnet');
   const [showKeyText, setShowKeyText] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
+  // Loading a workbook or running a workflow already starts a local conversation. Keep its
+  // composer usable even when the optional provider setup was never opened.
+  const chatReady = hasApiKey || offlineMode || messages.length > 0;
 
   const latestAssistantMsg = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -372,7 +398,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       </div>
 
       {/* GATED BYOK SETUP STATE */}
-      {!hasApiKey && !offlineMode && messages.length === 0 ? (
+      {!chatReady ? (
         <div className="byok-gate-container">
           <div className="byok-gate-card">
             <div className="byok-avatar-icon studio-onboarding-mark">
@@ -405,10 +431,10 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 <b>03</b> Make it happen
               </span>
             </div>
-            <details className="studio-provider-details" open>
+            <details className="studio-provider-details">
               <summary>
                 <KeyRound size={14} />
-                Connect OpenRouter AI<span>Required for Agents</span>
+                Connect OpenRouter AI<span>Optional AI</span>
               </summary>
               <form onSubmit={handleActivateKey} className="byok-gate-form">
                 <div className="form-group">
@@ -1079,7 +1105,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                   ? 'Task reverted'
                                   : msg.receipt.status === 'failed'
                                     ? 'Task stopped'
-                                    : 'Task completed'}
+                                    : msg.receipt.changedWorkbook === false
+                                      ? 'Workbook unchanged'
+                                      : 'Task completed'}
                               </strong>
                               <span>
                                 {new Date(
@@ -1087,14 +1115,28 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
+                            <p>
+                              Requested: <strong>{msg.receipt.request}</strong>
+                            </p>
+                            {msg.receipt.workbookContext && (
+                              <p>
+                                <strong>{msg.receipt.workbookContext.fileName}</strong> ·{' '}
+                                {msg.receipt.workbookContext.sheetName}
+                              </p>
+                            )}
                             <div className="task-receipt-ops">
-                              {msg.receipt.operations.map((operation) => (
-                                <span key={operation.name}>
-                                  <b>{operation.name}</b> ·{' '}
-                                  {operation.affectedCells.toLocaleString()} cells
+                              {msg.receipt.operations.map((operation, operationIndex) => (
+                                <span key={`${operation.name}-${operationIndex}`}>
+                                  <b>{operation.name.replace(/_/g, ' ')}</b> ·{' '}
+                                  {operation.summary ??
+                                    `${operation.affectedCells.toLocaleString()} affected cells`}
                                 </span>
                               ))}
                             </div>
+                            {msg.receipt.status === 'applied' &&
+                              msg.receipt.changedWorkbook !== false && (
+                                <p>Review the workbook, then export a copy to keep your result.</p>
+                              )}
                             {msg.receipt.operations.some(
                               (operation) => operation.warnings.length > 0,
                             ) && (
@@ -1135,6 +1177,18 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           </details>
                         )}
 
+                        {msg.proposedAction && !msg.plan && (msg.preview || msg.guardrail) && (
+                          <ActionTrustSummary
+                            action={msg.proposedAction}
+                            preview={msg.preview}
+                            guardrail={msg.guardrail}
+                          />
+                        )}
+
+                        {!msg.proposedAction && !msg.plan && msg.guardrail && (
+                          <BlockedTrustSummary guardrail={msg.guardrail} />
+                        )}
+
                         {/* Multi-Step Execution Plan Card */}
                         {msg.plan && (
                           <div className="plan-card">
@@ -1147,6 +1201,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 {msg.plan.status}
                               </span>
                             </div>
+
+                            <PlanTrustSummary plan={msg.plan} />
 
                             <div className="plan-steps-list">
                               {msg.plan.steps.map((step, sIdx) => (
@@ -1179,6 +1235,18 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                             : 'Pending'}
                                       </span>
                                     </div>
+
+                                    {step.preview && (
+                                      <div className="plan-step-impact">
+                                        {step.preview.affectedCells.toLocaleString()} affected cell
+                                        {step.preview.affectedCells === 1 ? '' : 's'} ·{' '}
+                                        {step.preview.changes.length.toLocaleString()} sample change
+                                        {step.preview.changes.length === 1 ? '' : 's'} shown
+                                      </div>
+                                    )}
+                                    {step.error && (
+                                      <div className="plan-step-error">Blocked: {step.error}</div>
+                                    )}
 
                                     {step.preview?.changes && step.preview.changes.length > 0 && (
                                       <div className="plan-diff-preview">
@@ -1275,6 +1343,30 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                           </div>
                         )}
 
+                        {onSubmitFeedback &&
+                          (() => {
+                            const feedbackResult: FeedbackResult | undefined =
+                              msg.receipt?.status === 'applied'
+                                ? 'completed'
+                                : msg.receipt?.status === 'failed' ||
+                                    (msg.guardrail && !msg.guardrail.passed) ||
+                                    msg.plan?.status === 'error'
+                                  ? 'blocked'
+                                  : undefined;
+                            if (!feedbackResult) return null;
+                            const operation =
+                              msg.receipt?.operations[0]?.name ??
+                              msg.proposedAction?.name ??
+                              msg.plan?.steps[0]?.operation;
+                            return (
+                              <TaskFeedback
+                                result={feedbackResult}
+                                defaultCategory={feedbackCategoryForOperation(operation)}
+                                onSubmit={onSubmitFeedback}
+                              />
+                            );
+                          })()}
+
                         {msg.status === 'stale' && (
                           <div className="checkpoint-stale-note" role="status">
                             <p>
@@ -1369,6 +1461,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                         )}
 
                         {msg.status === 'applied' &&
+                          msg.receipt?.status !== 'undone' &&
                           canUndo &&
                           (undoableMessageId === undefined || undoableMessageId === msg.id) && (
                             <div className="assistant-card-footer">
@@ -1382,6 +1475,16 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                                 <RotateCcw size={12} />
                                 <span>Undo this step</span>
                               </button>
+                              {onExportWorkbook && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={onExportWorkbook}
+                                  disabled={isProcessing}
+                                >
+                                  <Download size={12} /> Export result
+                                </button>
+                              )}
                               <span className="assistant-footer-status">Invariants verified ✓</span>
                             </div>
                           )}
@@ -1426,7 +1529,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   type="button"
                   key={workflow.id}
                   onClick={() => handleSuggestionClick(workflow.prompt)}
-                  disabled={isProcessing || (!hasApiKey && !offlineMode)}
+                  disabled={isProcessing || !chatReady}
                   data-sound="send"
                 >
                   {workflow.title}
@@ -1459,7 +1562,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               aria-label="Ask ExcelAgento"
               aria-describedby="studio-composer-help"
               placeholder={
-                !hasApiKey && !offlineMode
+                !chatReady
                   ? 'Connect OpenRouter API Key & Model above to begin…'
                   : 'Ask ExcelAgento to explore, clean, or transform…'
               }
@@ -1471,7 +1574,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                   handleSubmit(event);
                 }
               }}
-              disabled={isProcessing || (!hasApiKey && !offlineMode)}
+              disabled={isProcessing || !chatReady}
             />
             <div className="studio-composer-footer">
               <span id="studio-composer-help">Enter to send · Shift + Enter for a new line</span>
@@ -1479,7 +1582,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                 type="submit"
                 className="btn btn-primary btn-sm studio-send-button"
                 aria-label="Send"
-                disabled={!inputText.trim() || isProcessing || (!hasApiKey && !offlineMode)}
+                disabled={!inputText.trim() || isProcessing || !chatReady}
                 data-sound="send"
               >
                 <ArrowUp size={16} />
@@ -1502,3 +1605,152 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     </aside>
   );
 };
+
+function ActionTrustSummary({
+  action,
+  preview,
+  guardrail,
+}: {
+  action: ProposedAction;
+  preview?: Preview;
+  guardrail?: GuardrailReport;
+}) {
+  const blocked = guardrail ? !guardrail.passed : false;
+  const affectedCells = preview?.affectedCells ?? guardrail?.preview?.affectedCells ?? 0;
+  return (
+    <section
+      className={`trust-summary ${blocked ? 'is-blocked' : ''}`}
+      aria-label={blocked ? 'Safety boundary' : 'Change review summary'}
+    >
+      <div className="trust-summary-heading">
+        {blocked ? <AlertTriangle size={14} /> : <ShieldCheck size={14} />}
+        <strong>{blocked ? 'Safety boundary blocked this request' : 'Change review'}</strong>
+        <span>{affectedCells.toLocaleString()} affected cells</span>
+      </div>
+      <div className="trust-summary-why">
+        <span>Why this change</span>
+        <p>{action.explanation}</p>
+      </div>
+      {actionScope(action).length > 0 && (
+        <div className="trust-summary-scope">
+          <span>What it targets</span>
+          <ul>
+            {actionScope(action).map((scope) => (
+              <li key={scope}>{scope}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="trust-summary-safeguards">
+        <span>Safeguards checked</span>
+        <ul>
+          {singleActionSafeguards(guardrail, preview).map((safeguard) => (
+            <li key={safeguard}>{safeguard}</li>
+          ))}
+        </ul>
+      </div>
+      {guardrail && (guardrail.errors.length > 0 || guardrail.warnings.length > 0) && (
+        <ul className="trust-summary-notices">
+          {guardrail.errors.map((error) => (
+            <li key={`error-${error}`}>Blocked: {error}</li>
+          ))}
+          {guardrail.warnings.map((warning) => (
+            <li key={`warning-${warning}`}>Notice: {warning}</li>
+          ))}
+        </ul>
+      )}
+      {blocked && (
+        <p className="trust-summary-blocked-copy">Nothing was changed in the workbook.</p>
+      )}
+    </section>
+  );
+}
+
+function BlockedTrustSummary({ guardrail }: { guardrail: GuardrailReport }) {
+  return (
+    <section className="trust-summary is-blocked" role="alert" aria-label="Safety boundary">
+      <div className="trust-summary-heading">
+        <AlertTriangle size={14} />
+        <strong>Safety boundary blocked this request</strong>
+      </div>
+      <p className="trust-summary-blocked-copy">
+        Nothing was changed because the requested operation did not pass the workbook safety checks.
+      </p>
+      <div className="trust-summary-check-grid">
+        <span>
+          Schema <b>{guardrail.schemaValid ? 'passed' : 'failed'}</b>
+        </span>
+        <span>
+          Engine <b>{guardrail.engineValid ? 'passed' : 'failed'}</b>
+        </span>
+        <span>
+          Preview <b>{guardrail.preview ? 'available' : 'not available'}</b>
+        </span>
+      </div>
+      {[...guardrail.errors, ...guardrail.warnings].length > 0 && (
+        <ul className="trust-summary-notices">
+          {guardrail.errors.map((error) => (
+            <li key={`error-${error}`}>Blocked: {error}</li>
+          ))}
+          {guardrail.warnings.map((warning) => (
+            <li key={`warning-${warning}`}>Notice: {warning}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function PlanTrustSummary({ plan }: { plan: ExecutionPlan }) {
+  const assumptions = planAssumptions(plan);
+  const safeguards = planSafeguards(plan);
+  const affectedCells = planAffectedCells(plan);
+  const requiresConfirmation = planRequiresConfirmation(plan);
+  return (
+    <section className="plan-trust-summary" aria-label="Plan trust summary">
+      <div className="plan-trust-overview">
+        <div>
+          <span>Why this plan</span>
+          <p>{plan.description}</p>
+        </div>
+        <div>
+          <span>Expected change</span>
+          <strong>
+            {affectedCells.toLocaleString()} affected cell{affectedCells === 1 ? '' : 's'}
+          </strong>
+          <small>
+            {plan.steps.length} reviewable step{plan.steps.length === 1 ? '' : 's'}
+          </small>
+        </div>
+        <div>
+          <span>Approval</span>
+          <strong>
+            {requiresConfirmation ? 'Second confirmation required' : 'Your approval required'}
+          </strong>
+        </div>
+      </div>
+      <div className="plan-trust-columns">
+        <div>
+          <strong>Assumptions to review</strong>
+          {assumptions.length > 0 ? (
+            <ul>
+              {assumptions.map((assumption) => (
+                <li key={assumption}>{assumption}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No additional assumptions were provided by the planner.</p>
+          )}
+        </div>
+        <div>
+          <strong>Safeguards checked</strong>
+          <ul>
+            {safeguards.map((safeguard) => (
+              <li key={safeguard}>{safeguard}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}

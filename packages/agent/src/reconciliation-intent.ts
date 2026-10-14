@@ -115,13 +115,14 @@ const amount = (column: Column) =>
 export function analyzeReconciliationIntent(
   query: string,
   workbook: Workbook,
+  options: { allowComplex?: boolean } = {},
 ): ReconciliationIntent | undefined {
   if (
     !isReconciliationRequest(query) ||
     /\b(?:how\s+(?:to|do)|what\s+is|explain|syntax)\b/i.test(query)
   )
     return undefined;
-  if (isComplexRequest(query)) return undefined;
+  if (!options.allowComplex && isComplexRequest(query)) return undefined;
   if (
     /\b(?:forecast|predict|regression|convert\s+(?:currenc|usd|eur)|foreign\s+exchange)\b/i.test(
       query,

@@ -12,8 +12,14 @@ import {
 } from 'lucide-react';
 import type { MissionRecord } from '../lib/missions.js';
 import type { MissionStorageStatus } from '../lib/use-mission-ledger.js';
+import {
+  feedbackCategoryForOperation,
+  type FeedbackInput,
+  type FeedbackResult,
+} from '../lib/feedback.js';
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
+import { TaskFeedback } from './TaskFeedback.js';
 
 interface MissionControlPageProps {
   missions: MissionRecord[];
@@ -30,6 +36,7 @@ interface MissionControlPageProps {
   onClear: () => Promise<void>;
   onRetryStorage: () => void;
   onDownload: (mission: MissionRecord) => void;
+  onSubmitFeedback?: (feedback: FeedbackInput) => void;
 }
 const statusCopy: Record<MissionRecord['status'], string> = {
   planning: 'Planning',
@@ -60,6 +67,7 @@ export function MissionControlPage({
   onClear,
   onRetryStorage,
   onDownload,
+  onSubmitFeedback,
 }: MissionControlPageProps) {
   const [filter, setFilter] = useState('all');
   const [deleting, setDeleting] = useState<MissionRecord | 'all' | null>(null);
@@ -78,6 +86,12 @@ export function MissionControlPage({
           ? ['analyzed', 'applied', 'undone'].includes(mission.status)
           : ['failed', 'stale', 'cancelled', 'interrupted'].includes(mission.status)),
   );
+  const feedbackForMission = (mission: MissionRecord): FeedbackResult | undefined => {
+    if (mission.status === 'applied' && mission.receipt?.status === 'applied') return 'completed';
+    if (mission.status === 'failed' && (mission.receipt?.status === 'failed' || mission.error))
+      return 'blocked';
+    return undefined;
+  };
   const confirmDelete = async () => {
     if (!deleting) return;
     setIsDeleting(true);
@@ -246,6 +260,52 @@ export function MissionControlPage({
                   ))}
                 </ol>
               )}
+              {mission.plan?.assumptions && mission.plan.assumptions.length > 0 && (
+                <details className="mission-assumptions" open>
+                  <summary>Assumptions used by this plan</summary>
+                  <ul>
+                    {mission.plan.assumptions.map((assumption) => (
+                      <li key={assumption}>{assumption}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {mission.safety && (
+                <section
+                  className={`mission-safety-summary ${mission.safety.passed ? '' : 'is-blocked'}`}
+                  aria-label="Safety review"
+                >
+                  <strong>
+                    <ShieldCheck size={13} /> Safety review
+                  </strong>
+                  <div className="mission-safety-checks">
+                    <span>
+                      Schema <b>{mission.safety.schemaValid ? 'passed' : 'failed'}</b>
+                    </span>
+                    <span>
+                      Engine <b>{mission.safety.engineValid ? 'passed' : 'failed'}</b>
+                    </span>
+                    <span>
+                      Preview <b>{mission.safety.affectedCells.toLocaleString()} cells</b>
+                    </span>
+                    <span>
+                      Confirmation{' '}
+                      <b>{mission.safety.requiresConfirmation ? 'required' : 'not required'}</b>
+                    </span>
+                  </div>
+                  {(mission.safety.errors.length > 0 || mission.safety.warnings.length > 0) && (
+                    <ul>
+                      {mission.safety.errors.map((error) => (
+                        <li key={`error-${error}`}>Blocked: {error}</li>
+                      ))}
+                      {mission.safety.warnings.map((warning) => (
+                        <li key={`warning-${warning}`}>Notice: {warning}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {!mission.safety.passed && <p>Nothing was changed by this request.</p>}
+                </section>
+              )}
               {mission.receipt && (
                 <div className="mission-receipt">
                   <strong>
@@ -262,8 +322,35 @@ export function MissionControlPage({
                     cell changes across {mission.receipt.operations.length} operation
                     {mission.receipt.operations.length === 1 ? '' : 's'}
                   </span>
-                  <p>{mission.receipt.operations.flatMap((op) => op.warnings).join(' ')}</p>
+                  <ul className="mission-receipt-ops">
+                    {mission.receipt.operations.map((operation, index) => (
+                      <li key={`${operation.name}-${index}`}>
+                        <code>{operation.name.replace(/_/g, ' ')}</code>
+                        <span>
+                          {operation.summary ??
+                            `${operation.affectedCells.toLocaleString()} affected cells`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    {mission.receipt.operations
+                      .flatMap((op) => op.warnings)
+                      .filter(Boolean)
+                      .join(' ')}
+                  </p>
                 </div>
+              )}
+              {onSubmitFeedback && feedbackForMission(mission) && (
+                <TaskFeedback
+                  result={feedbackForMission(mission)!}
+                  defaultCategory={feedbackCategoryForOperation(
+                    mission.receipt?.operations[0]?.name,
+                    mission.kind,
+                  )}
+                  onSubmit={onSubmitFeedback}
+                  compact
+                />
               )}
               {mission.evidence?.length ? (
                 <details className="mission-evidence">

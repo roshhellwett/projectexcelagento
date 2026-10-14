@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowUpRight,
@@ -13,8 +13,9 @@ import {
   Table2,
   ShieldCheck,
 } from 'lucide-react';
-import type { CompactColumnProfile, ToolDescriptor } from '@excel-agent/agent';
-import { workspaceWorkflows, type WorkspaceWorkflow } from '../lib/workflows.js';
+import type { ToolDescriptor, WorkflowTemplateDiscovery } from '@excel-agent/agent';
+import { TaskFeedback } from './TaskFeedback.js';
+import { type FeedbackCategory, type FeedbackInput } from '../lib/feedback.js';
 
 export const WORKFLOW_ICONS = {
   sparkles: Sparkles,
@@ -28,29 +29,38 @@ export const WORKFLOW_ICONS = {
 };
 
 interface WorkflowLibraryProps {
-  profiles: CompactColumnProfile[];
   tools: ToolDescriptor[];
-  onRun: (prompt: string) => void;
+  workflowDiscoveries: WorkflowTemplateDiscovery[];
   onDraft: (prompt: string) => void;
+  onRunTemplate: (discovery: WorkflowTemplateDiscovery) => void;
   isProcessing: boolean;
+  onSubmitFeedback?: (feedback: FeedbackInput) => void;
 }
 
 export function WorkflowLibrary({
-  profiles,
   tools,
-  onRun,
+  workflowDiscoveries,
   onDraft,
+  onRunTemplate,
   isProcessing,
+  onSubmitFeedback,
 }: WorkflowLibraryProps) {
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const reducedMotion = useReducedMotion();
-  const workflows = useMemo(() => workspaceWorkflows(profiles), [profiles]);
-  const filtered = workflows.filter(
-    (workflow) =>
-      (category === 'All' || workflow.category === category) &&
-      `${workflow.title} ${workflow.description}`.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filteredTemplates = workflowDiscoveries.filter((discovery) => {
+    const searchable = [
+      discovery.template.title,
+      discovery.template.description,
+      discovery.result.ok ? discovery.result.plan.description : discovery.result.reason,
+    ]
+      .join(' ')
+      .toLowerCase();
+    return (
+      (category === 'All' || discovery.template.category === category) &&
+      searchable.includes(search.toLowerCase())
+    );
+  });
   const filteredTools = tools.filter((tool) =>
     `${tool.name} ${tool.description}`.toLowerCase().includes(search.toLowerCase()),
   );
@@ -73,7 +83,7 @@ export function WorkflowLibrary({
       </div>
       <div className="workflow-library-controls">
         <div className="studio-segmented" role="group" aria-label="Workflow category">
-          {['All', 'Clean', 'Analyze', 'Organize'].map((item) => (
+          {['All', 'Clean', 'Compare'].map((item) => (
             <button
               type="button"
               key={item}
@@ -95,17 +105,18 @@ export function WorkflowLibrary({
         </label>
       </div>
       <div className="workflow-card-grid">
-        {filtered.map((workflow, index) => (
-          <WorkflowCard
-            key={workflow.id}
-            workflow={workflow}
+        {filteredTemplates.map((discovery, index) => (
+          <TemplateCard
+            key={discovery.template.id}
+            discovery={discovery}
             index={index}
             reducedMotion={Boolean(reducedMotion)}
-            onRun={onRun}
+            onRun={onRunTemplate}
             disabled={isProcessing}
+            onSubmitFeedback={onSubmitFeedback}
           />
         ))}
-        {filtered.length === 0 && (
+        {filteredTemplates.length === 0 && (
           <p className="studio-empty-message">
             No matching workflows. Try another search or browse the engine catalog below.
           </p>
@@ -148,38 +159,95 @@ export function WorkflowLibrary({
   );
 }
 
-function WorkflowCard({
-  workflow,
+function TemplateCard({
+  discovery,
   index,
   reducedMotion,
   onRun,
   disabled,
+  onSubmitFeedback,
 }: {
-  workflow: WorkspaceWorkflow;
+  discovery: WorkflowTemplateDiscovery;
   index: number;
   reducedMotion: boolean;
-  onRun: (prompt: string) => void;
+  onRun: (discovery: WorkflowTemplateDiscovery) => void;
   disabled: boolean;
+  onSubmitFeedback?: (feedback: FeedbackInput) => void;
 }) {
-  const Icon = WORKFLOW_ICONS[workflow.icon];
+  const Icon =
+    discovery.template.id === 'normalize_dates'
+      ? CalendarDays
+      : discovery.template.id === 'remove_duplicates'
+        ? Copy
+        : discovery.template.id === 'reconcile_sheets'
+          ? Table2
+          : Sparkles;
+  const result = discovery.result;
+  const unavailable = !result.ok;
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const body = result.ok
+    ? result.plan.description
+    : `${result.kind === 'needs-input' ? 'Needs input' : 'Unavailable'}: ${result.reason}`;
+
+  if (unavailable) {
+    return (
+      <article className="workflow-card workflow-card-unavailable">
+        <span
+          className={`workflow-icon workflow-icon-${discovery.template.category.toLowerCase()}`}
+        >
+          <Icon size={20} strokeWidth={1.6} />
+        </span>
+        <span className="workflow-card-category">{discovery.template.category}</span>
+        <strong>{discovery.template.title}</strong>
+        <span className="workflow-card-description">{discovery.template.description}</span>
+        <span className="workflow-card-unavailable-reason">{body}</span>
+        {onSubmitFeedback && (
+          <>
+            <button
+              type="button"
+              className="workflow-card-feedback-trigger"
+              onClick={() => setFeedbackOpen((open) => !open)}
+              aria-expanded={feedbackOpen}
+            >
+              {feedbackOpen ? 'Hide feedback' : 'Rate this gap'}
+            </button>
+            {feedbackOpen && (
+              <TaskFeedback
+                result="blocked"
+                defaultCategory={
+                  (discovery.template.category === 'Compare'
+                    ? 'analysis'
+                    : 'cleanup') as FeedbackCategory
+                }
+                onSubmit={onSubmitFeedback}
+                compact
+              />
+            )}
+          </>
+        )}
+      </article>
+    );
+  }
+
   return (
     <motion.button
       type="button"
       className="workflow-card"
       disabled={disabled}
-      onClick={() => onRun(workflow.prompt)}
+      onClick={() => onRun(discovery)}
       initial={reducedMotion ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: Math.min(index * 0.025, 0.15) }}
     >
-      <span className={`workflow-icon workflow-icon-${workflow.category.toLowerCase()}`}>
+      <span className={`workflow-icon workflow-icon-${discovery.template.category.toLowerCase()}`}>
         <Icon size={20} strokeWidth={1.6} />
       </span>
-      <span className="workflow-card-category">{workflow.category}</span>
-      <strong>{workflow.title}</strong>
-      <span className="workflow-card-description">{workflow.description}</span>
+      <span className="workflow-card-category">{discovery.template.category}</span>
+      <strong>{discovery.template.title}</strong>
+      <span className="workflow-card-description">{discovery.template.description}</span>
+      <span className="workflow-card-assumptions">{body}</span>
       <span className="workflow-card-action">
-        Start workflow <ArrowUpRight size={15} />
+        Review workflow <ArrowUpRight size={15} />
       </span>
     </motion.button>
   );

@@ -1,6 +1,7 @@
 export interface LicenseDependencies {
   origin: string;
   keyPepper: string;
+  serviceConfigured?: boolean;
   authenticate: (token: string) => Promise<string | null>;
   command: (
     actorId: string,
@@ -50,6 +51,11 @@ function newKey(): string {
   return `EXCEL-${hex.match(/.{8}/g)!.join('-')}`;
 }
 
+function newErrorReference(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return `LIC-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+}
+
 export function createLicenseHandler(
   deps: LicenseDependencies,
 ): (request: Request) => Promise<Response> {
@@ -70,7 +76,7 @@ export function createLicenseHandler(
         },
       });
 
-    if (!origin || deps.keyPepper.length < 32) {
+    if (!origin || deps.keyPepper.length < 32 || deps.serviceConfigured === false) {
       return respond(
         { error: 'Licensing service is not configured.', code: 'SERVICE_NOT_CONFIGURED' },
         503,
@@ -145,7 +151,6 @@ export function createLicenseHandler(
             400,
           );
         }
-        payload.rawKey = licenseKey;
         payload.keyHash = await hash(licenseKey, deps.keyPepper, 'excelagento:key:v1');
       }
 
@@ -167,7 +172,6 @@ export function createLicenseHandler(
           keys.map(async (key) => ({
             hash: await hash(key, deps.keyPepper, 'excelagento:key:v1'),
             hint: `EXCEL-••••-${key.slice(-6)}`,
-            rawKey: key,
           })),
         );
       }
@@ -180,15 +184,17 @@ export function createLicenseHandler(
         ...result,
         ...(keys.length ? { keys } : {}),
       });
-    } catch (err) {
-      console.error('License handler caught error:', err);
+    } catch {
+      const reference = newErrorReference();
+      // Keep upstream/database details out of both the browser response and logs. The reference
+      // gives an operator a stable handle to correlate with the platform's request logs without
+      // echoing a provider message, SQL fragment, token, or other sensitive value to the user.
+      console.error('License handler failure', { reference });
       return respond(
         {
-          error:
-            err instanceof Error
-              ? `Service error: ${err.message}`
-              : 'The activation service could not verify access. Please retry.',
+          error: 'The activation service could not verify access. Please retry.',
           code: 'SERVICE_UNAVAILABLE',
+          reference,
         },
         503,
       );

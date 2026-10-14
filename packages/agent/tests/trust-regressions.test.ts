@@ -121,6 +121,33 @@ describe('analytical integrity', () => {
   });
 });
 
+describe('safety boundary visibility', () => {
+  it('returns the blocked guardrail report instead of hiding an unsafe proposal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json('', undefined, [call('delete_column', { sheet: 'Missing', column: 'A' })]),
+      ),
+    );
+
+    const decision = await createOrchestrator({ registry: createOperationRegistry() }).decide({
+      query: 'delete column A from the missing sheet',
+      workbook,
+      sheetName: 'Sales',
+      config,
+    });
+
+    expect(decision.action).toBeUndefined();
+    expect(decision.message).toMatch(/Nothing has been changed/i);
+    expect(decision.guardrail).toMatchObject({
+      passed: false,
+      schemaValid: true,
+      engineValid: false,
+    });
+    expect(decision.guardrail?.errors.join(' ')).toMatch(/sheet|missing/i);
+  });
+});
+
 describe('critic approval is mandatory', () => {
   it.each([
     '{"approved":false,"issues":["Wrong request"],"revisions":[]}',

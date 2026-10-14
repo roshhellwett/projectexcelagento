@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { sanitizeProviderErrorMessage } from '@excel-agent/agent';
 
 import {
   forgetLearnedActions,
@@ -206,11 +207,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (!res.ok) {
         let errorDetail = '';
         try {
-          const errJson = await res.json();
-          errorDetail = errJson?.error?.message || JSON.stringify(errJson);
+          const errJson = (await res.json()) as { error?: { message?: unknown } };
+          const providerMessage = errJson.error?.message;
+          errorDetail = typeof providerMessage === 'string' ? providerMessage : '';
         } catch {
-          errorDetail = (await res.text()).slice(0, 150);
+          // Do not copy an arbitrary upstream body into the UI; it may contain workbook context
+          // or an echoed credential. The status and provider-specific advice are sufficient.
         }
+        const safeErrorDetail = sanitizeProviderErrorMessage(
+          errorDetail || res.statusText || 'Provider request failed.',
+          trimmedKey,
+        );
 
         let advice = 'Check your OpenRouter account dashboard.';
         if (res.status === 401) {
@@ -228,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setTestStatus({
           testing: false,
           ok: false,
-          message: `HTTP ${res.status}: ${errorDetail || res.statusText}`,
+          message: `HTTP ${res.status}: ${safeErrorDetail}`,
           diagnostics: {
             authOk: res.status !== 401,
             modelReachable: res.status !== 404,
@@ -331,7 +338,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
         return;
       }
-      const raw = err instanceof Error ? err.message : String(err);
+      const raw = sanitizeProviderErrorMessage(
+        err instanceof Error ? err.message : String(err),
+        trimmedKey,
+      );
       const isNetworkBlock = /failed to fetch|networkerror|load failed/i.test(raw);
       setTestStatus({
         testing: false,

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import type { HistoryEntry } from '@excel-agent/engine';
+import type { CellPatch, HistoryEntry } from '@excel-agent/engine';
 
 import { useDialogA11y } from '../lib/use-dialog-a11y.js';
 
@@ -9,6 +9,16 @@ interface HistoryDrawerProps {
   entries: HistoryEntry[];
   currentPosition: number;
   onStepBack: (position: number) => void;
+}
+
+function displayValue(value: CellPatch['oldValue']): string {
+  if (value === null || value === undefined || value === '') return 'blank';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
+
+function cellPatches(entry: HistoryEntry): CellPatch[] {
+  return entry.patch.filter((patch): patch is CellPatch => patch.kind === 'cell');
 }
 
 export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
@@ -99,6 +109,38 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
               <div className="history-item-meta">
                 Step {stepNum} • {entry.patch.length} patch entries
               </div>
+
+              {cellPatches(entry).length > 0 ? (
+                <details className="history-proof">
+                  <summary>
+                    {cellPatches(entry).length.toLocaleString()} cell change
+                    {cellPatches(entry).length === 1 ? '' : 's'}
+                  </summary>
+                  <ul>
+                    {cellPatches(entry)
+                      .slice(0, 8)
+                      .map((patch) => (
+                        <li
+                          key={`${patch.address.sheet}-${patch.address.row}-${patch.address.column}`}
+                        >
+                          <code>
+                            {patch.address.sheet}!{patch.address.column}
+                            {patch.address.row}
+                          </code>{' '}
+                          <span>{displayValue(patch.oldValue)}</span> →{' '}
+                          <strong>{displayValue(patch.newValue)}</strong>
+                        </li>
+                      ))}
+                    {cellPatches(entry).length > 8 && (
+                      <li>+ {cellPatches(entry).length - 8} more cell changes</li>
+                    )}
+                  </ul>
+                </details>
+              ) : (
+                <div className="history-proof-summary">
+                  Structural workbook change · snapshot retained for undo/redo
+                </div>
+              )}
 
               {!isCurrent && (
                 <button

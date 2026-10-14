@@ -12,7 +12,11 @@ import {
   indexToColumn,
   createWorkbookValueReader,
 } from '@excel-agent/engine';
-import { getCompactColumnProfiles } from '@excel-agent/agent';
+import {
+  discoverWorkflowTemplates,
+  getCompactColumnProfiles,
+  type WorkflowTemplateDiscovery,
+} from '@excel-agent/agent';
 import { MotionConfig } from 'framer-motion';
 
 import { TopNav } from './components/TopNav.js';
@@ -20,6 +24,7 @@ import { WorkspaceShell, type StudioView } from './components/WorkspaceShell.js'
 import { WorkspaceRibbon } from './components/WorkspaceRibbon.js';
 import { WorkbookInsights } from './components/WorkbookInsights.js';
 import { WorkflowLibrary } from './components/WorkflowLibrary.js';
+import { WorkbookQuickStart } from './components/WorkbookQuickStart.js';
 import {
   SpreadsheetGrid,
   type GridClipboardCommand,
@@ -114,6 +119,17 @@ import {
   type WorkspaceRecoveryStore,
 } from './lib/workspace-recovery.js';
 import { clearAuthCallbackUrl } from './lib/auth-redirect.js';
+import { describeTaskResult } from './lib/task-result.js';
+import { summarizeGuardrail } from './lib/trust-summary.js';
+import {
+  appendFeedbackEntryWithStatus,
+  clearFeedbackLogWithStatus,
+  getFeedbackStorageStatus,
+  loadFeedbackLog,
+  type FeedbackInput,
+  type FeedbackEntry,
+  type FeedbackStorageStatus,
+} from './lib/feedback.js';
 
 const initialWorkbook = createSampleWorkbook();
 
@@ -395,6 +411,10 @@ const AppWorkspace: React.FC<{
   });
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string>('');
   const [usageEntries, setUsageEntries] = useState<UsageEntry[]>(() => loadUsageLog());
+  const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>(() => loadFeedbackLog());
+  const [feedbackStorageStatus, setFeedbackStorageStatus] = useState<FeedbackStorageStatus>(() =>
+    getFeedbackStorageStatus(),
+  );
   const [learnedActions, setLearnedActions] = useState(() => learnedActionCount());
   const {
     missions,
@@ -487,6 +507,31 @@ const AppWorkspace: React.FC<{
     pushToast('info', 'Usage history cleared.');
   };
 
+  const handleSubmitFeedback = (feedback: FeedbackInput) => {
+    const result = appendFeedbackEntryWithStatus(feedback);
+    setFeedbackEntries(result.entries);
+    setFeedbackStorageStatus(result.status);
+  };
+
+  const handleClearFeedback = () => {
+    const result = clearFeedbackLogWithStatus();
+    setFeedbackEntries(result.entries);
+    setFeedbackStorageStatus(result.status);
+    if (result.cleared) {
+      pushToast(
+        'info',
+        result.status.persistence === 'saved-in-browser'
+          ? 'Local design-partner feedback cleared from this browser.'
+          : 'Session-only feedback cleared from this tab.',
+      );
+    } else {
+      pushToast(
+        'error',
+        'Could not clear feedback from browser storage. Existing entries remain available.',
+      );
+    }
+  };
+
   const handleSaveApiKey = (
     provider: ProviderName,
     key: string,
@@ -502,13 +547,13 @@ const AppWorkspace: React.FC<{
     setSettings(next);
     saveSettings(next);
 
-    // Greeting from ExcelAgento when the key is unlocked.
+    // Greeting from the Zenith workspace when the key is unlocked.
     setMessages((prev) => [
       ...prev,
       {
         id: `unlocked-${Date.now()}`,
         sender: 'assistant',
-        text: `Welcome to **ExcelAgento**.\n\nOpenRouter workspace unlocked (Model: \`${next.model}\`).\n\nUpload an Excel or CSV file to begin, or select a sample fixture from the navigation bar.\n\nOnce loaded you can ask for transformations, date formatting, deduplication, sorting, filtering, and deterministic calculations.`,
+        text: `Welcome to **ExcelAgento by Zenith**.\n\nOpenRouter workspace unlocked (Model: \`${next.model}\`).\n\nUpload an Excel or CSV file to begin, or select a sample fixture from the navigation bar.\n\nOnce loaded you can ask for transformations, date formatting, deduplication, sorting, filtering, and deterministic calculations. Every proposed change stays reviewable before it reaches the workbook.`,
       },
     ]);
   };
@@ -733,6 +778,10 @@ const AppWorkspace: React.FC<{
       return cell?.formula ? read(currentSheet.name, column, row) : (cell?.value ?? null);
     });
   }, [workbook, currentSheet]);
+  const workflowDiscoveries = useMemo(
+    () => discoverWorkflowTemplates(workbook, activeSheetName, registry),
+    [workbook, activeSheetName],
+  );
 
   // Execute an engine operation transactionally
   const executeOperation = useCallback(
@@ -1587,11 +1636,13 @@ const AppWorkspace: React.FC<{
       }
 
       const planBlocked = agentRes.plan?.status === 'error';
+      const safetyBlocked = agentRes.guardrail ? !agentRes.guardrail.passed : false;
+      const decisionBlocked = planBlocked || safetyBlocked;
       updateMission(missionId, {
         kind: agentRes.plan ? 'plan' : proposed ? 'action' : 'analysis',
         status: proposalIsStale
           ? 'stale'
-          : planBlocked
+          : decisionBlocked
             ? 'failed'
             : proposed || agentRes.plan
               ? 'prepared'
@@ -1604,11 +1655,14 @@ const AppWorkspace: React.FC<{
         plan: agentRes.plan,
         preview: previewResult,
         evidence: agentRes.evidence?.slice(0, 12),
+        safety: agentRes.guardrail ? summarizeGuardrail(agentRes.guardrail) : undefined,
         error: proposalIsStale
           ? 'The workbook changed during planning. Replan before applying.'
-          : planBlocked
-            ? 'The engine could not verify this plan. Nothing was applied.'
-            : undefined,
+          : safetyBlocked
+            ? `The safety boundary blocked this request. ${agentRes.guardrail?.errors.join(' ') || 'Nothing was applied.'}`
+            : planBlocked
+              ? 'The engine could not verify this plan. Nothing was applied.'
+              : undefined,
       });
 
       if (agentRes.source === 'fallback' && agentRes.trace) {
@@ -1638,6 +1692,7 @@ const AppWorkspace: React.FC<{
               thought: agentRes.thought || m.thought,
               activities: agentRes.activities ?? m.activities,
               evidence: agentRes.evidence ?? m.evidence,
+              guardrail: agentRes.guardrail,
               missionId,
               proposedAction: proposed,
               plan: agentRes.plan,
@@ -1654,7 +1709,7 @@ const AppWorkspace: React.FC<{
                   ? { ...m.tokens, isLive: false }
                   : undefined,
               isStreaming: false,
-              status: planBlocked
+              status: decisionBlocked
                 ? 'error'
                 : proposalIsStale && (proposed || agentRes.plan)
                   ? 'stale'
@@ -1992,6 +2047,10 @@ const AppWorkspace: React.FC<{
                     name: plan.steps[index]?.operation ?? 'step',
                     affectedCells: step.report.affectedCells,
                     warnings: step.report.warnings.map((warning) => warning.message),
+                    summary: describeTaskResult(
+                      plan.steps[index]?.operation ?? 'step',
+                      step.report,
+                    ),
                   })),
                 },
               }
@@ -2010,6 +2069,7 @@ const AppWorkspace: React.FC<{
                       id: `receipt-${Date.now()}`,
                       status: 'applied',
                       request: m.sourceQuery ?? plan.title,
+                      changedWorkbook: result.patch.length > 0,
                       createdAt: Date.now(),
                       completedAt: Date.now(),
                       workbookContext: {
@@ -2022,6 +2082,10 @@ const AppWorkspace: React.FC<{
                         name: plan.steps[index]?.operation ?? 'step',
                         affectedCells: step.report.affectedCells,
                         warnings: step.report.warnings.map((warning) => warning.message),
+                        summary: describeTaskResult(
+                          plan.steps[index]?.operation ?? 'step',
+                          step.report,
+                        ),
                       })),
                     } satisfies TaskReceipt)
                   : !awaitingConfirmation
@@ -2129,6 +2193,7 @@ const AppWorkspace: React.FC<{
                       name: action.name,
                       affectedCells: result.report.affectedCells,
                       warnings: result.report.warnings.map((warning) => warning.message),
+                      summary: describeTaskResult(action.name, result.report),
                     },
                   ],
                 },
@@ -2140,12 +2205,6 @@ const AppWorkspace: React.FC<{
         prev.map((m) => {
           if (m.id !== messageId) return m;
           if (result.ok) {
-            const affectedCount =
-              result.report.affectedCells ??
-              result.report.removedRows ??
-              result.report.deletedColumns ??
-              result.report.addedColumns ??
-              0;
             return {
               ...m,
               status: 'applied',
@@ -2154,6 +2213,7 @@ const AppWorkspace: React.FC<{
                 id: `receipt-${Date.now()}`,
                 status: 'applied',
                 request: m.sourceQuery ?? action.name,
+                changedWorkbook: result.patch.length > 0,
                 createdAt: Date.now(),
                 completedAt: Date.now(),
                 workbookContext: {
@@ -2167,10 +2227,14 @@ const AppWorkspace: React.FC<{
                     name: action.name,
                     affectedCells: result.report.affectedCells,
                     warnings: result.report.warnings.map((warning) => warning.message),
+                    summary: describeTaskResult(action.name, result.report),
                   },
                 ],
               } satisfies TaskReceipt,
-              text: `Successfully executed **${action.name}**. Applied update (${affectedCount} changes). Invariants verified ✓`,
+              text:
+                result.patch.length > 0
+                  ? 'Your reviewed change is now in the workbook. The engine checks passed.'
+                  : 'The operation finished without changing the workbook. Check any notices below.',
             };
           }
           // The engine refused pending a human decision. Move the card into its confirm state
@@ -2250,6 +2314,70 @@ const AppWorkspace: React.FC<{
     if (isProcessing) return;
     setRevealAgentRevision((revision) => revision + 1);
     void handleSendMessage(prompt);
+  };
+
+  /** Put a deterministic named workflow directly into the same review/mission path as chat. */
+  const handleWorkflowTemplate = (discovery: WorkflowTemplateDiscovery) => {
+    if (isProcessing || missionBusy) return;
+    const result = discovery.result;
+    if (!result.ok) {
+      pushToast('info', result.reason);
+      return;
+    }
+
+    const context = { generation: documentGeneration.current, revision: workbookRevision.current };
+    const turnId = ++turnSequence.current;
+    const missionId = `mission-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    const query = discovery.template.title;
+    const now = Date.now();
+    const answer = `### ${discovery.template.title}\n\n${result.plan.description}\n\nReview the verified plan below before applying it. The original workbook remains unchanged until you confirm.`;
+    const activity: AgentActivityEvent = {
+      id: `template-${now}`,
+      type: 'planning',
+      agent: 'Workflow planner',
+      summary: `Prepared the ${discovery.template.title} template from the live workbook.`,
+      timestamp: now,
+    };
+
+    persistMission({
+      version: 1,
+      id: missionId,
+      kind: 'plan',
+      status: 'prepared',
+      title: result.plan.title,
+      request: query,
+      answer,
+      createdAt: now,
+      updatedAt: now,
+      workbook: { ...context, fileName, sheetName: activeSheetName, signature: null },
+      plan: result.plan,
+    });
+    setMessages((previous) => [
+      ...previous,
+      { id: `user-${context.generation}-${turnId}`, sender: 'user', text: query },
+      {
+        id: `assist-${context.generation}-${turnId}`,
+        sender: 'assistant',
+        text: answer,
+        sourceQuery: query,
+        missionId,
+        plan: result.plan,
+        status: 'pending',
+        workbookContext: context,
+        activities: [activity],
+      },
+    ]);
+    setRevealAgentRevision((revision) => revision + 1);
+    void workbookSignature(workbook)
+      .then((signature) => {
+        updateMission(missionId, {
+          workbook: { ...context, fileName, sheetName: activeSheetName, signature },
+        });
+      })
+      .catch(() => {
+        // A prepared workflow remains usable in the current tab; resume verification will require
+        // a fresh plan if a secure workbook signature is unavailable.
+      });
   };
 
   const handleDraft = (prompt: string) => {
@@ -2537,6 +2665,7 @@ const AppWorkspace: React.FC<{
             initialMode="signin"
             onSuccess={() => navigate(view)}
             onNavigateBack={() => navigate('landing')}
+            onOpenSupport={() => navigate('support')}
           />
         </ErrorBoundary>
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
@@ -2564,6 +2693,7 @@ const AppWorkspace: React.FC<{
         locked
         onBack={() => navigate('landing')}
         onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+        onOpenSupport={() => navigate('support')}
       />
     );
   }
@@ -2573,6 +2703,7 @@ const AppWorkspace: React.FC<{
       <LicensePanel
         onBack={() => navigate('workspace')}
         onOpenAdmin={licenseStatus?.isAdmin ? () => navigate('admin') : undefined}
+        onOpenSupport={() => navigate('support')}
       />
     );
   }
@@ -2630,6 +2761,7 @@ const AppWorkspace: React.FC<{
             onClear={handleClearMissions}
             onRetryStorage={() => void retryMissionStorage()}
             onDownload={handleDownloadMission}
+            onSubmitFeedback={handleSubmitFeedback}
           />
         </ErrorBoundary>
         <ToastHost toasts={toasts} onDismiss={dismissToast} />
@@ -2659,6 +2791,9 @@ const AppWorkspace: React.FC<{
             onOpenSettings={() => setIsSettingsOpen(true)}
             onClearUsage={handleClearUsage}
             onForgetLearned={handleForgetLearned}
+            feedbackEntries={feedbackEntries}
+            onClearFeedback={handleClearFeedback}
+            feedbackStorageStatus={feedbackStorageStatus}
           />
         </ErrorBoundary>
 
@@ -2725,6 +2860,7 @@ const AppWorkspace: React.FC<{
               navigate('verify-email');
             }}
             onNavigateBack={() => navigate('landing')}
+            onOpenSupport={() => navigate('support')}
           />
         </ErrorBoundary>
 
@@ -3003,18 +3139,35 @@ const AppWorkspace: React.FC<{
           isProcessing={isProcessing}
           revealAgentRevision={revealAgentRevision}
           ribbon={
-            <WorkspaceRibbon
-              activeSheetName={currentSheet.name}
-              isProcessing={isProcessing}
-              onManualAction={handleRibbonManualAction}
-              onOpenOperationModal={() => openOperationModal()}
-              onUploadFile={handleFileUpload}
-              onExport={handleExport}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              canUndo={historyStack.canUndo}
-              canRedo={historyStack.canRedo}
-            />
+            <>
+              {studioView === 'sheet' && !messages.some((message) => message.sender === 'user') && (
+                <WorkbookQuickStart
+                  fileName={fileName}
+                  sheetName={currentSheet.name}
+                  isSample={!hasUserUploadedFile}
+                  profiles={studioProfiles}
+                  isProcessing={isProcessing}
+                  onUpload={handleFileUpload}
+                  onUseSample={() => void handleSelectFixture('sample')}
+                  onDraft={(prompt) => {
+                    setSelectionContext(null);
+                    handleDraft(prompt);
+                  }}
+                />
+              )}
+              <WorkspaceRibbon
+                activeSheetName={currentSheet.name}
+                isProcessing={isProcessing}
+                onManualAction={handleRibbonManualAction}
+                onOpenOperationModal={() => openOperationModal()}
+                onUploadFile={handleFileUpload}
+                onExport={handleExport}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={historyStack.canUndo}
+                canRedo={historyStack.canRedo}
+              />
+            </>
           }
           agent={
             <ErrorBoundary variant="panel" label="the agent chat">
@@ -3032,6 +3185,7 @@ const AppWorkspace: React.FC<{
                 onApplyPlan={handleApplyPlan}
                 onCancelAction={handleCancelAction}
                 onUndoLast={handleUndo}
+                onExportWorkbook={handleExport}
                 canUndo={historyStack.canUndo}
                 undoableMessageId={undoableMessageId}
                 onStop={handleStopTask}
@@ -3041,6 +3195,7 @@ const AppWorkspace: React.FC<{
                 draftPrompt={agentDraft}
                 workflowProfiles={studioProfiles}
                 onOpenWorkflows={() => setStudioView('workflows')}
+                onSubmitFeedback={handleSubmitFeedback}
               />
             </ErrorBoundary>
           }
@@ -3105,11 +3260,12 @@ const AppWorkspace: React.FC<{
           {studioView === 'workflows' && (
             <ErrorBoundary variant="panel" label="workflow library">
               <WorkflowLibrary
-                profiles={studioProfiles}
                 tools={orchestrator.tools}
-                onRun={handleWorkflow}
+                workflowDiscoveries={workflowDiscoveries}
                 onDraft={handleDraft}
+                onRunTemplate={handleWorkflowTemplate}
                 isProcessing={isProcessing}
+                onSubmitFeedback={handleSubmitFeedback}
               />
             </ErrorBoundary>
           )}

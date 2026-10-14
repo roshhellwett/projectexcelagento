@@ -113,7 +113,7 @@ function Brand() {
         <strong>
           Excel<span>Agento</span>
         </strong>
-        <small>THE AGENT WORKSPACE</small>
+        <small>ZENITH · OPEN-SOURCE WORKSPACE</small>
       </span>
     </span>
   );
@@ -243,14 +243,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.2, 0.7, 0.3, 1] }}
           >
+            <div className="product-origin-badge">
+              <strong>ZENITH OPEN SOURCE PROJECTS</strong>
+              <span>Flagship workspace</span>
+            </div>
             <div className="product-eyebrow">
               <span /> OPEN-SOURCE SPREADSHEET WORKSPACE
             </div>
-            <h1>Tell your workbook what needs to change.</h1>
+            <h1>Excel work, without the headache.</h1>
             <p className="product-hero-lede">
               ExcelAgento turns plain-English requests into grounded, reviewable spreadsheet work.
               Load a workbook, describe the outcome, inspect the proposed operation, and keep the
-              final decision in your hands.
+              final decision in your hands. Built by Zenith to make dependable workspace software
+              open, understandable, and useful every week.
             </p>
             <div className="product-hero-actions">
               <button
@@ -269,8 +274,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </button>
             </div>
             <p className="product-access-note">
-              <LockKeyhole size={13} /> An account is required before entering the workspace. One
-              open-source workspace experience.
+              <LockKeyhole size={13} /> Open source by Zenith · local-first execution · account
+              required for workspace access.
             </p>
           </motion.div>
 
@@ -359,19 +364,48 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <section className="product-proof-strip product-container" aria-label="Product principles">
           <div>
             <Orbit size={16} />
-            <span>Browser-first execution</span>
+            <span>Zenith open source</span>
           </div>
           <div>
             <ShieldCheck size={16} />
-            <span>Review before apply</span>
+            <span>Local-first data flow</span>
           </div>
           <div>
             <Undo2 size={16} />
-            <span>Reversible history</span>
+            <span>Review before apply</span>
           </div>
           <div>
             <Sparkles size={16} />
-            <span>Optional BYOK reasoning</span>
+            <span>Undoable history</span>
+          </div>
+        </section>
+
+        <section
+          className="product-zenith-note product-container"
+          aria-label="Zenith product promise"
+        >
+          <div className="product-zenith-note-copy">
+            <span className="product-section-kicker">THE ZENITH STANDARD</span>
+            <h2>Open software with clear boundaries.</h2>
+            <p>
+              Zenith builds productivity workspaces for people who need results they can explain,
+              review, and trust. ExcelAgento is the first product: a practical wedge into the messy,
+              repetitive spreadsheet work every team already has.
+            </p>
+          </div>
+          <div className="product-zenith-pillars">
+            <div>
+              <strong>Useful first</strong>
+              <span>Start with a real workbook and a real weekly task.</span>
+            </div>
+            <div>
+              <strong>Safe by design</strong>
+              <span>Preview, confirmation, invariants, and undo stay in the flow.</span>
+            </div>
+            <div>
+              <strong>Open by default</strong>
+              <span>Inspect the code, bring your own model, and keep control of your data.</span>
+            </div>
           </div>
         </section>
 
@@ -496,10 +530,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <section className="product-final-cta product-container">
           <div>
             <span className="product-section-kicker">READY WHEN YOU ARE</span>
-            <h2>Bring a real workbook. Leave with a traceable result.</h2>
+            <h2>Start with the spreadsheet that keeps getting in your way.</h2>
             <p>
-              Create an account to enter the workspace. The project is open source and has one
-              workspace experience.
+              Create an account to enter the workspace. Bring a real workbook, describe the outcome
+              in plain English, and let the verified workflow do the tedious part.
             </p>
           </div>
           <button
@@ -516,7 +550,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="product-container product-footer-inner">
           <div>
             <Brand />
-            <p>Plain-English spreadsheet work with visible boundaries.</p>
+            <p>
+              Plain-English spreadsheet work with visible boundaries. A Zenith open-source project.
+            </p>
           </div>
           <div className="product-footer-links">
             <button type="button" onClick={onOpenDocs}>
@@ -535,7 +571,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             )}
           </div>
           <div className="product-footer-status">
-            <Clock3 size={14} /> Open source · account required for workspace access
+            <Clock3 size={14} /> Built by Zenith · open source · account required for workspace
+            access
           </div>
         </div>
       </footer>

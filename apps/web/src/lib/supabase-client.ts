@@ -1,17 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import { readAuthCallback } from './auth-redirect.js';
+import { resolveSupabaseClientConfig, runtimeConfig } from './runtime-config.js';
 
 const SUPABASE_PROJECT_ID = 'fsepapdadtrlddkyqqxu';
 const DEFAULT_SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co`;
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_8JPAZFfCaS_U8nAAqc1rrQ_V6OSKAic';
 
-export const SUPABASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
-  DEFAULT_SUPABASE_URL;
+const clientConfig = resolveSupabaseClientConfig(runtimeConfig, {
+  url: DEFAULT_SUPABASE_URL,
+  anonKey: DEFAULT_SUPABASE_ANON_KEY,
+});
 
-export const SUPABASE_ANON_KEY =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
-  DEFAULT_SUPABASE_ANON_KEY;
+export const SUPABASE_URL = clientConfig.url;
+export const SUPABASE_ANON_KEY = clientConfig.anonKey;
 
 export const initialAuthCallback =
   typeof window === 'undefined' ? null : readAuthCallback(window.location.href);

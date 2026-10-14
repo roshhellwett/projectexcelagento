@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ProviderError,
   complete,
+  customAdapter,
   geminiAdapter,
   getAdapter,
   groqAdapter,
   listProviders,
   openRouterAdapter,
   resolveMaxTokens,
+  sanitizeProviderErrorMessage,
   sleep,
   type ChatMessage,
   type ProviderConfig,
@@ -221,6 +223,74 @@ describe('gemini adapter', () => {
 });
 
 describe('failure handling and retries', () => {
+  it('refuses an empty API key before any network call', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(GROQ_FIXTURE));
+
+    await expect(
+      groqAdapter.complete(MESSAGES, { ...BASE_CONFIG, apiKey: '  ' }),
+    ).rejects.toMatchObject({
+      message: 'A provider API key is required.',
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('redacts the active key and credential-bearing text from provider failure messages', async () => {
+    const secret = 'actual-key-used-for-this-request';
+    stubFetch(async () =>
+      jsonResponse(
+        {
+          error: {
+            message: `Rejected key ${secret}; Bearer another-secret; https://example.com/?token=secret`,
+          },
+        },
+        401,
+      ),
+    );
+
+    const error = await groqAdapter
+      .complete(MESSAGES, { ...BASE_CONFIG, apiKey: secret })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).message).toContain('HTTP 401');
+    expect((error as ProviderError).message).toContain('[redacted]');
+    expect((error as ProviderError).message).not.toContain(secret);
+    expect((error as ProviderError).message).not.toContain('another-secret');
+    expect((error as ProviderError).message).not.toContain('token=secret');
+  });
+
+  it('does not copy a non-JSON upstream response into a user-visible failure', async () => {
+    stubFetch(
+      async () => new Response('<html>private upstream diagnostic</html>', { status: 503 }),
+    );
+
+    const error = await groqAdapter
+      .complete(MESSAGES, { ...BASE_CONFIG, retries: 0 })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).message).toContain('HTTP 503');
+    expect((error as ProviderError).message).not.toContain('private upstream diagnostic');
+  });
+
+  it('rejects credential-bearing custom URLs before sending a key', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(GROQ_FIXTURE));
+
+    await expect(
+      customAdapter.complete(MESSAGES, {
+        provider: 'custom',
+        apiKey: 'test-key',
+        baseUrl: 'https://user:password@example.com/v1?key=hidden',
+      }),
+    ).rejects.toMatchObject({
+      message: 'Custom provider URL must not contain credentials, query parameters, or fragments.',
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sanitizeProviderErrorMessage('safe message')).toBe('safe message');
+  });
+
   it('bounds malformed generation, retry, timeout, and temperature settings', async () => {
     expect(resolveMaxTokens('groq', -10)).toBe(1);
     expect(resolveMaxTokens('openai', Number.POSITIVE_INFINITY)).toBe(8192);

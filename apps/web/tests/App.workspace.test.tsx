@@ -38,6 +38,10 @@ describe('workspace shell', () => {
       screen.getByRole('heading', { name: 'Get started with ExcelAgento' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Try the local agent/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Get your first workbook result/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Upload your workbook/i })).toBeInTheDocument();
   });
 
   it('unlocks demo mode, greets the user, and stores the preference', async () => {
@@ -55,6 +59,27 @@ describe('workspace shell', () => {
     await waitFor(() => expect(container.textContent).toContain('local agent is ready'), {
       timeout: 5000,
     });
+  });
+
+  it('takes a first-run prompt from the sample to a confirmed, understandable result', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: /Try sample cleanup/i }));
+    const prompt = await screen.findByDisplayValue('remove duplicate rows');
+    expect(prompt).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Send$/i }));
+    await user.click(await screen.findByRole('button', { name: /Apply Changes/i }));
+    await user.click(await screen.findByRole('button', { name: /Yes, apply this change/i }));
+
+    expect(await screen.findByText(/Task completed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Removed 1 duplicate row/i)).toBeInTheDocument();
+    expect(screen.getByText(/Review the workbook, then export a copy/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Export result/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toastTexts(container).join(' ')).toMatch(/delete_duplicates applied/i),
+    );
   });
 
   it('opens the command palette with Ctrl+K', async () => {
@@ -241,6 +266,8 @@ describe('file handling', () => {
     expect(metaPillText(container)).toContain('2 rows');
     expect(container.textContent).toContain('Region');
     expect(sheetTabTexts(container).join(' ')).toContain('Revenue');
+    expect(await screen.findByPlaceholderText(/Ask ExcelAgento/i)).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Understand this sheet/i })).not.toBeDisabled();
   });
 
   it('exports the workbook as a real xlsx blob', async () => {

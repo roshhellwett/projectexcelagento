@@ -1,14 +1,16 @@
-# ExcelAgento
+# ExcelAgento by Zenith Open Source Projects
 
-**The future of Excel: an intelligent, self-learning spreadsheet agent.**
+**Plain-English spreadsheet work with reliable boundaries.**
 
-ExcelAgento turns repetitive spreadsheet work into reviewable, reversible workflows. You chat;
-it inspects the workbook, proposes real Excel operations, and applies them through a
+ExcelAgento is the flagship open-source workspace from **Zenith Open Source Projects**. It turns
+repetitive spreadsheet work into reviewable, reversible workflows: describe the outcome in plain
+English, let the agents inspect and plan, then approve a real Excel operation through a
 schema-validated engine with previews, confirmation gates, and invariant checks before data changes.
 
 A browser-based, Vercel-deployable spreadsheet copilot with BYOK (Bring Your Own Key).
 Core cleaning and statistical analysis run locally without an API key. See
-[`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) for verified scope and release gaps.
+[`docs/STARTUP.md`](docs/STARTUP.md) for the product positioning and launch thesis, and keep the
+implementation limits in this README as the source of truth for the current release.
 
 ---
 
@@ -145,7 +147,15 @@ pnpm exec playwright install --with-deps chromium  # once, for browser tests
 pnpm test:e2e     # real Chromium mission/recovery/worker/briefing flows
 ```
 
-CI runs lint, typecheck, unit/UI tests, evals, build and the Chromium browser suite on every push and pull request.
+CI runs formatting, lint, typecheck, unit/UI tests, evals, build and the Chromium browser suite on every push and pull request.
+
+## Contributing, support, and security
+
+- Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, package boundaries, spreadsheet-safety
+  rules, and pull request expectations.
+- Use [`SUPPORT.md`](SUPPORT.md) for setup and usage questions, bug reports, and feature requests.
+- Report vulnerabilities privately according to [`SECURITY.md`](SECURITY.md); do not put exploit
+  details in a public issue.
 
 ### Test layout
 
@@ -165,16 +175,23 @@ timeouts - so no network call is needed and no key is required in CI.
 ## Deploy to Vercel
 
 The repo ships a `vercel.json` with build settings, SPA rewrites, long-lived asset
-caching, and security headers (including a CSP scoped to exactly the four external
+caching, and security headers (including a CSP scoped to the allowlisted external
 hosts the app talks to).
 
 1. Import the repository into Vercel.
 2. Keep the project root at the repository root - `vercel.json` handles the rest.
-3. Deploy. No environment variables are required.
+3. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_AUTH_REDIRECT_ORIGIN` for the
+   official authenticated deployment, then deploy. A misconfigured non-development build fails
+   closed before account access or provider data is loaded.
 
-The official deployment's optional server-authoritative account activation system is documented in
-[`docs/LICENSING.md`](docs/LICENSING.md). It uses Supabase Edge Functions and must be deployed with
-server-only peppers and service-role secrets; the static browser bundle never receives those values.
+See [`docs/PRODUCTION_LAUNCH.md`](docs/PRODUCTION_LAUNCH.md) for the Supabase, licensing, smoke-test,
+and operator sign-off checklist. A local deterministic build can still run without a provider key;
+the official hosted account flow requires its public Supabase configuration.
+
+The official deployment's optional server-authoritative account activation system is implemented in
+[`supabase/functions/license/`](supabase/functions/license/) and tracked by the Supabase migrations.
+It uses Supabase Edge Functions and must be deployed with server-only peppers and service-role
+secrets; the static browser bundle never receives those values.
 
 ## Bring Your Own Key
 
@@ -232,7 +249,8 @@ old proposals; editing or undoing makes outstanding previews stale and requires 
 Supported formulas export current evaluated caches, not stale imported values, and exports include
 actual full-recalculation XML. Formula reference rewriting is not yet implemented: structural edits
 are blocked on formula-bearing workbooks, and export refuses sheet-name changes that could break
-formula references. Ordinary cell/value editing remains available. See release readiness for limits.
+formula references. Ordinary cell/value editing remains available. The supported formula limits are
+described above.
 
 ## In-browser local memory
 
@@ -246,9 +264,10 @@ from the Zod schema) and fails the build until it is documented in `packages/age
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - layers, data flow, and extension points
-- [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) - current scope, examples, and release gaps
+- [`docs/STARTUP.md`](docs/STARTUP.md) - product positioning and launch thesis
+- [`docs/PRODUCTION_LAUNCH.md`](docs/PRODUCTION_LAUNCH.md) - deployment, smoke test, and launch sign-off
 - [`packages/engine/README.md`](packages/engine/README.md) - engine contract details
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - contribution and spreadsheet-safety rules
+- [`SUPPORT.md`](SUPPORT.md) - setup, issue, and data-handling guidance
 - [`SECURITY.md`](SECURITY.md) - vulnerability reporting and disclosure boundaries
 - [`LICENSE`](LICENSE) - MIT license

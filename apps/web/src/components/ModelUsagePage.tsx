@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart2, ArrowLeft, Sparkles, ExternalLink, Sliders } from 'lucide-react';
+import { BarChart2, ArrowLeft, Sparkles, ExternalLink, Sliders, Download } from 'lucide-react';
 
 import {
   PROVIDER_HOSTS,
@@ -14,6 +14,14 @@ import {
   isDemoKey,
   type AgentSettings,
 } from '../lib/settings.js';
+import {
+  FEEDBACK_CATEGORY_LABELS,
+  downloadFeedbackSummary,
+  getFeedbackStorageStatus,
+  summarizeFeedback,
+  type FeedbackEntry,
+  type FeedbackStorageStatus,
+} from '../lib/feedback.js';
 import { ResourcePageChrome, ResourcePageFooter } from './ResourcePageChrome.js';
 
 export interface ModelUsagePageProps {
@@ -33,6 +41,9 @@ export interface ModelUsagePageProps {
   onOpenSettings: () => void;
   onClearUsage: () => void;
   onForgetLearned: () => void;
+  feedbackEntries: FeedbackEntry[];
+  onClearFeedback: () => void;
+  feedbackStorageStatus?: FeedbackStorageStatus;
 }
 
 const StatCard: React.FC<{ label: string; value: string; hint?: string; testId?: string }> = ({
@@ -74,11 +85,23 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
   onOpenSettings,
   onClearUsage,
   onForgetLearned,
+  feedbackEntries,
+  onClearFeedback,
+  feedbackStorageStatus,
 }) => {
   const summary = summarizeUsage(entries);
+  const feedbackSummary = summarizeFeedback(feedbackEntries);
+  const feedbackStatus = feedbackStorageStatus ?? getFeedbackStorageStatus();
   const keyConfigured = settings.apiKey.trim().length > 0 && !isDemoKey(settings.apiKey);
   const effectiveModel = settings.model?.trim() || defaultModelFor(settings.provider);
   const recent = [...entries].reverse().slice(0, 50);
+
+  const feedbackStorageMessage =
+    feedbackStatus.issue === 'clear'
+      ? 'Could not verify that browser feedback was cleared. Existing entries remain visible and no deletion is claimed.'
+      : feedbackStatus.persistence === 'saved-in-browser'
+        ? 'Feedback is saved in this browser. Nothing is sent automatically.'
+        : 'Session-only feedback is retained in memory for this tab because browser storage is unavailable.';
 
   return (
     <div
@@ -196,6 +219,84 @@ export const ModelUsagePage: React.FC<ModelUsagePageProps> = ({
             disabled={learnedActions === 0}
           >
             Forget local actions
+          </button>
+        </div>
+      </section>
+
+      <section
+        className="usage-panel feedback-summary-panel"
+        aria-label="Local design-partner feedback"
+      >
+        <h2 className="usage-panel-title">Design-partner feedback</h2>
+        <p className="feedback-summary-copy">
+          Small, local signals from completed and blocked workbook tasks. Workbook, prompt, and file
+          metadata is not automatically attached. Optional notes are user-entered and may contain
+          information, so do not put confidential material in notes.
+        </p>
+        <p
+          className={`feedback-storage-status${feedbackStatus.issue ? ' is-warning' : ''}`}
+          data-testid="feedback-storage-status"
+          role={feedbackStatus.issue === 'clear' ? 'alert' : 'status'}
+        >
+          {feedbackStorageMessage}
+        </p>
+        <p className="feedback-export-copy">
+          The download contains aggregate counts plus per-entry IDs, timestamps, results, ratings,
+          and workflow areas. Notes, workbook contents, prompts, file data, and account secrets are
+          excluded.
+        </p>
+        {feedbackSummary.total === 0 ? (
+          <p className="usage-empty" data-testid="feedback-empty">
+            No local feedback yet. Rate a completed or blocked task in the workspace to guide the
+            next workflow improvements.
+          </p>
+        ) : (
+          <>
+            <div className="usage-grid feedback-summary-grid">
+              <StatCard
+                label="Responses"
+                value={`${feedbackSummary.total}`}
+                testId="feedback-count"
+              />
+              <StatCard label="Helpful" value={`${feedbackSummary.helpful}`} />
+              <StatCard label="Mixed" value={`${feedbackSummary.mixed}`} />
+              <StatCard label="Needs work" value={`${feedbackSummary.notHelpful}`} />
+              <StatCard label="Completed tasks" value={`${feedbackSummary.completed}`} />
+              <StatCard label="Blocked tasks" value={`${feedbackSummary.blocked}`} />
+            </div>
+            <div className="feedback-category-list" aria-label="Feedback by workflow area">
+              {feedbackSummary.byCategory.map(({ category, count }) => (
+                <span key={category}>
+                  <b>{FEEDBACK_CATEGORY_LABELS[category]}</b>
+                  <strong>{count}</strong>
+                </span>
+              ))}
+            </div>
+            {feedbackSummary.lastSubmittedAt && (
+              <p className="usage-meta">
+                Last local signal: {formatTimestamp(feedbackSummary.lastSubmittedAt)}
+              </p>
+            )}
+          </>
+        )}
+        <div className="usage-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => downloadFeedbackSummary(feedbackEntries)}
+            aria-label="Download aggregate feedback summary"
+            data-testid="feedback-export"
+          >
+            <Download size={13} /> Download summary
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClearFeedback}
+            disabled={feedbackSummary.total === 0}
+            data-testid="feedback-clear"
+          >
+            Clear local feedback
           </button>
         </div>
       </section>

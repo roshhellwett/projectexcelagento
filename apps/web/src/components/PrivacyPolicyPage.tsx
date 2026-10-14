@@ -228,8 +228,21 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
               not collect or enforce device fingerprints, machine identifiers, or hardware tracking.
             </li>
             <li>
-              Activation keys are sent to the licensing service over HTTPS and stored server-side as
-              secure keyed hashes.
+              <strong>No payment-card flow is implemented here:</strong> the official deployment
+              currently has no in-app checkout, recurring subscription management, or card-number
+              collection. Activation-key arrangements are handled through the operator support
+              channel rather than a payment provider embedded in this application.
+            </li>
+            <li>
+              Activation keys are sent to the licensing service over HTTPS. The service computes a
+              server-side keyed hash for lookup. Generated plaintext keys are shown once in the
+              authenticated administrator response and are not persisted by the hardened licensing
+              database path; treat the copied key as a secret.
+            </li>
+            <li>
+              Activation controls access to the official hosted deployment, not model-provider
+              usage. When a user configures BYOK, the selected provider receives the request
+              directly and handles its own account, terms, and costs.
             </li>
             <li>
               Extensions, revocations, and status adjustments are recorded in an operational audit

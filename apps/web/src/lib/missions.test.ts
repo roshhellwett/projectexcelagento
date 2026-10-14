@@ -85,7 +85,23 @@ describe('durable mission storage', () => {
       status: 'applied',
       createdAt: 1,
       completedAt: 2,
-      operations: [{ name: 'normalize_text', affectedCells: 1, warnings: [] }],
+      operations: [
+        {
+          name: 'normalize_text',
+          affectedCells: 1,
+          warnings: [],
+          summary: 'Trimmed 1 cell.',
+        },
+      ],
+    };
+    item.safety = {
+      passed: true,
+      schemaValid: true,
+      engineValid: true,
+      requiresConfirmation: false,
+      affectedCells: 1,
+      errors: [],
+      warnings: [],
     };
     item.action!.args.date = new Date('2026-01-01');
     item.evidence = [

@@ -20,6 +20,7 @@ interface AuthPageProps {
   onSuccess?: () => void;
   onNavigateBack?: () => void;
   onNavigateVerify?: (email: string) => void;
+  onOpenSupport?: () => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'reset' | 'verify';
@@ -29,6 +30,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onSuccess,
   onNavigateBack,
   onNavigateVerify,
+  onOpenSupport,
 }) => {
   const { signIn, signUp, resetPassword, resendConfirmation } = useAuth();
   const reducedMotion = useReducedMotion();
@@ -169,7 +171,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     mode === 'signin'
       ? 'Sign in to load workbooks, ask for changes, and review every proposed operation.'
       : mode === 'signup'
-        ? 'Sign up with your email to receive an automatic 30-day free trial.'
+        ? "Create an account to start the official hosted deployment's 30-day evaluation. No card or recurring subscription is required."
         : mode === 'verify'
           ? 'Already registered? Request a fresh confirmation link using your account email.'
           : 'Enter your account email to request a password recovery link.';
@@ -192,16 +194,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <strong>
                 Excel<span>Agento</span>
               </strong>
-              <small>THE AGENT WORKSPACE</small>
+              <small>ZENITH · OPEN-SOURCE WORKSPACE</small>
             </span>
           </button>
 
           <div className="auth-context-copy">
             <span className="auth-kicker">WORKSPACE ACCESS</span>
-            <h1>Move from spreadsheet instructions to verified work.</h1>
+            <h1>Move from spreadsheet headaches to verified work.</h1>
             <p>
-              ExcelAgento keeps the workbook visible, the agent’s proposal reviewable, and every
-              committed change reversible.
+              Zenith builds open workspace software for real work. ExcelAgento keeps the workbook
+              visible, the agent’s proposal reviewable, and every committed change reversible.
             </p>
           </div>
 
@@ -221,7 +223,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           </div>
 
           <p className="auth-context-footnote">
-            Open source · browser-first execution · optional bring-your-own-key model access
+            Zenith Open Source Projects · open source · browser-first execution · optional
+            bring-your-own-key model access · provider costs are separate
           </p>
         </aside>
 
@@ -443,7 +446,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 provider later, the workspace shows what context may be sent before the request
                 runs.
               </p>
+              <p>
+                Account evaluation and activation control access to the official hosted deployment.
+                They do not include model-provider usage; local deterministic operations need no AI
+                key, while BYOK provider costs remain separate.
+              </p>
             </div>
+
+            {onOpenSupport && (
+              <div className="auth-confirmation-actions">
+                <button type="button" className="auth-link-btn" onClick={onOpenSupport}>
+                  Need help with account access? Open support
+                </button>
+              </div>
+            )}
           </motion.section>
 
           <p className="auth-panel-footer">

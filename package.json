@@ -1,6 +1,16 @@
 {
   "name": "excel-agent",
   "private": true,
+  "description": "ExcelAgento: browser-first spreadsheet copilot with a reversible TypeScript engine.",
+  "author": "Zenith Open Source Projects",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/roshhellwett/projectexcelagento.git"
+  },
+  "bugs": {
+    "url": "https://github.com/roshhellwett/projectexcelagento/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@11.28.3",
   "engines": {
@@ -14,6 +24,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "evals": "vitest run packages/evals",
+    "release:check": "node tools/release-check.mjs",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check",

@@ -17,6 +17,7 @@ import { writeClipboardText } from '../lib/clipboard.js';
 interface LicensePanelProps {
   onBack?: () => void;
   onOpenAdmin?: () => void;
+  onOpenSupport?: () => void;
   locked?: boolean;
 }
 
@@ -44,18 +45,26 @@ function stateCopy(
       detail: 'You have permanent, unrestricted administrative access across the entire platform.',
     };
   }
+  if (!state) {
+    return {
+      label: 'Access Status Unavailable',
+      tone: 'danger',
+      detail:
+        'The activation service could not verify this account. No access or payment status has been changed; retry the status check or contact support.',
+    };
+  }
   if (state === 'licensed') {
     return {
-      label: 'Subscription Active',
+      label: 'Activation Key Active',
       tone: 'success',
-      detail: `Your paid activation is verified with ${daysRemaining ?? 0} day(s) remaining.`,
+      detail: `A server-issued activation key is verified for this account with ${daysRemaining ?? 0} day(s) remaining. This is time-limited access, not a recurring card subscription.`,
     };
   }
   if (state === 'trial') {
     return {
-      label: '30-Day Trial Active',
+      label: '30-Day Evaluation Active',
       tone: 'success',
-      detail: `Your free 30-day evaluation is active with ${daysRemaining ?? 0} day(s) remaining.`,
+      detail: `Your official hosted deployment evaluation is active with ${daysRemaining ?? 0} day(s) remaining. No card is collected and access does not renew automatically.`,
     };
   }
   if (state === 'banned') {
@@ -66,16 +75,17 @@ function stateCopy(
     };
   }
   return {
-    label: 'Activation Required',
+    label: 'Evaluation Ended',
     tone: 'danger',
     detail:
-      'Your 30-day trial has ended. Enter an activation key (30 days, 60 days, etc.) to continue.',
+      'Your 30-day evaluation has ended. Request a server-issued activation key through support to continue; this deployment has no in-app checkout.',
   };
 }
 
 export const LicensePanel: React.FC<LicensePanelProps> = ({
   onBack,
   onOpenAdmin,
+  onOpenSupport,
   locked = false,
 }) => {
   const { status, loading, error, refresh, activate } = useLicense();
@@ -93,8 +103,9 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
   );
 
   const state = stateCopy(status?.state, status?.isAdmin, status?.daysRemaining);
-  const isExpired =
-    !status?.isAdmin && (status?.state === 'expired' || (status?.daysRemaining ?? 0) <= 0);
+  const isExpired = Boolean(
+    status && !status.isAdmin && (status.state === 'expired' || status.daysRemaining <= 0),
+  );
 
   const copyKeyText = async (textToCopy: string) => {
     if (await writeClipboardText(textToCopy)) {
@@ -136,7 +147,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
           >
             ← Back to workspace
           </button>
-          <span className="studio-eyebrow">ACCOUNT &amp; SUBSCRIPTION</span>
+          <span className="studio-eyebrow">ACCOUNT &amp; ACCESS</span>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -153,7 +164,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             {state.tone === 'danger' ? <LockKeyhole size={26} /> : <CheckCircle2 size={26} />}
           </div>
           <div>
-            <span className="studio-eyebrow">EXCELAGENTO ACCESS CONTROL</span>
+            <span className="studio-eyebrow">EXCELAGENTO ACCOUNT ACCESS</span>
             <h1 id="license-title">
               {status?.isAdmin
                 ? 'Super Admin / System Owner'
@@ -203,15 +214,19 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                     <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
                       Lifetime Administrator (∞)
                     </span>
-                  ) : status?.state === 'licensed' ? (
+                  ) : !status ? (
+                    <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                      Access status unavailable
+                    </span>
+                  ) : status.state === 'licensed' ? (
                     <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
-                      Paid Subscription
+                      Activation Key Access
                     </span>
                   ) : isExpired ? (
                     <span style={{ color: '#ef4444', fontWeight: 600 }}>Evaluation Expired</span>
                   ) : (
                     <span style={{ color: 'var(--brand-emerald-dark, #059669)', fontWeight: 600 }}>
-                      Free 30-Day Trial
+                      30-Day Evaluation
                     </span>
                   )}
                 </dd>
@@ -223,6 +238,8 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                     <strong style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
                       Unlimited Lifetime
                     </strong>
+                  ) : !status ? (
+                    <strong>Unavailable</strong>
                   ) : status?.daysRemaining && status.daysRemaining > 0 ? (
                     <strong>{status.daysRemaining} day(s)</strong>
                   ) : (
@@ -237,6 +254,8 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                     <span style={{ color: 'var(--brand-emerald-dark, #059669)' }}>
                       Never Expires
                     </span>
+                  ) : !status ? (
+                    <span>Unavailable</span>
                   ) : (
                     formatDate(
                       status?.state === 'licensed'
@@ -248,8 +267,10 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
               </div>
             </dl>
             <p className="license-muted" style={{ marginTop: '1rem' }}>
-              Every email registered automatically receives a full 30-day free trial. You can log in
-              from any browser, computer, or device with your email account anytime.
+              Every verified email account receives a 30-day evaluation on the official hosted
+              deployment. A server-issued activation key can extend access for its stated duration;
+              there is no recurring card subscription or in-app checkout here. This access unlocks
+              the browser workspace; it is not an unattended or background automation service.
             </p>
           </article>
 
@@ -307,7 +328,13 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
               </div>
             )}
 
-            {/* Trial Expiring Soon Warning */}
+            <p className="license-muted" style={{ margin: '0 0 1rem' }}>
+              An activation key controls access to this official hosted deployment; it does not pay
+              for model-provider usage. Local deterministic operations need no AI key when
+              available, while BYOK provider costs remain separate.
+            </p>
+
+            {/* Evaluation Expiring Soon Warning */}
             {status?.state === 'trial' &&
               (status.daysRemaining ?? 0) <= 5 &&
               (status.daysRemaining ?? 0) > 0 && (
@@ -327,7 +354,7 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                       marginBottom: '0.25rem',
                     }}
                   >
-                    Trial Expiring Soon ({status.daysRemaining} days left)
+                    Evaluation Expiring Soon ({status.daysRemaining} days left)
                   </strong>
                   <p
                     style={{
@@ -353,16 +380,17 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                 }}
               >
                 <strong style={{ display: 'block', color: '#ef4444', marginBottom: '0.25rem' }}>
-                  Your 30-Day Trial Has Ended
+                  Your 30-Day Evaluation Has Ended
                 </strong>
                 <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-                  Enter an activation key below to unlock your workspace. Keys can be purchased for
-                  30 days, 60 days, or customized periods.
+                  Request an activation key through support to unlock your workspace. The operator
+                  can issue keys for a stated duration; there is no in-app checkout or automatic
+                  renewal.
                 </p>
               </div>
             )}
 
-            {!status?.isAdmin && (
+            {status && !status.isAdmin && (
               <form
                 className="license-activate-form"
                 onSubmit={(event) => void handleActivate(event)}
@@ -424,10 +452,11 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
                   lineHeight: 1.5,
                 }}
               >
-                Activation keys are available for <strong>30 days</strong>, <strong>60 days</strong>
-                , or longer periods. To order or renew, contact{' '}
+                Activation keys may be issued for <strong>30 days</strong>, <strong>60 days</strong>
+                , or another stated duration for paid or extended access. To request or renew,
+                contact{' '}
                 <a
-                  href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20Activation%20Key%20Request&body=Hello,%0D%0A%0D%0AI would like to purchase an activation key for ExcelAgento.%0D%0AMy registered email: ${encodeURIComponent(status?.email || '')}`}
+                  href={`mailto:zenithprojects@icloud.com?subject=ExcelAgento%20Activation%20Key%20Request&body=Hello,%0D%0A%0D%0AI would like to request an activation key for ExcelAgento.%0D%0AMy registered email: ${encodeURIComponent(status?.email || '')}`}
                   style={{ textDecoration: 'underline', color: 'var(--color-primary)' }}
                 >
                   zenithprojects@icloud.com
@@ -450,6 +479,11 @@ export const LicensePanel: React.FC<LicensePanelProps> = ({
             {status?.isAdmin && onOpenAdmin && (
               <button type="button" className="btn btn-secondary" onClick={onOpenAdmin}>
                 Open admin console
+              </button>
+            )}
+            {onOpenSupport && (
+              <button type="button" className="btn btn-secondary" onClick={onOpenSupport}>
+                Open support form
               </button>
             )}
             <a

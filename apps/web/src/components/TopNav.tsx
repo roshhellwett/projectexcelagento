@@ -144,14 +144,14 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
               props.onOpenLanding();
             }
           }}
-          aria-label="ExcelAgento workspace"
+          aria-label="ExcelAgento workspace by Zenith"
         >
           <span className="studio-brand-mark" aria-hidden="true">
             <img src="/excel-agent-logo.svg" alt="" />
           </span>
           <span>
             Excel<span className="studio-brand-accent">Agento</span>
-            <small>THE AGENT WORKSPACE</small>
+            <small>ZENITH · OPEN-SOURCE WORKSPACE</small>
           </span>
         </a>
         <div className="file-meta-pill" title={`${props.fileName} • ${props.activeSheetName}`}>
@@ -216,7 +216,7 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
               <button
                 type="button"
                 className="studio-user-badge account-trigger"
-                title="Open account and activation details"
+                title="Open account and access details"
                 onClick={props.onOpenAccount}
               >
                 <span className="studio-user-avatar">
@@ -244,10 +244,10 @@ export const TopNav: React.FC<TopNavProps> = (props) => {
                     {props.licenseStatus.isAdmin
                       ? 'Admin'
                       : props.licenseStatus.state === 'licensed'
-                        ? `${props.licenseStatus.daysRemaining ?? 0}d Pro`
+                        ? `${props.licenseStatus.daysRemaining ?? 0}d Access`
                         : props.licenseStatus.state === 'trial'
-                          ? `${props.licenseStatus.daysRemaining ?? 0}d Trial`
-                          : 'Expired'}
+                          ? `${props.licenseStatus.daysRemaining ?? 0}d Evaluation`
+                          : 'Access ended'}
                   </span>
                 )}
               </button>

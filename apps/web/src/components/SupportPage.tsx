@@ -23,10 +23,10 @@ interface SupportPageProps {
 }
 
 const CATEGORIES = [
-  { id: 'license', label: 'License & Key Activation', icon: '🔑' },
+  { id: 'license', label: 'Access & Key Activation', icon: '🔑' },
   { id: 'bug', label: 'Bug or Calculation Error', icon: '🐛' },
   { id: 'feature', label: 'Feature Request / AI Capability', icon: '💡' },
-  { id: 'billing', label: 'Account & Plan Inquiries', icon: '💳' },
+  { id: 'billing', label: 'Commercial / Account Questions', icon: '💳' },
   { id: 'general', label: 'General Questions', icon: '💬' },
 ];
 
@@ -102,9 +102,10 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
           </div>
           <h1>How can we help your spreadsheet workflows?</h1>
           <p>
-            Have questions about activation keys, trial duration, calculation accuracy, or custom
-            enterprise requirements? Submit your ticket below and our team will get back to your
-            email directly.
+            Every verified account starts with a 30-day evaluation. If access needs to continue, the
+            operator can issue a server-validated activation key for a stated duration. Submit a
+            request below for activation, account, calculation, or workflow help; this deployment
+            has no in-app checkout or recurring card subscription.
           </p>
         </header>
 
@@ -128,7 +129,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
                   <div>
                     <Clock size={16} />
                     <span>
-                      Average response time: <strong>&lt; 24 hours</strong>
+                      Reply destination: <strong>{email}</strong>
                     </span>
                   </div>
                   <div>
@@ -152,7 +153,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
                     <span className="studio-eyebrow">DIRECT ASSISTANCE</span>
                     <h2>Submit a Support Request</h2>
                   </div>
-                  <span className="support-priority-tag">Response SLA: 24h</span>
+                  <span className="support-priority-tag">Reply by email</span>
                 </div>
 
                 {error && (
@@ -257,7 +258,8 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
                     )}
                   </button>
                   <span className="support-privacy-note">
-                    Your information is stored securely in compliance with the DPDP Act 2023.
+                    Please do not include API keys or workbook contents. See Privacy &amp; data flow
+                    for the implemented storage boundaries.
                   </span>
                 </div>
               </form>
@@ -275,8 +277,8 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
                 <Mail size={18} className="text-emerald-400" />
               </div>
               <p className="text-sm text-muted">
-                Need urgent assistance or commercial inquiries? Contact our operations inbox
-                directly:
+                Need an activation key, account-access help, or a commercial answer? Contact the
+                operations inbox directly:
               </p>
               <div className="support-email-pill">
                 <Mail size={14} />
@@ -284,7 +286,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
               </div>
               <div className="support-sla-banner">
                 <Sparkles size={15} />
-                <span>Operating hours: Monday – Saturday, 9:00 AM – 8:00 PM IST</span>
+                <span>Use this form or the operations email for account and access help.</span>
               </div>
             </div>
 
@@ -301,19 +303,36 @@ export const SupportPage: React.FC<SupportPageProps> = ({ onBack, onNavigate }) 
                 <details className="faq-item" open>
                   <summary>How do I activate an activation key?</summary>
                   <p>
-                    Go to <strong>Account &amp; Activation</strong> in the top navigation bar, enter
+                    Go to <strong>Account &amp; Access</strong> in the top navigation bar, enter
                     your <code>EXCEL-XXXX-XXXX...</code> activation key, and click{' '}
                     <strong>Activate</strong>. The key adds 30 days, 60 days, or extended access
-                    directly to your account.
+                    directly to your account after the server verifies it.
                   </p>
                 </details>
 
                 <details className="faq-item">
-                  <summary>How many days does the free trial include?</summary>
+                  <summary>How long is the evaluation?</summary>
                   <p>
-                    All registered email accounts automatically receive a 30-day free trial. Once
-                    the 30 days complete, you can purchase an activation key for 30 days, 60 days,
-                    or longer periods to continue using your workspace.
+                    The official hosted deployment gives each verified email account a 30-day
+                    evaluation. After it ends, request an activation key through support; there is
+                    no in-app checkout or automatic renewal.
+                  </p>
+                </details>
+
+                <details className="faq-item">
+                  <summary>Does activation pay for AI model usage?</summary>
+                  <p>
+                    No. An activation key controls access to the official hosted deployment. Local
+                    deterministic operations need no AI key when available, while BYOK
+                    model-provider usage and any provider costs remain separate.
+                  </p>
+                </details>
+
+                <details className="faq-item">
+                  <summary>Does activation include unattended automation?</summary>
+                  <p>
+                    No. Activation unlocks the browser workspace and its reviewable workflow. It
+                    does not create a background workbook queue or an unattended automation service.
                   </p>
                 </details>
 

@@ -42,8 +42,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     return { error };
   }
 
-  override componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error('[ExcelAgento] Unhandled UI error', error, info.componentStack);
+  override componentDidCatch(error: Error, _info: React.ErrorInfo): void {
+    console.error('[ExcelAgento] Unhandled UI error', {
+      code: errorCodeFor(error),
+    });
   }
 
   private readonly handleReload = () => {
@@ -70,9 +72,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             This panel hit an unexpected error. The rest of your workspace is unaffected. Your data
             is still safe in the browser.
           </p>
-          <pre className="fatal-error-detail">
-            [{code}] {error.message}
-          </pre>
+          <pre className="fatal-error-detail">Reference code: {code}</pre>
           <button type="button" className="btn btn-secondary btn-sm" onClick={this.handleDismiss}>
             Try again
           </button>
@@ -88,9 +88,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             ExcelAgento hit an unexpected error while rendering the workspace. Your data is still
             safe in the browser; reload to continue.
           </p>
-          <pre className="fatal-error-detail">
-            [{code}] {error.message}
-          </pre>
+          <pre className="fatal-error-detail">Reference code: {code}</pre>
           <button type="button" className="btn btn-primary btn-sm" onClick={this.handleReload}>
             Reload workspace
           </button>

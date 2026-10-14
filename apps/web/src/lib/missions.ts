@@ -1,5 +1,6 @@
 import type { EvidenceItem, ExecutionPlan, ProposedAction } from '@excel-agent/agent';
 import type { Preview, Workbook } from '@excel-agent/engine';
+import type { MissionSafetySummary } from './trust-summary.js';
 
 export type MissionStatus =
   | 'planning'
@@ -18,7 +19,12 @@ export interface MissionReceipt {
   status: 'applied' | 'undone' | 'failed';
   createdAt: number;
   completedAt: number;
-  operations: { name: string; affectedCells: number; warnings: string[] }[];
+  operations: {
+    name: string;
+    affectedCells: number;
+    warnings: string[];
+    summary?: string;
+  }[];
 }
 export interface MissionRecord {
   version: 1;
@@ -42,6 +48,7 @@ export interface MissionRecord {
   plan?: ExecutionPlan;
   preview?: Preview;
   evidence?: EvidenceItem[];
+  safety?: MissionSafetySummary;
   receipt?: MissionReceipt;
   error?: string;
 }
@@ -125,6 +132,10 @@ export function validateMission(value: unknown): MissionRecord {
       !Array.isArray(value.plan.steps) ||
       value.plan.steps.length < 1 ||
       value.plan.steps.length > 25 ||
+      (value.plan.assumptions !== undefined &&
+        (!Array.isArray(value.plan.assumptions) ||
+          value.plan.assumptions.length > 20 ||
+          !value.plan.assumptions.every((assumption) => text(assumption, 2000)))) ||
       !value.plan.steps.every(
         (step) =>
           object(step) &&
@@ -137,6 +148,22 @@ export function validateMission(value: unknown): MissionRecord {
     throw new Error('Saved mission plan is invalid.');
   if (value.status === 'prepared' && !value.action && !value.plan)
     throw new Error('A prepared mission needs a complete action or plan.');
+  if (
+    value.safety !== undefined &&
+    (!object(value.safety) ||
+      typeof value.safety.passed !== 'boolean' ||
+      typeof value.safety.schemaValid !== 'boolean' ||
+      typeof value.safety.engineValid !== 'boolean' ||
+      typeof value.safety.requiresConfirmation !== 'boolean' ||
+      !count(value.safety.affectedCells) ||
+      !Array.isArray(value.safety.errors) ||
+      value.safety.errors.length > 12 ||
+      !value.safety.errors.every((error) => text(error, 2000)) ||
+      !Array.isArray(value.safety.warnings) ||
+      value.safety.warnings.length > 12 ||
+      !value.safety.warnings.every((warning) => text(warning, 2000)))
+  )
+    throw new Error('Saved mission safety summary is invalid.');
   if (
     value.evidence !== undefined &&
     (!Array.isArray(value.evidence) ||
@@ -170,7 +197,8 @@ export function validateMission(value: unknown): MissionRecord {
           text(op.name, 100) &&
           count(op.affectedCells) &&
           Array.isArray(op.warnings) &&
-          op.warnings.every((warning) => text(warning)),
+          op.warnings.every((warning) => text(warning)) &&
+          (op.summary === undefined || text(op.summary, 2000)),
       ))
   )
     throw new Error('Saved mission receipt is invalid.');
@@ -197,6 +225,7 @@ export function validateMission(value: unknown): MissionRecord {
     'plan',
     'preview',
     'evidence',
+    'safety',
     'receipt',
     'error',
     'answer',

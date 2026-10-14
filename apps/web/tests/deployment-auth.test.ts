@@ -11,7 +11,9 @@ describe('deployment authentication connectivity', () => {
         .flatMap((group) => group.headers)
         .find((header) => header.key === 'Content-Security-Policy')?.value;
       const connections = policy?.split(';').find((rule) => rule.trim().startsWith('connect-src'));
-      expect(connections?.split(/\s+/)).toContain('https://fsepapdadtrlddkyqqxu.supabase.co');
+      expect(connections?.split(/\s+/)).toContain('https://*.supabase.co');
+      expect(connections).not.toContain('http://localhost:');
+      expect(connections).not.toContain('http://127.0.0.1:');
     });
   }
 

@@ -52,7 +52,7 @@ export const ResourcePageChrome: React.FC<ResourcePageChromeProps> = ({ current,
         <strong>
           Excel<span>Agento</span>
         </strong>
-        <small>RESOURCE CENTER</small>
+        <small>ZENITH · RESOURCE CENTER</small>
       </span>
     </a>
     <nav className="resource-links" aria-label="Resource navigation">
@@ -80,7 +80,7 @@ export function ResourcePageFooter({ current }: { current: ResourcePageId }) {
   return (
     <footer className="resource-footer">
       <span>
-        <strong>ExcelAgento</strong> · open-source spreadsheet workspace
+        <strong>ExcelAgento</strong> · a Zenith open-source spreadsheet workspace
       </span>
       <span className="resource-footer-current">
         Viewing {labels[current]} <ArrowUpRight size={13} />

@@ -68,6 +68,68 @@ function isTransientStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
+/** Keep provider failures useful without copying credentials or arbitrary upstream payloads into UI/telemetry. */
+export function sanitizeProviderErrorMessage(message: string, apiKey?: string): string {
+  let safe = message;
+  const trimmedKey = apiKey?.trim();
+  if (trimmedKey) safe = safe.split(trimmedKey).join('[redacted]');
+  safe = safe.replace(/\bBearer\s+[^\s"',}]+/gi, 'Bearer [redacted]');
+  safe = safe.replace(/([?&](?:api[_-]?key|access[_-]?token|token)=)[^&\s]+/gi, '$1[redacted]');
+  safe = safe.replace(/\b(?:sk-or-v1|sk-|gsk_|AIzaSy)[A-Za-z0-9_-]{8,}\b/g, '[redacted]');
+  return safe;
+}
+
+function safeResponseDetail(body: string, statusText: string, apiKey?: string): string {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed === 'object' && parsed !== null && 'error' in parsed) {
+      const error = parsed.error;
+      if (typeof error === 'object' && error !== null && 'message' in error) {
+        const message = error.message;
+        if (typeof message === 'string' && message.trim()) {
+          return sanitizeProviderErrorMessage(message.trim(), apiKey);
+        }
+      }
+    }
+  } catch {
+    // Non-JSON provider bodies are intentionally not copied into the user-visible error.
+  }
+  return statusText || 'Provider request failed.';
+}
+
+function validateProviderConfig(config: ProviderConfig): void {
+  if (!config.apiKey.trim()) {
+    throw new ProviderError(config.provider, 'A provider API key is required.', {
+      retryable: false,
+    });
+  }
+}
+
+function resolveCustomEndpoint(config: ProviderConfig): string {
+  const rawBaseUrl = config.baseUrl?.trim() || 'http://localhost:11434/v1';
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(rawBaseUrl);
+  } catch {
+    throw new ProviderError(config.provider, 'Custom provider URL is not valid.', {
+      retryable: false,
+    });
+  }
+  if (baseUrl.protocol !== 'http:' && baseUrl.protocol !== 'https:') {
+    throw new ProviderError(config.provider, 'Custom provider URL must use http or https.', {
+      retryable: false,
+    });
+  }
+  if (baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
+    throw new ProviderError(
+      config.provider,
+      'Custom provider URL must not contain credentials, query parameters, or fragments.',
+      { retryable: false },
+    );
+  }
+  return `${baseUrl.toString().replace(/\/+$/u, '')}/chat/completions`;
+}
+
 export function throwIfCancelled(provider: ProviderName, signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new ProviderError(provider, 'Request cancelled by caller.', { retryable: false });
@@ -121,7 +183,7 @@ async function requestWithRetry(
         const body = await response.text().catch(() => '');
         lastError = new ProviderError(
           provider,
-          `HTTP ${response.status}: ${body || response.statusText}`,
+          `HTTP ${response.status}: ${safeResponseDetail(body, response.statusText, config.apiKey)}`,
           { status: response.status, retryable: true },
         );
         await sleep(250 * 2 ** attempt, config.signal);
@@ -148,7 +210,10 @@ async function requestWithRetry(
   }
   throw new ProviderError(
     provider,
-    lastError instanceof Error ? lastError.message : 'Network request failed.',
+    sanitizeProviderErrorMessage(
+      lastError instanceof Error ? lastError.message : 'Network request failed.',
+      config.apiKey,
+    ),
     { retryable: true },
   );
 }
@@ -193,12 +258,16 @@ async function readWithTimeout(
   }
 }
 
-async function readError(provider: ProviderName, response: Response): Promise<ProviderError> {
+async function readError(
+  provider: ProviderName,
+  response: Response,
+  apiKey?: string,
+): Promise<ProviderError> {
   const body = await response.text().catch(() => '');
   const retryable = isTransientStatus(response.status);
   return new ProviderError(
     provider,
-    `HTTP ${response.status}: ${body.slice(0, 400) || response.statusText}`,
+    `HTTP ${response.status}: ${safeResponseDetail(body, response.statusText, apiKey)}`,
     { status: response.status, retryable },
   );
 }
@@ -315,6 +384,7 @@ function openAiCompatibleAdapter(
       config: ProviderConfig,
       tools?: ToolDefinition[],
     ): Promise<ProviderResponse> {
+      validateProviderConfig(config);
       const model = config.model || defaultModel;
       const endpoint = resolveEndpoint(config);
 
@@ -343,13 +413,16 @@ function openAiCompatibleAdapter(
         config,
       );
 
-      if (!response.ok) throw await readError(name, response);
+      if (!response.ok) throw await readError(name, response, config.apiKey);
       const data = await readJson<OpenAICompatibleShape>(name, response);
 
       if (data.error) {
         throw new ProviderError(
           name,
-          data.error.message || `Provider error: ${JSON.stringify(data.error)}`,
+          sanitizeProviderErrorMessage(
+            data.error.message || `Provider error: ${JSON.stringify(data.error)}`,
+            config.apiKey,
+          ),
           { retryable: false },
         );
       }
@@ -393,6 +466,7 @@ function openAiCompatibleAdapter(
       callbacks: StreamCallbacks,
       tools?: ToolDefinition[],
     ): Promise<ProviderResponse> {
+      validateProviderConfig(config);
       const model = config.model || defaultModel;
       const endpoint = resolveEndpoint(config);
 
@@ -423,7 +497,7 @@ function openAiCompatibleAdapter(
         config,
       );
 
-      if (!response.ok) throw await readError(name, response);
+      if (!response.ok) throw await readError(name, response, config.apiKey);
 
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('text/event-stream') && contentType.includes('application/json')) {
@@ -544,8 +618,10 @@ function openAiCompatibleAdapter(
               };
 
               if (parsed.error) {
-                const errMsg =
-                  parsed.error.message || `Provider stream error: ${JSON.stringify(parsed.error)}`;
+                const errMsg = sanitizeProviderErrorMessage(
+                  parsed.error.message || `Provider stream error: ${JSON.stringify(parsed.error)}`,
+                  config.apiKey,
+                );
                 throw new ProviderError(name, errMsg, { retryable: false });
               }
 
@@ -674,10 +750,7 @@ export const openAiAdapter: ProviderAdapter = openAiCompatibleAdapter(
 export const customAdapter: ProviderAdapter = openAiCompatibleAdapter(
   'custom',
   'default',
-  (config) => {
-    const base = config.baseUrl?.replace(/\/+$/, '') || 'http://localhost:11434/v1';
-    return `${base}/chat/completions`;
-  },
+  resolveCustomEndpoint,
 );
 
 function formatMessagesForGemini(messages: ChatMessage[]) {
@@ -746,6 +819,7 @@ export const geminiAdapter: ProviderAdapter = {
   name: 'gemini',
   defaultModel: 'gemini-2.0-flash',
   async complete(messages, config, tools): Promise<ProviderResponse> {
+    validateProviderConfig(config);
     const model = config.model || this.defaultModel;
     const system = messages
       .filter((message) => message.role === 'system')
@@ -790,7 +864,7 @@ export const geminiAdapter: ProviderAdapter = {
       config,
     );
 
-    if (!response.ok) throw await readError('gemini', response);
+    if (!response.ok) throw await readError('gemini', response, config.apiKey);
     const data = await readJson<GeminiShape>('gemini', response);
     const parts = data.candidates?.[0]?.content?.parts ?? [];
     const text = parts.map((part) => (part as { text?: string }).text ?? '').join('');

@@ -10,10 +10,11 @@ const db =
 
 Deno.serve(
   createLicenseHandler({
-    origin: Deno.env.get('APP_ORIGIN') || '*',
-    keyPepper:
-      Deno.env.get('LICENSE_KEY_PEPPER') ||
-      'excelagento_default_license_key_pepper_2026_super_secure',
+    // Never fall back to a wildcard origin or a checked-in pepper. The handler fails closed until
+    // the operator explicitly configures both values in the Edge Function environment.
+    origin: Deno.env.get('APP_ORIGIN') ?? '',
+    keyPepper: Deno.env.get('LICENSE_KEY_PEPPER') ?? '',
+    serviceConfigured: Boolean(url && secret),
     async authenticate(token) {
       if (!db) return null;
       const { data, error } = await db.auth.getUser(token);
@@ -27,8 +28,8 @@ Deno.serve(
         p_payload: payload,
       });
       if (error) {
-        console.error('license_command rpc error:', error);
-        throw new Error(`Licensing transaction failed: ${error.message}`);
+        console.error('license_command rpc failed');
+        throw new Error('Licensing transaction failed.');
       }
       return data;
     },

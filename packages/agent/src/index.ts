@@ -21,4 +21,5 @@ export * from './providers.js';
 export * from './read-tools.js';
 export * from './statistical-tools.js';
 export * from './tools.js';
+export * from './workflow-templates.js';
 export type * from './types.js';

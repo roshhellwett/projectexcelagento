@@ -1205,6 +1205,7 @@ You MUST:
         message: `I could not safely apply **${blockedByGuardrail.action.name}**. ${reasons.join(' ')} Nothing has been changed - adjust the request or run the operation manually.`,
         thought: llmThought,
         source: 'fallback',
+        guardrail: blockedByGuardrail.guardrail,
         trace,
         activities,
         ...(telemetry ? { telemetry } : {}),
