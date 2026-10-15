@@ -56,6 +56,15 @@ intent -> memory -> heuristic -> llm -> guardrail -> execute -> verify -> learn
 7. **Learn** - successful associations are reinforced; failures decay them. A cancellation is a
    pause, not a rejection, so it never counts as a failure.
 
+Conversation intelligence is bounded and evidence-led rather than pretending to read minds. The
+agent keeps the full in-tab transcript available to a relevance selector, recalls older user
+instructions and corrections when they match the current request, and quotes that material as
+lower-trust background so stale text cannot authorize a mutation. Every provider turn is capped by
+message and character budgets. When intent is materially ambiguous, the agent asks one focused
+question with selectable options instead of guessing. If Sentinel rejects an LLM action, it sends a
+single precise engine error report back to the model for a bounded repair; the repaired action must
+pass the same guardrail before it can be offered for review.
+
 ### Complex requests get a real multi-agent turn
 
 Simple requests stay on the fast path. When a request spans multiple kinds of work
@@ -73,7 +82,9 @@ Verifier   -> schema.safeParse + validate + preview on *every* step, before offe
 Provider failures inside the pipeline fall back to the single-agent path - the turn never
 fails silently. A plan is not shown as apply-ready until the critic returns a strict,
 issue-free approval and every step passes engine verification; one bounded revision is allowed,
-after which the request is blocked. The resulting plan uses the same `ExecutionPlan` shape the UI renders.
+after which the request is blocked with a human-readable diagnostic. The resulting plan uses the
+same `ExecutionPlan` shape the UI renders, and failed verification steps remain explicitly
+non-apply-ready.
 
 ### Mission control: durable work, not disposable chat
 

@@ -211,7 +211,7 @@ describe('ExcelAgentOrchestrator', () => {
       query: 'perform then',
       workbook: codeWorkbook,
       sheetName: 'Worksheet',
-      history: [
+      conversationHistory: [
         {
           role: 'user',
           content: 'can you make this sheet clean and structured so that it can be understandable',

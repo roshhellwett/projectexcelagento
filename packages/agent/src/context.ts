@@ -2,6 +2,7 @@ import { indexToColumn, maxColumnCount, type Sheet, type Workbook } from '@excel
 
 import { getCompactColumnProfiles } from './analysis.js';
 import { describeTools, type ToolDescriptor } from './tools.js';
+import type { ClarificationQuestion } from './types.js';
 
 /**
  * Neutralizes text that arrived from a user-supplied spreadsheet.
@@ -102,10 +103,12 @@ ${buildSheetContext(sheet)}
 ${workbook ? `\nWorkbook map (all worksheets):\n${buildWorkbookMap(workbook)}` : ''}
 
 Rules:
-0. Token, Time & Reasoning Freedom:
-   - There are ZERO limits on time, context length, tokens, or depth of analytical reasoning. You have full freedom to burn as many tokens and take as much time as needed to think deeply, inspect the workbook thoroughly, and deliver world-class work.
-   - You are the reasoning brain; tools and operations are your hands and safety harnesses that execute deterministic calculations without hallucinations.
-   - Never rush, truncate, or abbreviate your reasoning. Take all the space you need to understand the user's intent and verify facts.
+0. Reasoning discipline and human communication:
+   - You are the reasoning brain; read the user's goal, not just isolated keywords. Tools and operations are your hands and safety harnesses that execute deterministic calculations without hallucinations.
+   - You do not read minds. Infer intent only when the workbook and wording make it sufficiently clear. If a material choice is missing, ask one focused question with bounded options instead of guessing. For machine-readable clarification, return \`CLARIFICATION_NEEDED: <question>\` or a JSON object with \`clarification\` and no action.
+   - Speak like a patient, friendly Excel expert. In every final answer, say what you understood, cite the relevant sheet/column/evidence, explain the result or proposed change in plain English, and state what is still waiting for the user (review, confirmation, or clarification).
+   - Never dump unexplained raw values, pretend a preview was applied, or claim success without a read-tool result or deterministic execution receipt. Report exclusions, assumptions, and failures precisely.
+   - Context is bounded. Use the supplied recent/recalled conversation as background, but re-check old instructions and preferences against the current workbook before acting.
 1. Understand any plain language phrasing, including English, Hindi, Hinglish, business slang, or shorthand. Users describe outcomes ("clean this", "totals at the bottom", "carve out high value", "standardize dates"), never API names.
 2. Dialogue, Feedback & Critique Understanding:
    - If the user provides feedback, expresses critique or frustration (e.g. "you have just copy pasted the sheet", "nothing is getting performed", "why did you do that?", "this is wrong", "undo"):
@@ -174,9 +177,45 @@ ${describeTools(catalog)}`;
 export interface ParsedModelOutput {
   message: string;
   action?: { name: string; args: Record<string, unknown>; explanation: string };
+  clarification?: ClarificationQuestion;
 }
 
-/** Balanced-brace scan for the first top-level JSON object containing "name", string-aware. */
+function parseClarificationValue(value: unknown): ClarificationQuestion | undefined {
+  if (typeof value === 'string') {
+    const question = value.replace(/\s+/g, ' ').trim();
+    return question ? { question, options: [] } : undefined;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const candidate = value as { question?: unknown; options?: unknown };
+  if (typeof candidate.question !== 'string' || !candidate.question.trim()) return undefined;
+  const options: ClarificationQuestion['options'] = [];
+  if (Array.isArray(candidate.options)) {
+    for (const option of candidate.options.slice(0, 4)) {
+      if (typeof option === 'string') {
+        const text = option.replace(/\s+/g, ' ').trim();
+        if (text) options.push({ label: text, query: text });
+        continue;
+      }
+      if (!option || typeof option !== 'object' || Array.isArray(option)) continue;
+      const item = option as { label?: unknown; query?: unknown; description?: unknown };
+      if (typeof item.label !== 'string' || typeof item.query !== 'string') continue;
+      const label = item.label.replace(/\s+/g, ' ').trim();
+      const query = item.query.replace(/\s+/g, ' ').trim();
+      if (!label || !query) continue;
+      const description =
+        typeof item.description === 'string'
+          ? item.description.replace(/\s+/g, ' ').trim()
+          : undefined;
+      options.push({ label, query, ...(description ? { description } : {}) });
+    }
+  }
+  return {
+    question: candidate.question.replace(/\s+/g, ' ').trim(),
+    options,
+  };
+}
+
+/** Balanced-brace scan for the first top-level JSON object containing an action or clarification. */
 function extractBalancedJson(content: string): string | null {
   for (let start = 0; start < content.length; start += 1) {
     if (content[start] !== '{') continue;
@@ -197,7 +236,9 @@ function extractBalancedJson(content: string): string | null {
         depth -= 1;
         if (depth === 0) {
           const candidate = content.slice(start, i + 1);
-          if (candidate.includes('"name"')) return candidate;
+          if (candidate.includes('"name"') || candidate.includes('"clarification"')) {
+            return candidate;
+          }
           break;
         }
       }
@@ -229,7 +270,15 @@ export function parseModelOutput(content: string): ParsedModelOutput {
         name?: unknown;
         args?: unknown;
         explanation?: unknown;
+        clarification?: unknown;
       };
+      const clarification = parseClarificationValue(parsed.clarification);
+      if (clarification) {
+        return {
+          message: stripJsonBlocks(content),
+          clarification,
+        };
+      }
       if (
         typeof parsed.name === 'string' &&
         typeof parsed.args === 'object' &&
@@ -253,13 +302,27 @@ export function parseModelOutput(content: string): ParsedModelOutput {
     }
   }
 
+  const marker =
+    /^\s*(?:CLARIFICATION_NEEDED|CLARIFICATION_REQUIRED|CLARIFY|CLARIFICATION)\s*:\s*(.+)$/i.exec(
+      content.trim(),
+    );
+  if (marker?.[1]) {
+    const clarification = parseClarificationValue(marker[1]);
+    if (clarification) {
+      return {
+        message: content.replace(marker[0], '').trim(),
+        clarification,
+      };
+    }
+  }
+
   return { message: content.trim() };
 }
 
 function stripJsonBlocks(content: string): string {
   const cleaned = content
     .replace(/```(?:json)?\s*[\s\S]*?```/g, '')
-    .replace(/\{[\s\S]*?"name"[\s\S]*?\}/g, '')
+    .replace(/\{[\s\S]*?"(?:name|clarification)"[\s\S]*?\}/g, '')
     .trim();
   return cleaned || content.trim();
 }

@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function ask(page: Page, prompt: string) {
+  const agentTab = page.getByRole('button', { name: 'Agent', exact: true });
+  if (await agentTab.isVisible()) await agentTab.click();
   const local = page.getByRole('button', { name: /Try the local agent/i });
   if (await local.isVisible()) await local.click();
   await page.getByPlaceholder(/Ask ExcelAgento/i).fill(prompt);
@@ -30,7 +32,10 @@ test('first-run starter carries a new user through review, apply and export', as
   await expect(page.getByText('Task completed', { exact: true })).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page
+    .getByRole('button', { name: /^Export(?: \.xlsx)?$/i })
+    .first()
+    .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.xlsx$/i);
 });
@@ -142,4 +147,29 @@ test('workspace chrome and verification card stay contained across desktop and p
   const verificationCard = page.locator('.verify-email-card');
   await expect(verificationCard).toBeVisible();
   await expect.poll(() => verificationCard.boundingBox()).toMatchObject({ width: 520 });
+});
+
+test('keeps the workbook usable on a compact laptop and removes sheets safely', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto('/');
+
+  await expect(page.locator('.studio-mobile-tabs')).toBeVisible();
+  await expect(page.getByRole('grid')).toBeVisible();
+  await expect(page.locator('.studio-data-area')).toHaveCSS('min-width', '0px');
+
+  page.on('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Remove sheet Summary & Metrics' }).click();
+
+  await expect(page.getByRole('button', { name: 'Remove sheet Summary & Metrics' })).toHaveCount(0);
+  await expect(page.getByRole('grid')).toHaveAttribute(
+    'aria-label',
+    'Orders & Deliveries spreadsheet',
+  );
+
+  await page.getByRole('button', { name: 'Remove sheet Orders & Deliveries' }).click();
+  await expect(page.locator('.toast-host')).toContainText(
+    'A workbook must keep at least one sheet.',
+  );
 });

@@ -13,6 +13,7 @@
  */
 export * from './analysis.js';
 export * from './context.js';
+export * from './conversation-context.js';
 export * from './evidence.js';
 export * from './briefing.js';
 export * from './memory.js';

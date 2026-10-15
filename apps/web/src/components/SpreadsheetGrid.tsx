@@ -35,6 +35,7 @@ interface SpreadsheetGridProps {
   workbook: Workbook;
   activeSheetName: string;
   onSelectSheet: (sheetName: string) => void;
+  onRemoveSheet?: (sheetName: string) => void;
   recentChangedCells: Set<string>; // formatted as `${sheetName}:${row}:${colLetter}`
   searchHighlightCells?: Set<string>;
   onQuickSort?: (columnLetter: string, direction: 'asc' | 'desc') => void;
@@ -175,6 +176,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   workbook,
   activeSheetName,
   onSelectSheet,
+  onRemoveSheet,
   recentChangedCells,
   searchHighlightCells = new Set(),
   onQuickSort,
@@ -1479,22 +1481,40 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         </div>
       )}
 
-      <div className="sheet-tabs-bar" aria-label="Sheets">
+      <div className="sheet-tabs-bar" role="tablist" aria-label="Workbook sheets">
         {workbook.sheets.map((sheet) => {
           const isActive = sheet.name === currentSheet.name;
           const count = sheet.rows.length;
 
           return (
-            <button
-              key={sheet.name}
-              type="button"
-              aria-pressed={isActive}
-              className={`sheet-tab ${isActive ? 'active' : ''}`}
-              onClick={() => onSelectSheet(sheet.name)}
-            >
-              <span className="sheet-tab-title">{sheet.name}</span>
-              <span className="sheet-tab-count">({count})</span>
-            </button>
+            <div key={sheet.name} className="sheet-tab-container">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`sheet-tab ${isActive ? 'active' : ''}`}
+                onKeyDown={(event) => event.stopPropagation()}
+                onClick={() => onSelectSheet(sheet.name)}
+              >
+                <span className="sheet-tab-title">{sheet.name}</span>
+                <span className="sheet-tab-count">({count})</span>
+              </button>
+              {onRemoveSheet && (
+                <button
+                  type="button"
+                  className="sheet-tab-close"
+                  aria-label={`Remove sheet ${sheet.name}`}
+                  title={`Remove sheet ${sheet.name}`}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveSheet(sheet.name);
+                  }}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

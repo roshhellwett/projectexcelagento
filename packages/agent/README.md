@@ -2,14 +2,15 @@
 
 The intelligence layer. UI-free, network-capable, deterministic by default.
 
-| Module            | Responsibility                                                                               |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| `analysis.ts`     | Column profiling, fuzzy cell search, column resolution, and the deterministic intent planner |
-| `context.ts`      | Token-efficient sheet context, system prompt, and tolerant model-output parsing              |
-| `tools.ts`        | Tool catalog derived **live** from the engine registry (Zod -> JSON Schema)                  |
-| `memory.ts`       | Self-learning store of verified `(query -> operation)` associations                          |
-| `providers.ts`    | BYOK adapters for Groq, OpenRouter, and Gemini with retry, timeout, and backoff              |
-| `orchestrator.ts` | The ordered multi-layer control plane with a hard guardrail                                  |
+| Module                    | Responsibility                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `analysis.ts`             | Column profiling, fuzzy cell search, column resolution, and the deterministic intent planner  |
+| `context.ts`              | Token-efficient sheet context, system prompt, and tolerant model-output parsing               |
+| `conversation-context.ts` | Bounded recall of relevant user turns, corrections, and preferences without unbounded prompts |
+| `tools.ts`                | Tool catalog derived **live** from the engine registry (Zod -> JSON Schema)                   |
+| `memory.ts`               | Self-learning store of verified `(query -> operation)` associations                           |
+| `providers.ts`            | BYOK adapters for Groq, OpenRouter, and Gemini with retry, timeout, and backoff               |
+| `orchestrator.ts`         | The ordered multi-layer control plane with a hard guardrail                                   |
 
 ```ts
 import { createOperationRegistry } from '@excel-agent/engine';

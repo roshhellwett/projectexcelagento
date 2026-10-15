@@ -107,6 +107,79 @@ describe('LLM layer drives operations the deterministic planner cannot express',
     expect(decision.source).toBe('llm');
     expect(decision.guardrail?.passed).toBe(true);
   });
+
+  it('recalls older conversational corrections inside a bounded provider context', async () => {
+    const history = [
+      {
+        role: 'user' as const,
+        content: 'Actually, never format revenue as currency; keep revenue as a plain number.',
+      },
+      { role: 'assistant' as const, content: 'Understood; I will keep that preference in mind.' },
+      ...Array.from({ length: 8 }, (_, index) => [
+        { role: 'user' as const, content: `Unrelated request ${index} about customers.` },
+        { role: 'assistant' as const, content: `Customer answer ${index}.` },
+      ]).flat(),
+    ];
+    const fetchMock = stubFetch(async (_url, init) => {
+      const body = JSON.parse(String(init.body)) as {
+        messages: { role: string; content: string }[];
+      };
+      const serialized = JSON.stringify(body.messages);
+      expect(serialized).toContain('Bounded conversation context');
+      expect(serialized).toContain('never format revenue as currency');
+      expect(serialized).toContain('LOWER-TRUST CONVERSATIONAL CONTEXT');
+      return new Response(
+        JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          choices: [{ message: { content: 'Revenue is ready to inspect.' } }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const decision = await orchestrator().decide({
+      query: 'check revenue formatting',
+      workbook: workbook(),
+      sheetName: SHEET,
+      config: LIVE_CONFIG,
+      conversationHistory: history,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(decision.message).toContain('Revenue is ready to inspect');
+    expect(decision.trace.some((step) => step.summary.includes('Recalled'))).toBe(true);
+  });
+
+  it('returns a focused model clarification instead of turning an ambiguous request into an action', async () => {
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            choices: [
+              {
+                message: {
+                  content:
+                    'CLARIFICATION_NEEDED: Which worksheet should receive the cleaned data? Choose Sales or Archive.',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const decision = await orchestrator().decide({
+      query: 'clean this and put the result there',
+      workbook: workbook(),
+      sheetName: SHEET,
+      config: LIVE_CONFIG,
+    });
+
+    expect(decision.action).toBeUndefined();
+    expect(decision.clarification?.question).toContain('Which worksheet');
+    expect(decision.message).toContain('Nothing was changed');
+  });
 });
 
 describe('the guardrail is the hard wall', () => {
@@ -192,6 +265,45 @@ describe('the guardrail is the hard wall', () => {
     expect(decision.message).toContain('OpenRouter / Model Error');
     expect(decision.telemetry?.ok).toBe(false);
     expect(decision.action).toBeUndefined();
+  });
+
+  it('reports a rejected model action back to the model for one bounded repair', async () => {
+    let calls = 0;
+    const fetchMock = stubFetch(async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(String(init.body)) as {
+        messages: { role: string; content: string }[];
+      };
+
+      if (calls === 1) {
+        return llmResponse({
+          name: 'format_dates',
+          args: { sheet: SHEET, column: 'ZZ', format: 'YYYY-MM-DD', headerRow: 1 },
+          explanation: 'Format the requested date column.',
+        });
+      }
+
+      expect(body.messages.at(-1)?.content).toContain('Sentinel failure report');
+      expect(body.messages.at(-1)?.content).toContain('does not exist');
+      return llmResponse({
+        name: 'set_cells',
+        args: { sheet: SHEET, cells: [{ row: 2, column: 'C', value: 0 }] },
+        explanation: 'Use the verified Amount column instead.',
+      });
+    });
+
+    const decision = await orchestrator().decide({
+      query: 'apply the change I mentioned',
+      workbook: workbook(),
+      sheetName: SHEET,
+      config: LIVE_CONFIG,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(decision.action?.name).toBe('set_cells');
+    expect(decision.guardrail?.passed).toBe(true);
+    expect(decision.trace.some((step) => step.summary.includes('bounded repair'))).toBe(true);
+    expect(decision.activities?.some((activity) => activity.agent === 'Sentinel')).toBe(true);
   });
 });
 

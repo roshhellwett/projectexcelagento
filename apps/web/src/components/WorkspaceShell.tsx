@@ -41,11 +41,14 @@ export function WorkspaceShell({
   children,
 }: WorkspaceShellProps) {
   const [agentVisible, setAgentVisible] = useState(true);
-  const [mobilePanel, setMobilePanel] = useState<'data' | 'agent'>('data');
+  const [mobilePanel, setMobilePanel] = useState<'data' | 'agent'>(() =>
+    revealAgentRevision > 0 ? 'agent' : 'data',
+  );
   const [agentWidth, setAgentWidth] = useState(400);
   const reducedMotion = useReducedMotion();
   const layoutRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; width: number } | null>(null);
+  const previousViewRef = useRef(view);
 
   useEffect(() => {
     if (revealAgentRevision === 0) return;
@@ -54,6 +57,8 @@ export function WorkspaceShell({
   }, [revealAgentRevision]);
 
   useEffect(() => {
+    if (previousViewRef.current === view) return;
+    previousViewRef.current = view;
     setMobilePanel('data');
   }, [view]);
 

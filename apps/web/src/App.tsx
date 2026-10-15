@@ -891,6 +891,23 @@ const AppWorkspace: React.FC<{
     [executeOperation],
   );
 
+  const handleRemoveSheet = useCallback(
+    (sheetName: string) => {
+      if (workbook.sheets.length <= 1) {
+        pushToast('warning', 'A workbook must keep at least one sheet.');
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Remove the “${sheetName}” sheet from this workbook? This change can be undone from History.`,
+      );
+      if (!confirmed) return;
+
+      executeOperation('delete_sheet', { sheet: sheetName }, undefined, true);
+    },
+    [executeOperation, pushToast, workbook.sheets.length],
+  );
+
   const openOperationModal = useCallback((operation?: string) => {
     setOperationModalOperation(operation);
     setIsOpModalOpen(true);
@@ -1492,11 +1509,38 @@ const AppWorkspace: React.FC<{
     const turnStarted = Date.now();
 
     try {
-      // Build conversation history for multi-turn reasoning context
-      const conversationHistory: LLMChatMessage[] = messages.slice(-30).map((m) => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.text,
-      }));
+      // Keep the complete in-tab transcript available to the agent's bounded relevance selector.
+      // The selector, not this UI layer, enforces the provider context budget. Include execution
+      // receipts and failures so the next turn can distinguish "prepared" from "actually applied"
+      // and can help repair a failed task instead of repeating it blindly.
+      const conversationHistory: LLMChatMessage[] = messages.map((m) => {
+        let content = m.text;
+        if (m.sender === 'assistant') {
+          if (m.receipt) {
+            const outcome =
+              m.receipt.status === 'applied'
+                ? `Applied successfully: ${m.receipt.operations.map((operation) => `${operation.name} (${operation.affectedCells} affected cells)`).join(', ')}.`
+                : m.receipt.status === 'undone'
+                  ? 'The previously applied task was reverted.'
+                  : `Execution stopped without a committed change: ${m.receipt.operations.flatMap((operation) => operation.warnings).join(' ')}`;
+            content += `\n[EXECUTION RECEIPT - ${m.receipt.status}] ${outcome}`;
+          }
+          if (m.errorMessage) {
+            content += `\n[EXECUTION FAILURE - nothing should be assumed applied] ${m.errorMessage}`;
+          }
+          if (m.plan?.status === 'error') {
+            const failedSteps = m.plan.steps
+              .filter((step) => step.status === 'error' || step.error)
+              .map((step) => `${step.operation}: ${step.error ?? 'blocked'}`)
+              .join('; ');
+            content += `\n[VERIFICATION FAILURE - plan is not apply-ready] ${failedSteps}`;
+          }
+        }
+        return {
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content,
+        };
+      });
 
       // When the user pins a selection chip, scope the agent's request to it.
       const agentQuery = selectionContext
@@ -3209,6 +3253,7 @@ const AppWorkspace: React.FC<{
                 activeSheetName={activeSheetName}
                 dateSystem={dateSystem}
                 onSelectSheet={(sheet) => setActiveSheetName(sheet)}
+                onRemoveSheet={handleRemoveSheet}
                 recentChangedCells={recentChangedCells}
                 searchHighlightCells={searchHighlightCells}
                 onQuickSort={handleQuickSort}

@@ -1008,6 +1008,12 @@
   padding: 5px 12px;
   font-size: 11px;
 }
+.workbench .sheet-tab-container {
+  min-height: 30px;
+}
+.workbench .sheet-tab-close {
+  color: var(--text-dim);
+}
 .workbench .sheet-tab.active {
   background: var(--studio-tint);
   color: var(--brand-emerald);
@@ -3992,7 +3998,7 @@
    consumes the width needed for usable columns long before a phone-sized breakpoint is reached.
    The existing Workbook / Agent tabs preserve access to the assistant without shrinking the
    spreadsheet into a narrow strip. */
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
   .workbench .studio-layout {
     position: relative;
     flex-direction: column;
@@ -4062,7 +4068,7 @@
 
 /* Between a compact desktop and the stacked layout, reclaim just enough width from the agent so
    the workbook remains a useful working surface while the assistant stays immediately visible. */
-@media (min-width: 1201px) and (max-width: 1280px) {
+@media (min-width: 1401px) and (max-width: 1480px) {
   .workbench .studio-agent-area {
     flex-basis: 320px;
     width: 320px;
@@ -4071,4 +4077,131 @@
   .workbench .studio-panel-splitter {
     flex-basis: 10px;
   }
+}
+
+/* Preserve vertical room for the workbook when the viewport is short or compact. Keep labels and
+   icons readable while letting the ribbon and grid own their horizontal scrolling. */
+@media (max-width: 1400px), (max-height: 820px) {
+  .workbench .studio-stage-heading {
+    min-height: 0;
+    padding-bottom: 8px;
+  }
+
+  .workbench .studio-mobile-tabs {
+    margin-bottom: 8px;
+  }
+
+  .workbench .workbook-quick-start {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+  }
+
+  .workbench .workbook-start-heading h2 {
+    margin-bottom: 2px;
+    font-size: 13px;
+  }
+
+  .workbench .workbook-quick-start p {
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .workbench .workbook-start-prompts {
+    gap: 5px;
+    margin: 6px 0 4px;
+  }
+
+  .workbench .workbook-start-help {
+    font-size: 9px;
+    line-height: 1.35;
+  }
+
+  .workbench .workspace-ribbon {
+    margin-bottom: 8px;
+  }
+
+  .workbench .workspace-ribbon-tabs {
+    min-height: 36px;
+    padding: 3px 8px 0;
+  }
+
+  .workbench .workspace-ribbon-tab {
+    padding-inline: 11px;
+  }
+
+  .workbench .workspace-ribbon-toolbar {
+    min-height: 92px;
+    padding: 6px 10px 0;
+  }
+
+  .workbench .workspace-ribbon-quick-actions {
+    min-width: 86px;
+    gap: 3px;
+    padding: 0 8px 4px 2px;
+  }
+
+  .workbench .workspace-ribbon-quick {
+    min-height: 24px;
+    padding: 2px 4px;
+  }
+
+  .workbench .workspace-ribbon-group {
+    padding: 0 9px 4px;
+  }
+
+  .workbench .workspace-ribbon-actions {
+    min-height: 56px;
+    gap: 4px;
+  }
+
+  .workbench .workspace-ribbon-action {
+    min-width: 50px;
+    min-height: 52px;
+    gap: 4px;
+    padding: 6px 5px 4px;
+  }
+
+  .workbench .workspace-ribbon-status {
+    min-height: 26px;
+    gap: 12px;
+    padding: 4px 10px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* The data surface must absorb the remaining height; only the grid body should scroll. */
+.workbench .studio-stage-content,
+.workbench .studio-sheet-view,
+.workbench .grid-panel,
+.workbench .grid-scroll-wrapper {
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench .studio-stage-content {
+  overflow: hidden;
+}
+
+.workbench .grid-panel {
+  overflow: hidden;
+}
+
+.workbench .grid-scroll-wrapper {
+  overflow: auto;
+}
+
+.workbench .workspace-ribbon-tab:focus-visible,
+.workbench .workspace-ribbon-more:focus-visible,
+.workbench .workspace-ribbon-quick:focus-visible,
+.workbench .workspace-ribbon-action:focus-visible,
+.workbench .studio-mobile-tabs button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.workbench .studio-mobile-tabs button:hover:not([aria-pressed='true']),
+.workbench .studio-mobile-tabs button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-main);
 }

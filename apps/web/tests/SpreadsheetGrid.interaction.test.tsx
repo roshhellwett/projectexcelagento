@@ -120,6 +120,40 @@ describe('grid structure exposed to assistive technology', () => {
   });
 });
 
+describe('sheet tabs', () => {
+  it('closes the requested sheet without selecting it, including from the keyboard', async () => {
+    const user = userEvent.setup();
+    const onSelectSheet = vi.fn();
+    const onRemoveSheet = vi.fn();
+    const workbook: Workbook = {
+      sheets: [...testWorkbook().sheets, { name: 'Sheet2', rows: [[createCell('Other')]] }],
+    };
+
+    render(
+      <SpreadsheetGrid
+        workbook={workbook}
+        activeSheetName="Sheet1"
+        onSelectSheet={onSelectSheet}
+        onRemoveSheet={onRemoveSheet}
+        recentChangedCells={new Set()}
+      />,
+    );
+
+    const sheet2Close = screen.getByRole('button', { name: 'Remove sheet Sheet2' });
+    await user.click(sheet2Close);
+
+    expect(onRemoveSheet).toHaveBeenCalledExactlyOnceWith('Sheet2');
+    expect(onSelectSheet).not.toHaveBeenCalled();
+
+    const sheet1Close = screen.getByRole('button', { name: 'Remove sheet Sheet1' });
+    sheet1Close.focus();
+    await user.keyboard('{Enter}');
+
+    expect(onRemoveSheet).toHaveBeenNthCalledWith(2, 'Sheet1');
+    expect(onSelectSheet).not.toHaveBeenCalled();
+  });
+});
+
 describe('editing', () => {
   it('edits the active cell from the formula bar and advances on Enter', async () => {
     const user = userEvent.setup();

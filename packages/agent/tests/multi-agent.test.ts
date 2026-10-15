@@ -88,12 +88,13 @@ describe('runMultiAgentTurn', () => {
   });
 
   it('decomposes, runs specialists, and returns a verified plan shape', async () => {
-    let roleSystemPrompt = '';
+    const roleSystemPrompts: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
-        roleSystemPrompt = body.messages[0]?.content ?? '';
+        const roleSystemPrompt = body.messages[0]?.content ?? '';
+        roleSystemPrompts.push(roleSystemPrompt);
         const isPlanner = roleSystemPrompt.includes('You are the Planner');
         const isCritic = roleSystemPrompt.includes('You are the Critic');
         if (isPlanner) {
@@ -162,6 +163,237 @@ describe('runMultiAgentTurn', () => {
     expect(result.trace.map((step) => step.layer)).toContain('planner');
     expect(result.trace.map((step) => step.layer)).toContain('verification');
     expect(result.activities?.map((activity) => activity.agent)).toContain('Critic');
+    for (const role of ['Analyst', 'Planner', 'Critic']) {
+      const prompt = roleSystemPrompts.find((value) => value.includes(`You are the ${role}`));
+      expect(prompt).toBeDefined();
+      expect(prompt).toMatch(/ground every finding/i);
+      expect(prompt).toMatch(/readable/i);
+      expect(prompt).toMatch(/clarification/i);
+      expect(prompt).toMatch(/never invent/i);
+    }
+  });
+
+  it('returns a precise blocked plan when schema verification rejects a step', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        const systemPrompt = body.messages[0]?.content ?? '';
+        if (systemPrompt.includes('You are the Planner')) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      title: 'Invalid rollup',
+                      description: 'Group revenue by region',
+                      steps: [
+                        {
+                          operation: 'group_and_summarize',
+                          args: {
+                            sheet: 'Sales',
+                            groupBy: 'A',
+                            valueColumn: 'B',
+                            aggregation: 'sum',
+                            targetSheet: 'Summary',
+                          },
+                          description: 'Group revenue by region',
+                        },
+                      ],
+                    }),
+                  },
+                },
+              ],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (systemPrompt.includes('You are the Critic')) {
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: '{"approved":true,"issues":[]}' } }],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [
+              { message: { content: 'Revenue is present in the grounded Sales profile.' } },
+            ],
+            model: 'test',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await new ExcelAgentOrchestrator({ registry: createOperationRegistry() }).decide(
+      {
+        query: 'analyse revenue by region and then group the results by region',
+        workbook: sampleWorkbook(),
+        sheetName: 'Sales',
+        config: { provider: 'groq', apiKey: 'gsk_test' },
+      },
+    );
+
+    expect(result.plan?.status).toBe('error');
+    expect(result.plan?.steps[0]?.status).toBe('error');
+    expect(result.message).toMatch(/blocked/i);
+    expect(result.message).toMatch(/Step 1/i);
+    expect(result.message).toMatch(/group_and_summarize/i);
+    expect(result.message).toMatch(/schema/i);
+    expect(result.message).toMatch(/bounded repair diagnostic/i);
+    expect(result.message).toMatch(/not apply-ready/i);
+    expect(result.message).not.toContain('[object Object]');
+  });
+
+  it('blocks an engine-invalid step without simulating later steps as apply-ready', async () => {
+    let plannerCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        const systemPrompt = body.messages[0]?.content ?? '';
+        if (systemPrompt.includes('You are the Planner')) {
+          plannerCalls += 1;
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      title: 'Sort and summarize',
+                      description: 'Sort the missing sheet, then group Sales revenue.',
+                      steps: [
+                        {
+                          operation: 'sort_range',
+                          args: { sheet: 'Missing', column: 'A' },
+                          description: 'Sort the missing worksheet',
+                        },
+                        {
+                          operation: 'group_and_summarize',
+                          args: {
+                            sheet: 'Sales',
+                            groupBy: ['A'],
+                            valueColumn: 'B',
+                            aggregation: 'sum',
+                            targetSheet: 'Summary',
+                          },
+                          description: 'Group Sales revenue by region',
+                        },
+                      ],
+                    }),
+                  },
+                },
+              ],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (systemPrompt.includes('You are the Critic')) {
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: '{"approved":true,"issues":[]}' } }],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: 'Sales is grounded in the workbook.' } }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await new ExcelAgentOrchestrator({ registry: createOperationRegistry() }).decide(
+      {
+        query: 'sort the data and then summarize revenue by region',
+        workbook: sampleWorkbook(),
+        sheetName: 'Sales',
+        config: { provider: 'groq', apiKey: 'gsk_test' },
+      },
+    );
+
+    expect(plannerCalls).toBe(1);
+    expect(result.plan?.status).toBe('error');
+    expect(result.plan?.steps[0]?.status).toBe('error');
+    expect(result.plan?.steps[1]?.status).toBe('error');
+    expect(result.message).toMatch(/Missing|not found/i);
+    expect(result.message).toMatch(/later step.*unverified/i);
+    expect(result.telemetry?.ok).toBe(false);
+  });
+
+  it('turns an underspecified specialist response into a clarification instead of a guessed plan', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        const systemPrompt = body.messages[0]?.content ?? '';
+        if (systemPrompt.includes('You are the Analyst')) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: { content: 'CLARIFICATION_NEEDED: Which worksheet should be changed?' },
+                },
+              ],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (systemPrompt.includes('You are the Planner')) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      clarification: {
+                        question: 'Which worksheet should be changed?',
+                        options: [
+                          { label: 'Sales', query: 'Change the Sales worksheet' },
+                          { label: 'Archive', query: 'Change the Archive worksheet' },
+                        ],
+                      },
+                      steps: [],
+                    }),
+                  },
+                },
+              ],
+              model: 'test',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: '{"approved":true,"issues":[]}' } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await new ExcelAgentOrchestrator({ registry: createOperationRegistry() }).decide(
+      {
+        query: 'analyse this and then update the selected data',
+        workbook: sampleWorkbook(),
+        sheetName: 'Sales',
+        config: { provider: 'groq', apiKey: 'gsk_test' },
+      },
+    );
+
+    expect(result.plan).toBeUndefined();
+    expect(result.clarification?.question).toContain('worksheet');
+    expect(result.message).toMatch(/clarification/i);
+    expect(result.message).toMatch(/nothing was changed/i);
   });
 
   it('falls back honestly when the provider fails', async () => {
