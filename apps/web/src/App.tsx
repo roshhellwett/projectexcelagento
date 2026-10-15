@@ -24,7 +24,6 @@ import { WorkspaceShell, type StudioView } from './components/WorkspaceShell.js'
 import { WorkspaceRibbon } from './components/WorkspaceRibbon.js';
 import { WorkbookInsights } from './components/WorkbookInsights.js';
 import { WorkflowLibrary } from './components/WorkflowLibrary.js';
-import { WorkbookQuickStart } from './components/WorkbookQuickStart.js';
 import {
   SpreadsheetGrid,
   type GridClipboardCommand,
@@ -3184,21 +3183,6 @@ const AppWorkspace: React.FC<{
           revealAgentRevision={revealAgentRevision}
           ribbon={
             <>
-              {studioView === 'sheet' && !messages.some((message) => message.sender === 'user') && (
-                <WorkbookQuickStart
-                  fileName={fileName}
-                  sheetName={currentSheet.name}
-                  isSample={!hasUserUploadedFile}
-                  profiles={studioProfiles}
-                  isProcessing={isProcessing}
-                  onUpload={handleFileUpload}
-                  onUseSample={() => void handleSelectFixture('sample')}
-                  onDraft={(prompt) => {
-                    setSelectionContext(null);
-                    handleDraft(prompt);
-                  }}
-                />
-              )}
               <WorkspaceRibbon
                 activeSheetName={currentSheet.name}
                 isProcessing={isProcessing}

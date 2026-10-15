@@ -5304,16 +5304,51 @@ input:focus-visible,
   flex-direction: column;
   gap: 6px;
   box-shadow: var(--glass-card-shadow);
-  transition: all var(--transition-fast);
 }
 
 .swarm-hud-header {
+  width: 100%;
+  min-height: 24px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.swarm-hud-header:disabled {
+  cursor: default;
+}
+
+.swarm-hud-header:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.swarm-hud.is-collapsed {
+  gap: 0;
+  padding-block: 6px;
+}
+
+.swarm-hud-disclosure-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.swarm-hud-disclosure-icon.is-expanded {
+  transform: rotate(180deg);
 }
 
 .swarm-hud-title {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -5383,7 +5418,10 @@ input:focus-visible,
   font-size: 10.5px;
   font-weight: 600;
   color: var(--text-muted);
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
   cursor: default;
   user-select: none;
 }

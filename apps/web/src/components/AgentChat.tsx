@@ -232,6 +232,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   const [openThinkingMap, setOpenThinkingMap] = useState<Record<string, boolean>>({});
   const [copiedThinkingId, setCopiedThinkingId] = useState<string | null>(null);
   const copiedThinkingTimerRef = useRef<number | null>(null);
+  const [isSwarmHudOpen, setIsSwarmHudOpen] = useState(false);
+  const swarmHudContentId = React.useId();
+  const isSwarmHudExpanded = isProcessing || isSwarmHudOpen;
 
   useEffect(
     () => () => {
@@ -670,12 +673,26 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             }
 
             return (
-              <div className="swarm-hud">
-                <div className="swarm-hud-header">
-                  <div className="swarm-hud-title">
+              <div className={`swarm-hud ${isSwarmHudExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+                <button
+                  type="button"
+                  className="swarm-hud-header"
+                  aria-expanded={isSwarmHudExpanded}
+                  aria-controls={swarmHudContentId}
+                  disabled={isProcessing}
+                  onClick={() => setIsSwarmHudOpen((open) => !open)}
+                  title={
+                    isProcessing
+                      ? 'Swarm activity is expanded while processing'
+                      : isSwarmHudExpanded
+                        ? 'Collapse Autonomous Agent Swarm'
+                        : 'Expand Autonomous Agent Swarm'
+                  }
+                >
+                  <span className="swarm-hud-title">
                     <Bot size={12} className="swarm-hud-bot-icon" />
                     <span>Autonomous Agent Swarm</span>
-                  </div>
+                  </span>
                   <span
                     className={`swarm-hud-status-badge ${
                       isProcessing ? `active ${activeSwarmNode || 'conductor'}` : 'synced'
@@ -694,8 +711,17 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                               : 'Swarm Reasoning'
                       : 'Ready'}
                   </span>
-                </div>
-                <div className="swarm-hud-nodes">
+                  <ChevronDown
+                    size={12}
+                    className={`swarm-hud-disclosure-icon ${isSwarmHudExpanded ? 'is-expanded' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <div
+                  id={swarmHudContentId}
+                  className="swarm-hud-nodes"
+                  hidden={!isSwarmHudExpanded}
+                >
                   <div
                     className={`swarm-node node-conductor-box ${
                       activeSwarmNode === 'conductor'

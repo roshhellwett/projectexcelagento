@@ -18,6 +18,88 @@ describe('Live Thinking Button and Panel', () => {
     vi.clearAllMocks();
   });
 
+  it('renders the Autonomous Agent Swarm as a collapsed idle disclosure', () => {
+    render(
+      <AgentChat
+        audit={dummyAudit}
+        messages={[]}
+        isProcessing={false}
+        hasApiKey={true}
+        apiKeyProvider="groq"
+        onSaveApiKey={vi.fn()}
+        onClearApiKey={vi.fn()}
+        onSendMessage={vi.fn()}
+        onApplyAction={vi.fn()}
+        onUndoLast={vi.fn()}
+        canUndo={false}
+      />,
+    );
+
+    const disclosure = screen.getByRole('button', {
+      name: /Autonomous Agent Swarm.*Ready/i,
+    });
+    const content = document.getElementById(disclosure.getAttribute('aria-controls') ?? '');
+
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(disclosure).toHaveAttribute('aria-controls');
+    expect(content?.hidden).toBe(true);
+    expect(disclosure.querySelector('button, a, input, select, textarea')).toBeNull();
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(content?.hidden).toBe(false);
+    expect(screen.getByText('Conductor')).toBeInTheDocument();
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(content?.hidden).toBe(true);
+  });
+
+  it('automatically expands and locks the swarm disclosure while processing', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'msg-1',
+        sender: 'assistant',
+        text: 'Profiling your worksheet.',
+        activities: [
+          {
+            id: 'act-1',
+            type: 'inspecting',
+            agent: 'Scientist',
+            summary: 'Profiling columns in parallel',
+            timestamp: Date.now(),
+          },
+        ],
+      },
+    ];
+
+    render(
+      <AgentChat
+        audit={dummyAudit}
+        messages={messages}
+        isProcessing={true}
+        hasApiKey={true}
+        apiKeyProvider="groq"
+        onSaveApiKey={vi.fn()}
+        onClearApiKey={vi.fn()}
+        onSendMessage={vi.fn()}
+        onApplyAction={vi.fn()}
+        onUndoLast={vi.fn()}
+        canUndo={false}
+      />,
+    );
+
+    const disclosure = screen.getByRole('button', {
+      name: /Autonomous Agent Swarm.*Scientist Profiling/i,
+    });
+    const content = document.getElementById(disclosure.getAttribute('aria-controls') ?? '');
+
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(disclosure).toBeDisabled();
+    expect(content?.hidden).toBe(false);
+    expect(screen.getByText('Profiling')).toBeInTheDocument();
+  });
+
   it('renders the Live Thinking button in the activity timeline footer', () => {
     const messages: ChatMessage[] = [
       {

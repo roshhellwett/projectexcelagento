@@ -38,10 +38,7 @@ describe('workspace shell', () => {
       screen.getByRole('heading', { name: 'Get started with ExcelAgento' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Try the local agent/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { name: /Get your first workbook result/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Upload your workbook/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Upload File/i })).toBeInTheDocument();
   });
 
   it('unlocks demo mode, greets the user, and stores the preference', async () => {
@@ -65,11 +62,9 @@ describe('workspace shell', () => {
     const user = userEvent.setup();
     const { container } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: /Try sample cleanup/i }));
-    const prompt = await screen.findByDisplayValue('remove duplicate rows');
-    expect(prompt).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /^Send$/i }));
+    await user.click(screen.getByRole('button', { name: /^Agent$/i }));
+    await user.click(screen.getByRole('button', { name: /Try the local agent/i }));
+    await user.click(screen.getByRole('button', { name: /Remove duplicates/i }));
     await user.click(await screen.findByRole('button', { name: /Apply Changes/i }));
     await user.click(await screen.findByRole('button', { name: /Yes, apply this change/i }));
 
@@ -267,7 +262,7 @@ describe('file handling', () => {
     expect(container.textContent).toContain('Region');
     expect(sheetTabTexts(container).join(' ')).toContain('Revenue');
     expect(await screen.findByPlaceholderText(/Ask ExcelAgento/i)).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Understand this sheet/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Describe the numbers/i })).not.toBeDisabled();
   });
 
   it('exports the workbook as a real xlsx blob', async () => {

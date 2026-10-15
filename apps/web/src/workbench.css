@@ -526,53 +526,6 @@
   position: relative;
 }
 
-.workbook-quick-start {
-  flex: none;
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-main);
-  border-radius: 11px;
-  background: var(--studio-tint);
-}
-.workbook-start-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-.workbook-start-heading h2 {
-  margin: 0 0 4px;
-  font-size: 14px;
-  color: var(--text-main);
-}
-.workbook-quick-start p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-.workbook-start-actions,
-.workbook-start-prompts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.workbook-start-actions {
-  align-content: flex-start;
-}
-.workbook-start-prompts {
-  margin: 10px 0 6px;
-}
-.workbench .workbook-start-help {
-  font-size: 10px;
-}
-@media (max-width: 900px) {
-  .workbook-start-heading {
-    flex-direction: column;
-  }
-}
-
 /* Excel-style command ribbon. Commands that can mutate data are routed through the agent and
    therefore still receive the normal preview, confirmation, invariant and history treatment. */
 .workspace-ribbon {
@@ -1208,6 +1161,13 @@
   border-radius: 8px;
   background: var(--bg-elevated);
   box-shadow: none;
+}
+.workbench .swarm-hud.is-collapsed {
+  gap: 0;
+  padding-block: 6px;
+}
+.workbench .swarm-hud-header {
+  min-height: 22px;
 }
 .workbench .swarm-hud-title {
   font-size: 9px;
@@ -4089,31 +4049,6 @@
 
   .workbench .studio-mobile-tabs {
     margin-bottom: 8px;
-  }
-
-  .workbench .workbook-quick-start {
-    margin-bottom: 8px;
-    padding: 8px 12px;
-  }
-
-  .workbench .workbook-start-heading h2 {
-    margin-bottom: 2px;
-    font-size: 13px;
-  }
-
-  .workbench .workbook-quick-start p {
-    font-size: 10px;
-    line-height: 1.45;
-  }
-
-  .workbench .workbook-start-prompts {
-    gap: 5px;
-    margin: 6px 0 4px;
-  }
-
-  .workbench .workbook-start-help {
-    font-size: 9px;
-    line-height: 1.35;
   }
 
   .workbench .workspace-ribbon {

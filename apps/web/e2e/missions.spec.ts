@@ -16,13 +16,11 @@ async function missions(page: Page) {
   );
 }
 
-test('first-run starter carries a new user through review, apply and export', async ({ page }) => {
+test('first-run agent flow carries a new user through review, apply and export', async ({
+  page,
+}) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Get your first workbook result' })).toBeVisible();
-  await page.getByRole('button', { name: 'Try sample cleanup' }).click();
-  const composer = page.getByPlaceholder(/Ask ExcelAgento/i);
-  await expect(composer).toHaveValue('remove duplicate rows');
-  await page.getByRole('button', { name: /^Send$/i }).click();
+  await ask(page, 'remove duplicate rows');
   await page
     .getByRole('button', { name: /Apply Changes/i })
     .last()
