@@ -90,6 +90,8 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
                 underline?: unknown;
                 fillColor?: unknown;
                 fontColor?: unknown;
+                fontFamily?: unknown;
+                fontSize?: unknown;
                 borders?: unknown;
                 horizontalAlignment?: unknown;
                 verticalAlignment?: unknown;
@@ -106,6 +108,12 @@ function validateCheckpoint(value: unknown): WorkspaceCheckpoint {
               (style.underline === undefined || typeof style.underline === 'boolean') &&
               (style.fillColor === undefined || /^#[0-9a-f]{6}$/i.test(String(style.fillColor))) &&
               (style.fontColor === undefined || /^#[0-9a-f]{6}$/i.test(String(style.fontColor))) &&
+              (style.fontFamily === undefined ||
+                (typeof style.fontFamily === 'string' && style.fontFamily.length <= 100)) &&
+              (style.fontSize === undefined ||
+                (typeof style.fontSize === 'number' &&
+                  style.fontSize >= 6 &&
+                  style.fontSize <= 72)) &&
               (style.borders === undefined || style.borders === 'all') &&
               (style.horizontalAlignment === undefined ||
                 ['left', 'center', 'right'].includes(String(style.horizontalAlignment))) &&

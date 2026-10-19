@@ -155,6 +155,7 @@ interface GridCellProps {
   isFillPreview: boolean;
   actions: React.RefObject<CellActions>;
   innerRef?: React.Ref<HTMLTableCellElement>;
+  showFormulas?: boolean;
 }
 
 /**
@@ -233,6 +234,7 @@ const GridCellBase: React.FC<GridCellProps> = ({
   isFillPreview,
   actions,
   innerRef,
+  showFormulas = false,
 }) => {
   const value = cell?.value;
   // A Date is compared by its instant so cloning the workbook does not look like a change.
@@ -241,10 +243,17 @@ const GridCellBase: React.FC<GridCellProps> = ({
   const formatKey = cell?.numberFormat;
   const styleKey = cell?.style ? JSON.stringify(cell.style) : '';
 
-  const display = useMemo(
+  const baseDisplay = useMemo(
     () => cellDisplay(cell, evaluate(cell, sheetName, colIdx, rowNumber), dateSystem),
     [valueKey, formulaKey, formatKey, styleKey, evaluate, dateSystem, colIdx, rowNumber, sheetName],
   );
+
+  const display = useMemo(() => {
+    if (showFormulas && cell?.formula) {
+      return { ...baseDisplay, text: cell.formula };
+    }
+    return baseDisplay;
+  }, [baseDisplay, showFormulas, cell?.formula]);
 
   // A click that immediately follows this cell's own mousedown is the same gesture, already handled.
   const mouseDownKeyRef = useRef<string | null>(null);
@@ -259,6 +268,8 @@ const GridCellBase: React.FC<GridCellProps> = ({
 
   const sizeStyle: React.CSSProperties = {
     height: `${rowHeight}px`,
+    ...(cell?.style?.fontFamily ? { fontFamily: cell.style.fontFamily } : {}),
+    ...(cell?.style?.fontSize ? { fontSize: `${cell.style.fontSize}pt` } : {}),
     ...(cell?.style?.fontColor ? { color: cell.style.fontColor } : {}),
     ...(cell?.style?.fillColor ? { backgroundColor: cell.style.fillColor } : {}),
     ...(cell?.style?.borders === 'all' ? { border: '1px solid #CBD5E1' } : {}),

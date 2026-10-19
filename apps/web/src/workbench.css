@@ -944,6 +944,74 @@
   background: var(--studio-tint);
   color: var(--text-main);
 }
+.workbench .spreadsheet-table.no-gridlines td,
+.workbench .spreadsheet-table.no-gridlines th {
+  border-color: transparent !important;
+}
+.spreadsheet-drawing-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 25;
+}
+.spreadsheet-drawing-layer.is-drawing-active {
+  cursor: crosshair;
+}
+.workspace-ribbon-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 120;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 8px;
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.2),
+    0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  padding: 6px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workspace-ribbon-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-main, #0f172a);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  white-space: nowrap;
+}
+.workspace-ribbon-popover-item:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--brand-emerald, #059669);
+}
+.workspace-ribbon-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 4px;
+}
+.workspace-ribbon-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.workspace-ribbon-color-swatch:hover {
+  transform: scale(1.18);
+}
 .workbench .sheet-tabs-bar {
   flex-shrink: 0;
   min-height: 42px;

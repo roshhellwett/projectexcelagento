@@ -224,6 +224,26 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
       headerRow: 1,
     },
   },
+  insert_rows: {
+    description:
+      'Insert blank rows into a sheet at a specified 1-based row position. Shifts subsequent rows down.',
+    category: 'structure',
+    example: {
+      sheet: 'Sheet1',
+      row: 2,
+      count: 1,
+    },
+  },
+  delete_rows: {
+    description:
+      'Delete a range of rows between startRow and endRow inclusive. At least one row must remain in the worksheet.',
+    category: 'structure',
+    example: {
+      sheet: 'Sheet1',
+      startRow: 5,
+      endRow: 5,
+    },
+  },
   lookup_merge: {
     description:
       'Merge and match values from another sheet based on a common key column (VLOOKUP / XLOOKUP behavior).',

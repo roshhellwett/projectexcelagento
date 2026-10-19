@@ -14,6 +14,8 @@ export interface CellStyle {
   underline?: boolean;
   fillColor?: string;
   fontColor?: string;
+  fontFamily?: string;
+  fontSize?: number;
   borders?: 'all';
   horizontalAlignment?: CellHorizontalAlignment;
   verticalAlignment?: CellVerticalAlignment;

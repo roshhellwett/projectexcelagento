@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlignCenter,
   AlignLeft,
@@ -75,7 +75,7 @@ interface RibbonGroup {
 interface WorkspaceRibbonProps {
   activeSheetName: string;
   isProcessing: boolean;
-  onManualAction: (actionId: string) => void;
+  onManualAction: (actionId: string, payload?: unknown) => void;
   onOpenOperationModal: () => void;
   onUploadFile: (file: File) => void;
   onExport: () => void;
@@ -84,6 +84,49 @@ interface WorkspaceRibbonProps {
   canUndo: boolean;
   canRedo: boolean;
 }
+
+const FONT_OPTIONS = [
+  'Calibri',
+  'Arial',
+  'Inter',
+  'Segoe UI',
+  'Times New Roman',
+  'Courier New',
+  'Georgia',
+  'Verdana',
+];
+const FONT_SIZE_OPTIONS = [9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36];
+const FILL_COLORS = [
+  '#FFF2CC',
+  '#D1FAE5',
+  '#E0F2FE',
+  '#FEE2E2',
+  '#EDE9FE',
+  '#F3F4F6',
+  '#FED7AA',
+  '#E2E8F0',
+];
+const FONT_COLORS = [
+  '#1E293B',
+  '#1E40AF',
+  '#DC2626',
+  '#047857',
+  '#7C3AED',
+  '#D97706',
+  '#0284C7',
+  '#FFFFFF',
+];
+const FUNCTION_OPTIONS = [
+  { label: 'SUM', formula: 'SUM' },
+  { label: 'AVERAGE', formula: 'AVERAGE' },
+  { label: 'COUNT', formula: 'COUNT' },
+  { label: 'MAX', formula: 'MAX' },
+  { label: 'MIN', formula: 'MIN' },
+  { label: 'IF', formula: 'IF' },
+  { label: 'XLOOKUP', formula: 'XLOOKUP' },
+  { label: 'TODAY', formula: 'TODAY' },
+];
+const SYMBOL_OPTIONS = ['✔', '★', '➔', '▲', '▼', '⚠', '❤', '●', '■', '◆'];
 
 const tabs: Array<{ id: RibbonTabId; label: string }> = [
   { id: 'home', label: 'Home' },
@@ -145,17 +188,17 @@ function actionGroups(tab: RibbonTabId, sheet: string): RibbonGroup[] {
         {
           label: 'Font',
           actions: [
-            comingSoon(
+            command(
               'font',
               'Font',
               TextCursorInput,
-              'Font-family editing needs workbook style metadata.',
+              'Select and apply font family to the selected cells.',
             ),
-            comingSoon(
+            command(
               'font-size',
               'Size',
               TextSelect,
-              'Font-size editing needs workbook style metadata.',
+              'Select and apply font size to the selected cells.',
             ),
             command('bold', 'Bold', Bold, useSheet('Make the selected cells bold')),
             command('italic', 'Italic', Italic, useSheet('Make the selected cells italic')),
@@ -387,17 +430,17 @@ function actionGroups(tab: RibbonTabId, sheet: string): RibbonGroup[] {
               Image,
               'Image insertion needs a workbook drawing layer.',
             ),
-            comingSoon(
+            command(
               'shapes',
               'Shapes',
               Target,
-              'Shape insertion needs a workbook drawing layer.',
+              'Insert geometric shapes or symbols into the active cell.',
             ),
-            comingSoon(
+            command(
               'icons',
               'Icons',
               Presentation,
-              'Icon insertion needs a workbook drawing layer.',
+              'Insert symbols or icon badges into the active cell.',
             ),
             comingSoon(
               '3d-models',
@@ -590,25 +633,21 @@ function actionGroups(tab: RibbonTabId, sheet: string): RibbonGroup[] {
         {
           label: 'Drawing Tools',
           actions: [
-            comingSoon('select', 'Select', Target, 'Drawing selection needs a workbook ink layer.'),
-            comingSoon(
-              'lasso',
-              'Lasso Select',
-              Target,
-              'Lasso selection needs a workbook ink layer.',
-            ),
-            comingSoon('pen-black', 'Pen', PenLine, 'Ink drawing needs a workbook drawing layer.'),
-            comingSoon(
-              'pen-red',
-              'Red Pen',
-              PenLine,
-              'Ink drawing needs a workbook drawing layer.',
-            ),
-            comingSoon(
+            command('select', 'Select', Target, 'Switch to cell selection mode.'),
+            command('lasso', 'Lasso Select', Target, 'Lasso selection mode for annotations.'),
+            command('pen-black', 'Pen', PenLine, 'Draw black ink annotations on the active sheet.'),
+            command('pen-red', 'Red Pen', PenLine, 'Draw red ink annotations on the active sheet.'),
+            command(
               'highlighter',
               'Highlighter',
               Highlighter,
-              'Ink drawing needs a workbook drawing layer.',
+              'Draw translucent yellow highlighter ink on the active sheet.',
+            ),
+            command(
+              'clear-ink',
+              'Eraser',
+              Eraser,
+              'Clear all drawn ink annotations from the active sheet.',
             ),
             command(
               'add-ink',
@@ -701,12 +740,7 @@ function actionGroups(tab: RibbonTabId, sheet: string): RibbonGroup[] {
               Columns3,
               useSheet('Explain or prepare row and column headings for printing'),
             ),
-            comingSoon(
-              'themes',
-              'Themes',
-              Paintbrush,
-              'Workbook theme preservation needs workbook metadata support.',
-            ),
+            command('themes', 'Themes', Paintbrush, useSheet('Cycle visual workbook themes')),
           ],
         },
       ];
@@ -1325,6 +1359,19 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<RibbonTabId>('home');
   const [showAll, setShowAll] = useState(false);
+  const [openPopover, setOpenPopover] = useState<string | null>(null);
+  const ribbonRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (ribbonRef.current && !ribbonRef.current.contains(event.target as Node)) {
+        setOpenPopover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
   const groups = useMemo(
     () => actionGroups(activeTab, activeSheetName),
     [activeTab, activeSheetName],
@@ -1338,11 +1385,159 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
     if (action.id === 'get-data' || action.id === 'from-csv') return onUploadFileRequest();
     if (action.id === 'find-select' || action.id === 'search-help')
       return onManualAction(action.id);
+    if (
+      ['font', 'font-size', 'fill', 'font-color', 'insert-function', 'shapes', 'icons'].includes(
+        action.id,
+      )
+    ) {
+      setOpenPopover((prev) => (prev === action.id ? null : action.id));
+    }
     onManualAction(action.id);
   };
 
   const uploadInput = useRef<HTMLInputElement>(null);
   const onUploadFileRequest = () => uploadInput.current?.click();
+
+  const renderPopover = (actionId: string) => {
+    switch (actionId) {
+      case 'font':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Choose font family">
+            {FONT_OPTIONS.map((font) => (
+              <button
+                key={font}
+                type="button"
+                className="workspace-ribbon-popover-item"
+                style={{ fontFamily: font }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onManualAction('font', font);
+                  setOpenPopover(null);
+                }}
+              >
+                {font}
+              </button>
+            ))}
+          </div>
+        );
+      case 'font-size':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Choose font size">
+            {FONT_SIZE_OPTIONS.map((size) => (
+              <button
+                key={size}
+                type="button"
+                className="workspace-ribbon-popover-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onManualAction('font-size', size);
+                  setOpenPopover(null);
+                }}
+              >
+                {size} pt
+              </button>
+            ))}
+          </div>
+        );
+      case 'fill':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Choose fill color">
+            <div className="workspace-ribbon-color-grid">
+              {FILL_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className="workspace-ribbon-color-swatch"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManualAction('fill', color);
+                    setOpenPopover(null);
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="workspace-ribbon-popover-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                onManualAction('fill', 'clear');
+                setOpenPopover(null);
+              }}
+            >
+              No Fill
+            </button>
+          </div>
+        );
+      case 'font-color':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Choose font color">
+            <div className="workspace-ribbon-color-grid">
+              {FONT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className="workspace-ribbon-color-swatch"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManualAction('font-color', color);
+                    setOpenPopover(null);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      case 'insert-function':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Insert function">
+            {FUNCTION_OPTIONS.map((fn) => (
+              <button
+                key={fn.formula}
+                type="button"
+                className="workspace-ribbon-popover-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onManualAction('insert-function', fn.formula);
+                  setOpenPopover(null);
+                }}
+              >
+                <strong>={fn.label}</strong>
+              </button>
+            ))}
+          </div>
+        );
+      case 'shapes':
+      case 'icons':
+        return (
+          <div className="workspace-ribbon-popover" role="menu" aria-label="Insert symbol">
+            <div className="workspace-ribbon-color-grid">
+              {SYMBOL_OPTIONS.map((sym) => (
+                <button
+                  key={sym}
+                  type="button"
+                  className="workspace-ribbon-popover-item"
+                  style={{ fontSize: 16, justifyContent: 'center' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManualAction(actionId, sym);
+                    setOpenPopover(null);
+                  }}
+                >
+                  {sym}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   const renderTab = (tab: { id: RibbonTabId; label: string }, includeHeading: boolean) => (
     <React.Fragment key={tab.id}>
@@ -1354,27 +1549,29 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
               {group.actions.map((action) => {
                 const Icon = action.icon;
                 return (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className={`workspace-ribbon-action is-${action.tone ?? 'default'}`}
-                    disabled={
-                      Boolean(action.disabled) ||
-                      isProcessing ||
-                      (action.id === 'draw-undo' && !canUndo) ||
-                      (action.id === 'draw-redo' && !canRedo)
-                    }
-                    title={
-                      action.hint ??
-                      (action.disabled
-                        ? 'Visible here; this capability needs richer workbook fidelity.'
-                        : `Use ${action.label} manually on the selected cells`)
-                    }
-                    onClick={() => runAction(action)}
-                  >
-                    <Icon size={15} strokeWidth={1.8} />
-                    <span>{action.label}</span>
-                  </button>
+                  <div key={action.id} style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className={`workspace-ribbon-action is-${action.tone ?? 'default'}`}
+                      disabled={
+                        Boolean(action.disabled) ||
+                        isProcessing ||
+                        (action.id === 'draw-undo' && !canUndo) ||
+                        (action.id === 'draw-redo' && !canRedo)
+                      }
+                      title={
+                        action.hint ??
+                        (action.disabled
+                          ? 'Visible here; this capability needs richer workbook fidelity.'
+                          : `Use ${action.label} manually on the selected cells`)
+                      }
+                      onClick={() => runAction(action)}
+                    >
+                      <Icon size={15} strokeWidth={1.8} />
+                      <span>{action.label}</span>
+                    </button>
+                    {openPopover === action.id && renderPopover(action.id)}
+                  </div>
                 );
               })}
             </div>
@@ -1386,7 +1583,7 @@ export const WorkspaceRibbon: React.FC<WorkspaceRibbonProps> = ({
   );
 
   return (
-    <section className="workspace-ribbon" aria-label="Workspace tools">
+    <section ref={ribbonRef} className="workspace-ribbon" aria-label="Workspace tools">
       <div className="workspace-ribbon-tabs" role="tablist" aria-label="Workbook commands">
         {tabs.map((tab) => (
           <button

@@ -57,6 +57,17 @@ interface SpreadsheetGridProps {
    * reading those as 1900 shifts every displayed date by four years and a day.
    */
   dateSystem?: DateSystem;
+  showGridlines?: boolean;
+  showHeadings?: boolean;
+  showFormulas?: boolean;
+  drawingTool?: 'pen-black' | 'pen-red' | 'highlighter' | null;
+  drawingStrokes?: Array<{ path: string; color: string; width: number; opacity?: number }>;
+  onAddDrawingStroke?: (stroke: {
+    path: string;
+    color: string;
+    width: number;
+    opacity?: number;
+  }) => void;
 }
 
 /**
@@ -190,12 +201,54 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onSelectionChange,
   onEditCells,
   dateSystem = '1900',
+  showGridlines = true,
+  showHeadings = true,
+  showFormulas = false,
+  drawingTool = null,
+  drawingStrokes = [],
+  onAddDrawingStroke,
 }) => {
   const currentSheet: Sheet = workbook.sheets.find((s) => s.name === activeSheetName) ||
     workbook.sheets[0] || { name: 'Sheet1', rows: [] };
 
   const evaluateCell = useCellEvaluator(workbook, dateSystem);
   const editable = typeof onEditCells === 'function';
+
+  const [currentStroke, setCurrentStroke] = useState<{
+    path: string;
+    color: string;
+    width: number;
+    opacity?: number;
+  } | null>(null);
+
+  const handleDrawingMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!drawingTool) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const color =
+      drawingTool === 'pen-red' ? '#ef4444' : drawingTool === 'highlighter' ? '#eab308' : '#1e293b';
+    const width = drawingTool === 'highlighter' ? 14 : 2.5;
+    const opacity = drawingTool === 'highlighter' ? 0.45 : 1;
+    setCurrentStroke({ path: `M ${x.toFixed(1)} ${y.toFixed(1)}`, color, width, opacity });
+  };
+
+  const handleDrawingMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!currentStroke) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setCurrentStroke((prev) =>
+      prev ? { ...prev, path: `${prev.path} L ${x.toFixed(1)} ${y.toFixed(1)}` } : null,
+    );
+  };
+
+  const handleDrawingMouseUp = () => {
+    if (currentStroke) {
+      onAddDrawingStroke?.(currentStroke);
+      setCurrentStroke(null);
+    }
+  };
 
   const [anchor, setAnchor] = useState<CellPosition>({ row: 1, colIdx: 0 });
   const [activeCell, setActiveCell] = useState<CellPosition>({ row: 1, colIdx: 0 });
@@ -1120,130 +1173,137 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         />
       </div>
 
-      <div className="grid-scroll-wrapper" ref={scrollWrapperRef} onScroll={handleScroll}>
+      <div
+        className="grid-scroll-wrapper"
+        ref={scrollWrapperRef}
+        onScroll={handleScroll}
+        style={{ position: 'relative' }}
+      >
         <table
-          className="spreadsheet-table"
+          className={`spreadsheet-table ${!showGridlines ? 'no-gridlines' : ''}`}
           role="grid"
           aria-label={`${currentSheet.name} spreadsheet`}
           aria-readonly={!editable}
           aria-rowcount={visibleRowCount + 1}
           aria-colcount={totalCols + 1}
         >
-          <thead>
-            <tr role="row" aria-rowindex={1}>
-              <th className="corner-cell" aria-hidden="true" />
-              {columnWindow.left > 0 && (
-                <th
-                  role="presentation"
-                  aria-hidden="true"
-                  className="spreadsheet-spacer"
-                  style={{ width: `${columnWindow.left}px` }}
-                />
-              )}
-              {columnIndices.map((colIdx) => {
-                const colLetter = indexToColumn(colIdx);
-                const width = widthForColumn(colIdx);
-
-                return (
+          {showHeadings && (
+            <thead>
+              <tr role="row" aria-rowindex={1}>
+                <th className="corner-cell" aria-hidden="true" />
+                {columnWindow.left > 0 && (
                   <th
-                    key={colLetter}
-                    scope="col"
-                    role="columnheader"
-                    aria-colindex={colIdx + 2}
-                    // Every column offers a sort, and none is sorted until one is pressed.
-                    aria-sort="none"
-                    className="column-header"
-                    style={{
-                      height: `${rowHeight}px`,
-                      width: `${width}px`,
-                      minWidth: `${width}px`,
-                      maxWidth: `${width}px`,
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setContextMenu({ x: e.clientX, y: e.clientY, rowIdx: 0, colIdx });
-                    }}
-                  >
-                    <div className="col-header-inner">
-                      <span className="col-letter">{colLetter}</span>
+                    role="presentation"
+                    aria-hidden="true"
+                    className="spreadsheet-spacer"
+                    style={{ width: `${columnWindow.left}px` }}
+                  />
+                )}
+                {columnIndices.map((colIdx) => {
+                  const colLetter = indexToColumn(colIdx);
+                  const width = widthForColumn(colIdx);
 
-                      {onQuickSort && (
-                        <div style={{ display: 'flex', gap: '2px' }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0 3px', height: '18px', fontSize: '10px' }}
-                            title={`Sort Column ${colLetter} Ascending`}
-                            aria-label={`Sort column ${colLetter} ascending`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickSort(colLetter, 'asc');
-                            }}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ padding: '0 3px', height: '18px', fontSize: '10px' }}
-                            title={`Sort Column ${colLetter} Descending`}
-                            aria-label={`Sort column ${colLetter} descending`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickSort(colLetter, 'desc');
-                            }}
-                          >
-                            ▼
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      role="separator"
-                      aria-orientation="vertical"
-                      aria-label={`Resize column ${colLetter}`}
-                      aria-valuenow={width}
-                      aria-valuemin={MIN_COLUMN_WIDTH}
-                      aria-valuemax={MAX_COLUMN_WIDTH}
-                      tabIndex={0}
-                      className="col-resize-handle"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        gridFocusedRef.current = false;
-                        setResizeDrag({ colIdx, startX: e.clientX, startWidth: width });
+                  return (
+                    <th
+                      key={colLetter}
+                      scope="col"
+                      role="columnheader"
+                      aria-colindex={colIdx + 2}
+                      // Every column offers a sort, and none is sorted until one is pressed.
+                      aria-sort="none"
+                      className="column-header"
+                      style={{
+                        height: `${rowHeight}px`,
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`,
                       }}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                      onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        applyColumnWidth(
-                          colIdx,
-                          Math.min(
-                            MAX_COLUMN_WIDTH,
-                            Math.max(
-                              MIN_COLUMN_WIDTH,
-                              width + (e.key === 'ArrowRight' ? 1 : -1) * RESIZE_KEYBOARD_STEP,
+                        setContextMenu({ x: e.clientX, y: e.clientY, rowIdx: 0, colIdx });
+                      }}
+                    >
+                      <div className="col-header-inner">
+                        <span className="col-letter">{colLetter}</span>
+
+                        {onQuickSort && (
+                          <div style={{ display: 'flex', gap: '2px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '0 3px', height: '18px', fontSize: '10px' }}
+                              title={`Sort Column ${colLetter} Ascending`}
+                              aria-label={`Sort column ${colLetter} ascending`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onQuickSort(colLetter, 'asc');
+                              }}
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '0 3px', height: '18px', fontSize: '10px' }}
+                              title={`Sort Column ${colLetter} Descending`}
+                              aria-label={`Sort column ${colLetter} descending`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onQuickSort(colLetter, 'desc');
+                              }}
+                            >
+                              ▼
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize column ${colLetter}`}
+                        aria-valuenow={width}
+                        aria-valuemin={MIN_COLUMN_WIDTH}
+                        aria-valuemax={MAX_COLUMN_WIDTH}
+                        tabIndex={0}
+                        className="col-resize-handle"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          gridFocusedRef.current = false;
+                          setResizeDrag({ colIdx, startX: e.clientX, startWidth: width });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          applyColumnWidth(
+                            colIdx,
+                            Math.min(
+                              MAX_COLUMN_WIDTH,
+                              Math.max(
+                                MIN_COLUMN_WIDTH,
+                                width + (e.key === 'ArrowRight' ? 1 : -1) * RESIZE_KEYBOARD_STEP,
+                              ),
                             ),
-                          ),
-                        );
-                      }}
-                    />
-                  </th>
-                );
-              })}
-              {columnWindow.right > 0 && (
-                <th
-                  role="presentation"
-                  aria-hidden="true"
-                  className="spreadsheet-spacer"
-                  style={{ width: `${columnWindow.right}px` }}
-                />
-              )}
-            </tr>
-          </thead>
+                          );
+                        }}
+                      />
+                    </th>
+                  );
+                })}
+                {columnWindow.right > 0 && (
+                  <th
+                    role="presentation"
+                    aria-hidden="true"
+                    className="spreadsheet-spacer"
+                    style={{ width: `${columnWindow.right}px` }}
+                  />
+                )}
+              </tr>
+            </thead>
+          )}
           <tbody>
             {topSpacerHeight > 0 && (
               <tr aria-hidden="true" style={{ height: `${topSpacerHeight}px` }}>
@@ -1269,15 +1329,17 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                   ref={rowOffset === 0 ? probeRowRef : undefined}
                   style={{ height: `${rowHeight}px` }}
                 >
-                  <th
-                    scope="row"
-                    role="rowheader"
-                    aria-rowindex={rowNumber + 1}
-                    className="row-index-cell"
-                    style={{ height: `${rowHeight}px` }}
-                  >
-                    {rowNumber}
-                  </th>
+                  {showHeadings && (
+                    <th
+                      scope="row"
+                      role="rowheader"
+                      aria-rowindex={rowNumber + 1}
+                      className="row-index-cell"
+                      style={{ height: `${rowHeight}px` }}
+                    >
+                      {rowNumber}
+                    </th>
+                  )}
                   {columnWindow.left > 0 && (
                     <td
                       role="presentation"
@@ -1336,6 +1398,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         isFillPreview={inFillPreview}
                         actions={actionsRef}
                         innerRef={isActive ? activeCellRef : undefined}
+                        showFormulas={showFormulas}
                       />
                     );
                   })}
@@ -1362,6 +1425,48 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
             )}
           </tbody>
         </table>
+
+        {Boolean(drawingTool || (drawingStrokes && drawingStrokes.length > 0)) && (
+          <svg
+            className={`spreadsheet-drawing-layer ${drawingTool ? 'is-drawing-active' : ''}`}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: drawingTool ? 'auto' : 'none',
+              zIndex: 30,
+            }}
+            onMouseDown={handleDrawingMouseDown}
+            onMouseMove={handleDrawingMouseMove}
+            onMouseUp={handleDrawingMouseUp}
+          >
+            {drawingStrokes?.map((stroke, index) => (
+              <path
+                key={index}
+                d={stroke.path}
+                stroke={stroke.color}
+                strokeWidth={stroke.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                opacity={stroke.opacity ?? 1}
+              />
+            ))}
+            {currentStroke && (
+              <path
+                d={currentStroke.path}
+                stroke={currentStroke.color}
+                strokeWidth={currentStroke.width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                opacity={currentStroke.opacity ?? 1}
+              />
+            )}
+          </svg>
+        )}
       </div>
 
       {contextMenu && (

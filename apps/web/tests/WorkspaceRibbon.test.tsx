@@ -121,4 +121,66 @@ describe('WorkspaceRibbon', () => {
     expect(onManualAction).toHaveBeenNthCalledWith(1, 'find-select');
     expect(onManualAction).toHaveBeenNthCalledWith(2, 'search-help');
   });
+
+  it('triggers font, size, and insert actions from the Home tab', () => {
+    const onManualAction = vi.fn();
+    render(
+      <WorkspaceRibbon
+        activeSheetName="Orders"
+        isProcessing={false}
+        onManualAction={onManualAction}
+        onOpenOperationModal={vi.fn()}
+        onUploadFile={vi.fn()}
+        onExport={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        canUndo={false}
+        canRedo={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Font' }));
+    expect(onManualAction).toHaveBeenCalledWith('font');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Size' }));
+    expect(onManualAction).toHaveBeenCalledWith('font-size');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    expect(onManualAction).toHaveBeenCalledWith('insert');
+  });
+
+  it('triggers interactive tools on Page Layout, Formulas, and Draw tabs', () => {
+    const onManualAction = vi.fn();
+    render(
+      <WorkspaceRibbon
+        activeSheetName="Orders"
+        isProcessing={false}
+        onManualAction={onManualAction}
+        onOpenOperationModal={vi.fn()}
+        onUploadFile={vi.fn()}
+        onExport={vi.fn()}
+        onUndo={vi.fn()}
+        onRedo={vi.fn()}
+        canUndo={false}
+        canRedo={false}
+      />,
+    );
+
+    // Draw tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Draw' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pen' }));
+    expect(onManualAction).toHaveBeenCalledWith('pen-black');
+
+    // Page Layout tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Page Layout' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Themes' }));
+    expect(onManualAction).toHaveBeenCalledWith('themes');
+    fireEvent.click(screen.getByRole('button', { name: 'Gridlines' }));
+    expect(onManualAction).toHaveBeenCalledWith('gridlines');
+
+    // Formulas tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Formulas' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show Formulas' }));
+    expect(onManualAction).toHaveBeenCalledWith('show-formulas');
+  });
 });

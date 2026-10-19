@@ -1818,6 +1818,151 @@ export const addSummaryRowOperation: Operation<AddSummaryRowArgs> = {
   },
 };
 
+export const insertRowsArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  row: z.number().int().positive(),
+  count: z.number().int().positive().default(1),
+});
+export type InsertRowsArgs = z.infer<typeof insertRowsArgsSchema>;
+
+function insertRowsTarget(workbook: Workbook, args: InsertRowsArgs): CellRange[] {
+  const sheet = getSheet(workbook, args.sheet);
+  if (!sheet) return [];
+  const colCount = Math.max(1, maxColumnCount(sheet.rows));
+  const endRow = Math.max(sheet.rows.length + args.count, args.row + args.count - 1);
+  return [
+    {
+      sheet: args.sheet,
+      startColumn: 'A',
+      endColumn: indexToColumn(colCount - 1),
+      startRow: args.row,
+      endRow,
+    },
+  ];
+}
+
+function validateInsertRows(workbook: Workbook, args: InsertRowsArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  const sheet = getSheet(workbook, args.sheet);
+  if (sheet && sheet.rows.length + args.count > EXCEL_MAX_ROWS) {
+    errors.push(issue('row-overflow', 'Inserting rows would exceed maximum supported rows.'));
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyInsertRows(workbook: Workbook, args: InsertRowsArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const sheet = getSheet(after, args.sheet);
+  if (sheet) {
+    const colCount = Math.max(1, maxColumnCount(sheet.rows));
+    const newRows: Cell[][] = [];
+    for (let i = 0; i < args.count; i += 1) {
+      newRows.push(Array.from({ length: colCount }, () => createCell(null)));
+    }
+    const insertIdx = Math.min(sheet.rows.length, Math.max(0, args.row - 1));
+    sheet.rows.splice(insertIdx, 0, ...newRows);
+  }
+  const ranges = insertRowsTarget(before, args);
+  return transitionResult(
+    before,
+    after,
+    operationReport(before, after, ranges, [], { addedRows: args.count }),
+  );
+}
+
+export const insertRowsOperation: Operation<InsertRowsArgs> = {
+  name: 'insert_rows',
+  schema: insertRowsArgsSchema,
+  targetRanges: insertRowsTarget,
+  validate: validateInsertRows,
+  preview(workbook, args) {
+    const ranges = insertRowsTarget(workbook, args);
+    const result = applyInsertRows(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyInsertRows,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: insertRowsTarget(before, args),
+      allowFormulaChanges: true,
+    });
+  },
+};
+
+export const deleteRowsArgsSchema = z.object({
+  sheet: z.string().trim().min(1),
+  startRow: z.number().int().positive(),
+  endRow: z.number().int().positive(),
+});
+export type DeleteRowsArgs = z.infer<typeof deleteRowsArgsSchema>;
+
+function deleteRowsTarget(workbook: Workbook, args: DeleteRowsArgs): CellRange[] {
+  const sheet = getSheet(workbook, args.sheet);
+  if (!sheet) return [];
+  const colCount = Math.max(1, maxColumnCount(sheet.rows));
+  return [
+    {
+      sheet: args.sheet,
+      startColumn: 'A',
+      endColumn: indexToColumn(colCount - 1),
+      startRow: args.startRow,
+      endRow: Math.max(args.endRow, sheet.rows.length),
+    },
+  ];
+}
+
+function validateDeleteRows(workbook: Workbook, args: DeleteRowsArgs): ValidationResult {
+  const errors = validateSheet(workbook, args.sheet);
+  const sheet = getSheet(workbook, args.sheet);
+  if (args.endRow < args.startRow) {
+    errors.push(issue('invalid-range', 'startRow must be less than or equal to endRow.'));
+  }
+  if (sheet) {
+    const toDelete = args.endRow - args.startRow + 1;
+    if (sheet.rows.length - toDelete < 1) {
+      errors.push(issue('empty-sheet', 'A worksheet must keep at least one row.'));
+    }
+  }
+  return errors.length === 0 ? validResult() : { valid: false, errors, warnings: [] };
+}
+
+function applyDeleteRows(workbook: Workbook, args: DeleteRowsArgs): OperationResult {
+  const before = cloneWorkbook(workbook);
+  const after = cloneWorkbook(workbook);
+  const sheet = getSheet(after, args.sheet);
+  const deleteCount = args.endRow - args.startRow + 1;
+  if (sheet) {
+    const deleteIdx = Math.max(0, args.startRow - 1);
+    sheet.rows.splice(deleteIdx, deleteCount);
+  }
+  const ranges = deleteRowsTarget(before, args);
+  return transitionResult(
+    before,
+    after,
+    operationReport(before, after, ranges, [], { removedRows: deleteCount }),
+  );
+}
+
+export const deleteRowsOperation: Operation<DeleteRowsArgs> = {
+  name: 'delete_rows',
+  schema: deleteRowsArgsSchema,
+  targetRanges: deleteRowsTarget,
+  validate: validateDeleteRows,
+  preview(workbook, args) {
+    const ranges = deleteRowsTarget(workbook, args);
+    const result = applyDeleteRows(workbook, args);
+    return previewForTransition(workbook, result.workbook, ranges);
+  },
+  apply: applyDeleteRows,
+  invariants(before, after, args) {
+    return runInvariants(before, after, {
+      targetRanges: deleteRowsTarget(before, args),
+      allowFormulaChanges: true,
+    });
+  },
+};
+
 export const advancedOperations: Operation<unknown>[] = [
   fillBlanksOperation as Operation<unknown>,
   addComputedColumnOperation as Operation<unknown>,
@@ -1832,4 +1977,6 @@ export const advancedOperations: Operation<unknown>[] = [
   duplicateSheetOperation as Operation<unknown>,
   deleteSheetOperation as Operation<unknown>,
   addSummaryRowOperation as Operation<unknown>,
+  insertRowsOperation as Operation<unknown>,
+  deleteRowsOperation as Operation<unknown>,
 ];

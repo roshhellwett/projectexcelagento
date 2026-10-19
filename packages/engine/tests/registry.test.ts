@@ -51,6 +51,8 @@ describe('operation registry', () => {
       'duplicate_sheet',
       'delete_sheet',
       'add_summary_row',
+      'insert_rows',
+      'delete_rows',
       'aggregate_column',
       'group_and_summarize',
       'join_sheets',

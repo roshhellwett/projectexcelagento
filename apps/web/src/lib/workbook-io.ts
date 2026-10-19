@@ -413,6 +413,8 @@ function styleFromSheetJs(raw: unknown): CellStyle | undefined {
     patternType?: string;
     fgColor?: { rgb?: string };
     font?: {
+      name?: string;
+      sz?: number;
       bold?: boolean;
       italic?: boolean;
       underline?: boolean | string;
@@ -431,6 +433,8 @@ function styleFromSheetJs(raw: unknown): CellStyle | undefined {
     ...(style.font?.bold ? { bold: true } : {}),
     ...(style.font?.italic ? { italic: true } : {}),
     ...(style.font?.underline ? { underline: true } : {}),
+    ...(typeof style.font?.name === 'string' ? { fontFamily: style.font.name } : {}),
+    ...(typeof style.font?.sz === 'number' ? { fontSize: Math.round(style.font.sz) } : {}),
     ...(rgbColor(style.font?.color?.rgb) ? { fontColor: rgbColor(style.font?.color?.rgb) } : {}),
     ...(rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb)
       ? { fillColor: rgbColor(style.fill?.fgColor?.rgb ?? style.fgColor?.rgb) }
@@ -677,6 +681,8 @@ function styleForExport(style: CellStyle | undefined): Record<string, unknown> |
   if (style.bold !== undefined) font.bold = style.bold;
   if (style.italic !== undefined) font.italic = style.italic;
   if (style.underline !== undefined) font.underline = style.underline;
+  if (style.fontFamily) font.name = style.fontFamily;
+  if (style.fontSize) font.sz = style.fontSize;
   if (style.fontColor) font.color = { rgb: `FF${style.fontColor.replace(/^#/, '')}` };
   const fill = style.fillColor
     ? { patternType: 'solid', fgColor: { rgb: `FF${style.fillColor.replace(/^#/, '')}` } }

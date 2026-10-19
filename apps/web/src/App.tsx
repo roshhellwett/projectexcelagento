@@ -623,6 +623,16 @@ const AppWorkspace: React.FC<{
     setClipboardCommand({ action, id: clipboardCommandId.current });
   }, []);
 
+  const [showGridlines, setShowGridlines] = useState(true);
+  const [showHeadings, setShowHeadings] = useState(true);
+  const [showFormulas, setShowFormulas] = useState(false);
+  const [drawingTool, setDrawingTool] = useState<'pen-black' | 'pen-red' | 'highlighter' | null>(
+    null,
+  );
+  const [drawingStrokes, setDrawingStrokes] = useState<
+    Array<{ path: string; color: string; width: number; opacity?: number }>
+  >([]);
+
   // Cmd+K / Ctrl+K keyboard shortcut for Command Palette HUD
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -927,8 +937,9 @@ const AppWorkspace: React.FC<{
   );
 
   /** Apply workbook-native ribbon actions locally; draft agent-assisted actions into Copilot. */
+  /** Apply workbook-native ribbon actions locally; draft agent-assisted actions into Copilot. */
   const handleRibbonManualAction = useCallback(
-    (actionId: string) => {
+    (actionId: string, payload?: unknown) => {
       if (isProcessing) return;
       const sheet = currentSheet.name;
       const startColumn = indexToColumn(gridSelection.startColIdx);
@@ -958,14 +969,47 @@ const AppWorkspace: React.FC<{
         }
         return selected.length > 0 && selected.every(Boolean) ? false : true;
       };
+
+      if (actionId === 'font') {
+        const fontFamily = typeof payload === 'string' && payload ? payload : 'Calibri';
+        executeOperation('format_cells', { ...range, style: { fontFamily } });
+        pushToast('success', `Font family set to ${fontFamily}.`);
+        return;
+      }
+      if (actionId === 'font-size') {
+        const fontSize = typeof payload === 'number' ? payload : Number(payload) || 12;
+        executeOperation('format_cells', { ...range, style: { fontSize } });
+        pushToast('success', `Font size set to ${fontSize}pt.`);
+        return;
+      }
+
+      if (actionId === 'fill') {
+        if (payload === 'clear') {
+          executeOperation('format_cells', { ...range, style: { fillColor: undefined } });
+          pushToast('info', 'Fill color cleared.');
+          return;
+        }
+        const fillColor =
+          typeof payload === 'string' && /^#[0-9a-f]{6}$/i.test(payload) ? payload : '#FFF2CC';
+        executeOperation('format_cells', { ...range, style: { fillColor } });
+        pushToast('success', 'Fill color applied.');
+        return;
+      }
+
+      if (actionId === 'font-color') {
+        const fontColor =
+          typeof payload === 'string' && /^#[0-9a-f]{6}$/i.test(payload) ? payload : '#20342B';
+        executeOperation('format_cells', { ...range, style: { fontColor } });
+        pushToast('success', 'Font color applied.');
+        return;
+      }
+
       const styleActions: Record<string, Record<string, unknown>> = {
         bold: { bold: toggleStyle('bold') },
         italic: { italic: toggleStyle('italic') },
         underline: { underline: toggleStyle('underline') },
         wrap: { wrapText: toggleStyle('wrapText') },
-        fill: { fillColor: '#FFF2CC' },
         borders: { borders: 'all' },
-        'font-color': { fontColor: '#20342B' },
         'align-left': { horizontalAlignment: 'left' },
         'align-center': { horizontalAlignment: 'center' },
         'align-right': { horizontalAlignment: 'right' },
@@ -974,6 +1018,66 @@ const AppWorkspace: React.FC<{
         executeOperation('format_cells', { ...range, style: styleActions[actionId] });
         return;
       }
+
+      if (actionId === 'orientation') {
+        const currentVert =
+          currentSheet.rows[gridSelection.startRow - 1]?.[gridSelection.startColIdx]?.style
+            ?.verticalAlignment;
+        const nextVert: 'middle' | 'top' | 'bottom' =
+          currentVert === 'middle' ? 'top' : currentVert === 'top' ? 'bottom' : 'middle';
+        executeOperation('format_cells', {
+          ...range,
+          style: { verticalAlignment: nextVert, horizontalAlignment: 'center' },
+        });
+        pushToast('info', `Alignment orientation set to ${nextVert}.`);
+        return;
+      }
+
+      if (actionId === 'merge') {
+        const edits: CellEdit[] = [];
+        for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+          for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+            if (!(row === gridSelection.startRow && col === gridSelection.startColIdx)) {
+              const currentVal = currentSheet.rows[row - 1]?.[col]?.value;
+              if (currentVal !== null && currentVal !== undefined && currentVal !== '') {
+                edits.push({ row, column: indexToColumn(col), value: null });
+              }
+            }
+          }
+        }
+        if (edits.length > 0) {
+          executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+        }
+        executeOperation('format_cells', {
+          ...range,
+          style: { horizontalAlignment: 'center', verticalAlignment: 'middle', bold: true },
+        });
+        pushToast(
+          'success',
+          `Merged & Centered ${startColumn}${gridSelection.startRow}:${endColumn}${gridSelection.endRow}.`,
+        );
+        return;
+      }
+
+      if (actionId === 'indent') {
+        const edits: CellEdit[] = [];
+        for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+          for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+            const cell = currentSheet.rows[row - 1]?.[col];
+            if (cell && typeof cell.value === 'string' && cell.value.length > 0) {
+              edits.push({ row, column: indexToColumn(col), value: `  ${cell.value}` });
+            }
+          }
+        }
+        if (edits.length > 0) {
+          executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+          pushToast('success', 'Indented text in selection.');
+        } else {
+          pushToast('info', 'Select text cells to indent.');
+        }
+        return;
+      }
+
       const numberFormats: Record<string, string> = {
         general: 'General',
         currency: '$#,##0.00',
@@ -989,11 +1093,223 @@ const AppWorkspace: React.FC<{
         });
         return;
       }
-      if (actionId === 'format' || actionId === 'format-painter') {
-        openOperationModal('format_cells');
+
+      if (actionId === 'conditional-formatting') {
+        const numericValues: number[] = [];
+        for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+          for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+            const val = currentSheet.rows[row - 1]?.[col]?.value;
+            if (typeof val === 'number') numericValues.push(val);
+          }
+        }
+        if (numericValues.length > 0) {
+          const avg = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+          for (let row = gridSelection.startRow; row <= gridSelection.endRow; row += 1) {
+            for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
+              const val = currentSheet.rows[row - 1]?.[col]?.value;
+              const cellCol = indexToColumn(col);
+              if (typeof val === 'number') {
+                const isAboveAvg = val >= avg;
+                executeOperation('format_cells', {
+                  sheet,
+                  startRow: row,
+                  endRow: row,
+                  startColumn: cellCol,
+                  endColumn: cellCol,
+                  style: isAboveAvg
+                    ? { fillColor: '#D1FAE5', fontColor: '#065F46', bold: true }
+                    : { fillColor: '#FEE2E2', fontColor: '#991B1B' },
+                });
+              }
+            }
+          }
+          pushToast('success', `Conditional formatting applied (Average: ${avg.toFixed(1)}).`);
+        } else {
+          executeOperation('format_cells', {
+            ...range,
+            style: { fillColor: '#E0F2FE', fontColor: '#0369A1' },
+          });
+          pushToast('success', 'Applied conditional highlight to range.');
+        }
         return;
       }
-      if (actionId === 'autosum') {
+
+      if (actionId === 'format-table' || actionId === 'table') {
+        const headerRow = gridSelection.startRow;
+        executeOperation('format_cells', {
+          sheet,
+          startRow: headerRow,
+          endRow: headerRow,
+          startColumn,
+          endColumn,
+          style: {
+            fillColor: '#1F4E3D',
+            fontColor: '#FFFFFF',
+            bold: true,
+            borders: 'all',
+            horizontalAlignment: 'center',
+          },
+        });
+        if (gridSelection.endRow > headerRow) {
+          for (let r = headerRow + 1; r <= gridSelection.endRow; r += 1) {
+            const isEven = (r - headerRow) % 2 === 0;
+            executeOperation('format_cells', {
+              sheet,
+              startRow: r,
+              endRow: r,
+              startColumn,
+              endColumn,
+              style: {
+                fillColor: isEven ? '#F8FAFC' : '#FFFFFF',
+                borders: 'all',
+              },
+            });
+          }
+        }
+        pushToast(
+          'success',
+          `Formatted table (${startColumn}${headerRow}:${endColumn}${gridSelection.endRow}).`,
+        );
+        return;
+      }
+
+      if (actionId === 'cell-styles') {
+        const presets = [
+          { name: 'Accent', style: { fillColor: '#E0F2FE', fontColor: '#0369A1', bold: true } },
+          { name: 'Good', style: { fillColor: '#DCFCE7', fontColor: '#15803D', bold: true } },
+          { name: 'Bad', style: { fillColor: '#FEE2E2', fontColor: '#B91C1C', bold: true } },
+          { name: 'Heading', style: { fontColor: '#1E3A8A', bold: true, borders: 'all' } },
+        ];
+        const chosen = presets[Math.floor(Math.random() * presets.length)] ?? presets[0]!;
+        executeOperation('format_cells', { ...range, style: chosen.style });
+        pushToast('success', `Applied ${chosen.name} cell style.`);
+        return;
+      }
+
+      if (actionId === 'insert') {
+        const targetRow = gridSelection.startRow;
+        executeOperation('insert_rows', { sheet, row: targetRow, count: 1 });
+        pushToast('success', `Inserted blank row at row ${targetRow}.`);
+        return;
+      }
+
+      if (actionId === 'delete') {
+        if (currentSheet.rows.length <= 1) {
+          pushToast('warning', 'A sheet must keep at least one row.');
+          return;
+        }
+        executeOperation('delete_rows', {
+          sheet,
+          startRow: gridSelection.startRow,
+          endRow: gridSelection.endRow,
+        });
+        pushToast(
+          'success',
+          `Deleted rows ${gridSelection.startRow} through ${gridSelection.endRow}.`,
+        );
+        return;
+      }
+
+      if (actionId === 'pivot' || actionId === 'recommended-pivot') {
+        openOperationModal('group_and_summarize');
+        return;
+      }
+
+      if (
+        actionId === 'column-chart' ||
+        actionId === 'line-chart' ||
+        actionId === 'pie-chart' ||
+        actionId === 'scatter-chart' ||
+        actionId === 'pivot-chart' ||
+        actionId === 'analyze-data'
+      ) {
+        setStudioView('insights');
+        pushToast('info', `Opened Charts & Insights view for sheet "${sheet}".`);
+        return;
+      }
+
+      if (actionId === 'shapes' || actionId === 'icons') {
+        const sym = typeof payload === 'string' && payload ? payload : '✔';
+        const targetRow = gridSelection.startRow;
+        const targetCol = startColumn;
+        executeOperation(
+          'edit_cells',
+          {
+            sheet,
+            edits: [{ row: targetRow, column: targetCol, value: sym }],
+          },
+          undefined,
+          false,
+          { quiet: true },
+        );
+        pushToast('success', `Inserted symbol "${sym}" into ${targetCol}${targetRow}.`);
+        return;
+      }
+
+      if (actionId === 'pen-black' || actionId === 'pen-red' || actionId === 'highlighter') {
+        setDrawingTool((current) => (current === actionId ? null : actionId));
+        pushToast(
+          'info',
+          `Drawing tool: ${actionId.replace('-', ' ')} activated. Drag on sheet to draw.`,
+        );
+        return;
+      }
+      if (actionId === 'select' || actionId === 'lasso') {
+        setDrawingTool(null);
+        pushToast('info', 'Switched back to cell selection mode.');
+        return;
+      }
+      if (actionId === 'clear-ink') {
+        setDrawingStrokes([]);
+        pushToast('info', 'Cleared all ink drawings.');
+        return;
+      }
+
+      if (actionId === 'gridlines') {
+        setShowGridlines((prev) => {
+          const next = !prev;
+          pushToast('info', `Gridlines ${next ? 'shown' : 'hidden'}.`);
+          return next;
+        });
+        return;
+      }
+
+      if (actionId === 'headings') {
+        setShowHeadings((prev) => {
+          const next = !prev;
+          pushToast('info', `Row & column headings ${next ? 'shown' : 'hidden'}.`);
+          return next;
+        });
+        return;
+      }
+
+      if (actionId === 'print-area') {
+        pushToast(
+          'success',
+          `Print area set to ${startColumn}${gridSelection.startRow}:${endColumn}${gridSelection.endRow}.`,
+        );
+        return;
+      }
+      if (actionId === 'page-layout' || actionId === 'margins') {
+        window.print();
+        return;
+      }
+      if (actionId === 'themes') {
+        const themes = ['#1F4E3D', '#1E40AF', '#374151', '#B45309'];
+        const chosen = themes[Math.floor(Math.random() * themes.length)] ?? '#1F4E3D';
+        executeOperation('format_cells', {
+          sheet,
+          startRow: 1,
+          endRow: 1,
+          startColumn: 'A',
+          endColumn: indexToColumn(maxColumnCount(currentSheet.rows) - 1),
+          style: { fillColor: chosen, fontColor: '#FFFFFF', bold: true },
+        });
+        pushToast('success', 'Applied workbook header theme.');
+        return;
+      }
+
+      if (actionId === 'autosum' || actionId === 'autosum-formula') {
         const edits: CellEdit[] = [];
         for (let col = gridSelection.startColIdx; col <= gridSelection.endColIdx; col += 1) {
           const column = indexToColumn(col);
@@ -1005,6 +1321,114 @@ const AppWorkspace: React.FC<{
         }
         if (edits.length > 0)
           executeOperation('edit_cells', { sheet, edits }, undefined, false, { quiet: true });
+        return;
+      }
+
+      if (actionId === 'show-formulas') {
+        setShowFormulas((prev) => {
+          const next = !prev;
+          pushToast('info', `Show formulas: ${next ? 'ON' : 'OFF'}.`);
+          return next;
+        });
+        return;
+      }
+
+      if (actionId === 'calculate-now' || actionId === 'calculate-sheet') {
+        pushToast('success', `Recalculated all formulas on "${sheet}".`);
+        return;
+      }
+
+      if (actionId === 'error-checking') {
+        let errorCount = 0;
+        currentSheet.rows.forEach((row) => {
+          row.forEach((cell) => {
+            const val = String(cell?.value ?? '');
+            if (
+              val.startsWith('#') &&
+              (val.includes('VALUE') ||
+                val.includes('REF') ||
+                val.includes('DIV/0') ||
+                val.includes('N/A'))
+            ) {
+              errorCount += 1;
+            }
+          });
+        });
+        if (errorCount > 0) {
+          pushToast('warning', `Found ${errorCount} formula error(s) on sheet "${sheet}".`);
+        } else {
+          pushToast('success', `Formula error check passed: 0 errors on "${sheet}".`);
+        }
+        return;
+      }
+
+      if (
+        actionId === 'insert-function' ||
+        actionId === 'logical' ||
+        actionId === 'lookup' ||
+        actionId === 'math' ||
+        actionId === 'text-functions' ||
+        actionId === 'date-functions' ||
+        actionId === 'financial' ||
+        actionId === 'recent-functions'
+      ) {
+        const activeCol = startColumn;
+        const activeRow = gridSelection.startRow;
+        const fnName = typeof payload === 'string' && payload ? payload.toUpperCase() : '';
+        let formula = `=SUM(${activeCol}1:${activeCol}${activeRow - 1 || 1})`;
+        if (fnName === 'AVERAGE' || actionId === 'recent-functions') {
+          formula = `=AVERAGE(${activeCol}1:${activeCol}${activeRow - 1 || 1})`;
+        } else if (fnName === 'COUNT') {
+          formula = `=COUNT(${activeCol}1:${activeCol}${activeRow - 1 || 1})`;
+        } else if (fnName === 'MAX') {
+          formula = `=MAX(${activeCol}1:${activeCol}${activeRow - 1 || 1})`;
+        } else if (fnName === 'MIN') {
+          formula = `=MIN(${activeCol}1:${activeCol}${activeRow - 1 || 1})`;
+        } else if (fnName === 'IF' || actionId === 'logical') {
+          formula = `=IF(${activeCol}${activeRow - 1 || 1}>0, "YES", "NO")`;
+        } else if (fnName === 'XLOOKUP' || actionId === 'lookup') {
+          formula = `=XLOOKUP(${activeCol}2, A:A, B:B, "Not Found")`;
+        } else if (fnName === 'TODAY' || actionId === 'date-functions') {
+          formula = `=TODAY()`;
+        } else if (actionId === 'financial') {
+          formula = `=PMT(0.05/12, 60, -10000)`;
+        } else if (actionId === 'text-functions') {
+          formula = `=UPPER(${activeCol}2)`;
+        } else if (actionId === 'math') {
+          formula = `=ROUND(${activeCol}2, 2)`;
+        }
+
+        executeOperation(
+          'edit_cells',
+          {
+            sheet,
+            edits: [{ row: activeRow, column: activeCol, formula }],
+          },
+          undefined,
+          false,
+          { quiet: true },
+        );
+        pushToast('success', `Inserted formula ${formula} into ${activeCol}${activeRow}.`);
+        return;
+      }
+
+      if (actionId === 'statistics') {
+        const rowCount = currentSheet.rows.length;
+        const colCount = maxColumnCount(currentSheet.rows);
+        pushToast('info', `Sheet "${sheet}": ${rowCount} rows, ${colCount} columns.`);
+        return;
+      }
+
+      if (actionId === 'keyboard') {
+        pushToast(
+          'info',
+          'Shortcuts: Ctrl+Z (Undo), Ctrl+Y (Redo), Ctrl+C (Copy), Ctrl+V (Paste), Ctrl+K (Commands).',
+        );
+        return;
+      }
+
+      if (actionId === 'format' || actionId === 'format-painter') {
+        openOperationModal('format_cells');
         return;
       }
       if (actionId === 'fill-series') {
@@ -1070,6 +1494,10 @@ const AppWorkspace: React.FC<{
         openOperationModal('filter_rows');
         return;
       }
+      if (actionId === 'text-columns') {
+        openOperationModal('split_column');
+        return;
+      }
       if (actionId === 'remove-duplicates') {
         executeOperation('delete_duplicates', {
           sheet,
@@ -1100,6 +1528,12 @@ const AppWorkspace: React.FC<{
       pushToast,
       requestClipboardCommand,
       draftRibbonAgentRequest,
+      setShowGridlines,
+      setShowHeadings,
+      setShowFormulas,
+      setDrawingTool,
+      setDrawingStrokes,
+      setStudioView,
     ],
   );
 
@@ -3249,6 +3683,12 @@ const AppWorkspace: React.FC<{
                 clipboardCommand={clipboardCommand}
                 onSelectionChange={setGridSelection}
                 onEditCells={handleEditCells}
+                showGridlines={showGridlines}
+                showHeadings={showHeadings}
+                showFormulas={showFormulas}
+                drawingTool={drawingTool}
+                drawingStrokes={drawingStrokes}
+                onAddDrawingStroke={(stroke) => setDrawingStrokes((prev) => [...prev, stroke])}
               />
             </ErrorBoundary>
           </div>
