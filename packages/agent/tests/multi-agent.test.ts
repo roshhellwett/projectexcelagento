@@ -163,6 +163,11 @@ describe('runMultiAgentTurn', () => {
     expect(result.trace.map((step) => step.layer)).toContain('planner');
     expect(result.trace.map((step) => step.layer)).toContain('verification');
     expect(result.activities?.map((activity) => activity.agent)).toContain('Critic');
+    // The orchestrator streams these events while the pipeline runs; it must not append the
+    // pipeline's returned copy a second time when the turn is complete.
+    expect(result.activities?.filter((activity) => activity.agent === 'Analyst')).toHaveLength(3);
+    expect(result.activities?.filter((activity) => activity.agent === 'Planner')).toHaveLength(3);
+    expect(result.activities?.filter((activity) => activity.agent === 'Critic')).toHaveLength(3);
     for (const role of ['Analyst', 'Planner', 'Critic']) {
       const prompt = roleSystemPrompts.find((value) => value.includes(`You are the ${role}`));
       expect(prompt).toBeDefined();

@@ -141,6 +141,32 @@ describe('Live Thinking Button and Panel', () => {
     expect(thinkingBtn.classList.contains('btn-live-thinking')).toBe(true);
   });
 
+  it('clears an old draft when a workflow shortcut starts a new turn', () => {
+    const onSendMessage = vi.fn();
+    render(
+      <AgentChat
+        audit={dummyAudit}
+        messages={[]}
+        isProcessing={false}
+        hasApiKey={true}
+        apiKeyProvider="groq"
+        onSaveApiKey={vi.fn()}
+        onClearApiKey={vi.fn()}
+        onSendMessage={onSendMessage}
+        onApplyAction={vi.fn()}
+        onUndoLast={vi.fn()}
+        canUndo={false}
+      />,
+    );
+
+    const composer = screen.getByRole('textbox', { name: 'Ask ExcelAgento' });
+    fireEvent.change(composer, { target: { value: 'an unfinished request' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove duplicates' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith('remove duplicate rows');
+    expect(composer).toHaveValue('');
+  });
+
   it('shows "Live Thinking" with live pulse while processing or streaming', () => {
     const messages: ChatMessage[] = [
       {

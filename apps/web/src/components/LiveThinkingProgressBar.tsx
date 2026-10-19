@@ -86,7 +86,9 @@ export const LiveThinkingProgressBar: React.FC<LiveThinkingProgressBarProps> = (
           </span>
           <Brain size={13} className="live-thinking-icon" />
           <span className="live-thinking-phase-title">{phaseTitle}</span>
-          <span className="live-thinking-timer-badge">{formatTimer(elapsedSeconds)}</span>
+          <span className="live-thinking-timer-badge" aria-hidden="true">
+            {formatTimer(elapsedSeconds)}
+          </span>
         </div>
 
         <div className="live-thinking-progress-right">
@@ -125,7 +127,9 @@ export const LiveThinkingProgressBar: React.FC<LiveThinkingProgressBarProps> = (
       {/* Sub-detail description */}
       <div className="live-thinking-progress-detail">
         <span className="live-thinking-detail-text">{phaseDetail}</span>
-        <span className="live-thinking-pct">{progressPercent}%</span>
+        <span className="live-thinking-pct" aria-hidden="true">
+          {progressPercent}%
+        </span>
       </div>
     </div>
   );

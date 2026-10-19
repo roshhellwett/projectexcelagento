@@ -208,7 +208,12 @@ export const AgentChat: React.FC<AgentChatProps> = ({
 
   const handleSuggestionClick = (prompt: string) => {
     if (isProcessing) return;
+    // Shortcut and clarification sends should behave like a normal submit: keep the new turn in
+    // view and do not leave an old draft sitting in the composer after the action was dispatched.
+    nearBottomRef.current = true;
+    setInputText('');
     onSendMessage(prompt);
+    requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const handleActivateKey = (e: React.FormEvent) => {
