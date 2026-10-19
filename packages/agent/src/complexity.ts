@@ -43,10 +43,22 @@ const COMPLEX_SIGNALS = [
   'sari sheet',
   'saari sheet',
   'sab ek sheet',
+  'shift into',
+  'shift to',
+  'new column',
+  'nayi column',
+  'alag column',
+  'clean and structure',
+  'structure and clean',
+  'sab sambhal lo',
+  'thara bhai',
+  'sab kr dega',
+  'sab kar dega',
+  'dekh lo aur theek',
 ];
 
 const DEPENDENT_VERB_COUNT =
-  /\b(clean|merge|join|group|summarize|summarise|filter|sort|format|categorize|pivot|aggregate|count|sum|remove|add|rename|compute|transfer|migrate|populate|extract|structure|convert|reconcile|consolidate|combine|flatten|collapse)\b/gi;
+  /\b(clean|merge|join|group|summarize|summarise|filter|sort|format|categorize|pivot|aggregate|count|sum|remove|add|rename|compute|transfer|migrate|populate|extract|structure|convert|reconcile|consolidate|combine|flatten|collapse|shift|fix|correct|replace|hatao|daalo|bharo|badlo)\b/gi;
 
 /**
  * Decides whether a request warrants the full pipeline. Simple single-verb turns stay on the

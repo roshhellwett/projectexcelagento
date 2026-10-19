@@ -100,7 +100,8 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
     example: { sheet: 'Sheet1', column: 'F' },
   },
   add_column: {
-    description: 'Append a new column with a header and an optional default value.',
+    description:
+      'Append a new column with a header and an optional default value. "headerRow" must be an integer number (default 1).',
     category: 'structure',
     example: {
       sheet: 'Sheet1',
@@ -162,7 +163,7 @@ const TOOL_METADATA: Readonly<Record<string, ToolMetadata>> = {
   },
   edit_cells: {
     description:
-      'Write specific values into individual cells, growing the sheet when an address is past the current data. Use for precise, targeted edits; prefer the range operations for bulk work.',
+      'Write specific values into individual cells. "edits" must be an array of cell objects [{ row: number, column: string, value: any }]. Use for precise, targeted edits; prefer range operations for bulk work.',
     category: 'transform',
     example: { sheet: 'Sheet1', edits: [{ row: 2, column: 'B', value: 60 }] },
   },

@@ -408,6 +408,44 @@ describe('advanced operations', () => {
       expect(result.error.code).toBe('validation-error');
       expect(result.error.messages.join(' ')).toMatch(/XFD/);
     });
+
+    it('coerces string rows and accepts single edit objects or cell dictionaries', () => {
+      const before = workbook([row('Item', 'Qty'), row('Widget', 5)]);
+
+      // String row in edits array
+      const stringRowRes = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: [{ row: '2' as unknown as number, column: 'B', value: 20 }],
+      });
+      expect(stringRowRes.ok).toBe(true);
+      if (stringRowRes.ok) {
+        expect(values(stringRowRes.workbook, 2)).toEqual(['Widget', 20]);
+      }
+
+      // Single object instead of array
+      const singleObjRes = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: { row: 2, column: 'B', value: 25 } as unknown as Array<{
+          row: number;
+          column: string;
+          value: number;
+        }>,
+      });
+      expect(singleObjRes.ok).toBe(true);
+      if (singleObjRes.ok) {
+        expect(values(singleObjRes.workbook, 2)).toEqual(['Widget', 25]);
+      }
+
+      // Cell coordinate dictionary: { "B2": 30 }
+      const dictRes = applyOperation(before, 'edit_cells', {
+        sheet: 'Data',
+        edits: { B2: 30 } as unknown as Array<{ row: number; column: string; value: number }>,
+      });
+      expect(dictRes.ok).toBe(true);
+      if (dictRes.ok) {
+        expect(values(dictRes.workbook, 2)).toEqual(['Widget', 30]);
+      }
+    });
   });
 
   describe('filter_to_new_sheet', () => {

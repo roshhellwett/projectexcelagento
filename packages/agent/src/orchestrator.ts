@@ -91,13 +91,13 @@ function isDemoKey(key: string | undefined): boolean {
 }
 
 const EXPLICIT_MUTATION_PATTERN =
-  /(?:^(?:please\s+)?|\b(?:and|then|also|plus|after\s+that|do)\s+)(?:add|append|apply|change|clean|convert|copy|create|delete|drop|duplicate|edit|fill|filter|format|group|insert|join|merge|move|normalize|populate|remove|rename|replace|report|set|sort|split|structure|summari[sz]e|transfer|update|write|aggregate|deduplicate|dedupe|reconcile|consolidate|isolate|organize|pivot|trim|find\s+and\s+replace)\b/i;
+  /\b(?:add|append|apply|change|clean|convert|copy|create|delete|drop|duplicate|edit|fill|filter|fix|correct|adjust|format|group|insert|join|merge|move|shift|put|place|normalize|populate|remove|rename|replace|report|set|sort|split|structure|summari[sz]e|transfer|update|write|aggregate|deduplicate|dedupe|reconcile|consolidate|isolate|organize|pivot|trim|find\s+and\s+replace|hatao|hata|hata\s+do|daalo?|daal\s+do|bharo?|bhar\s+do|theek\s+karo?|sahi\s+karo?|badlo?|badal\s+do|nikalo?|nikal\s+do|saaf\s+karo?|alag\s+karo?|jod\s+do|kardo|kar\s+do|kar\s+de|kr\s+do|kr\s+de|banado|bana\s+do)\b/i;
 
 const READ_ONLY_REQUEST_PATTERN =
   /^(?:what|who|which|where|when|why|how|show|tell|give|list|describe|explain|inspect|check|find|search|calculate|compute|analy[sz]e|compare|count|sum|average|profile|is|are|does|do|can you tell|could you tell|please\s+(?:show|tell|give|explain|check|inspect|calculate|compute|analy[sz]e|compare|count))\b/i;
 
 const FEEDBACK_REQUEST_PATTERN =
-  /(?:\b(?:you(?:'|’)ve|you\s+have)\s+(?:just\s+)?(?:copy\s*pasted?|duplicated?)\s+(?:the\s+)?sheet\b|\bwhy\s+did\s+you\b|\b(?:that|that's|this|it)\s+(?:is|was|'s)\s+wrong\b|\b(?:the\s+)?(?:agent|operation|change|result|workbook|chat)\s+(?:is\s+)?broken\b|\bnothing\s+(?:changed|happened|worked|is\s+working|is\s+getting\s+performed)\b|\b(?:undo|revert)\b|\bwhy\s+llms?\b|\bnot\s+(?:thinking|understanding)\b|\bsoch\s+nhi\b|\bkuch\s+bhi\b|\bturant\s+answer\b|\bkya\s+faida\b|\balready\s+feed\b|\b(?:galat|bekar|nahi\s+hua)\b)/i;
+  /(?:\b(?:you(?:'|’)ve|you\s+have)\s+(?:just\s+)?(?:copy\s*pasted?|duplicated?)\s+(?:the\s+)?sheet\b|\bwhy\s+did\s+you\b|\b(?:that|that's|this|it)\s+(?:is|was|'s)\s+wrong\b|\b(?:the\s+)?(?:agent|operation|change|result|workbook|chat)\s+(?:is\s+)?broken\b|\bnothing\s+(?:changed|happened|worked|is\s+working|is\s+getting\s+performed)\b|\b(?:undo|revert)\b|\bwhy\s+llms?\b|\bnot\s+(?:thinking|understanding)\b|\bsoch\s+nhi\b|\bturant\s+answer\b|\bkya\s+faida\b|\balready\s+feed\b|\bkuch\s+nhi\s+hua\b|\bkhali\s+copy\s*paste\b)/i;
 
 /**
  * A valid engine operation is not, by itself, authorization to mutate a workbook. The model must
@@ -110,18 +110,24 @@ function isMutationNotAuthorized(
   effectiveQuery: string,
   isConversationalFollowup: boolean,
 ): boolean {
-  if (FEEDBACK_REQUEST_PATTERN.test(query)) return true;
-  // A bare confirmation is only meaningful when it resolved to a prior request. Without a prior
-  // request, accepting a model mutation would let "yes" authorize an arbitrary operation.
-  if (isConversationalFollowup && effectiveQuery.trim() === query.trim()) return true;
-
   const normalized = effectiveQuery.trim();
   if (!normalized) return true;
-  return READ_ONLY_REQUEST_PATTERN.test(normalized) && !EXPLICIT_MUTATION_PATTERN.test(normalized);
+
+  const hasExplicitMutation =
+    EXPLICIT_MUTATION_PATTERN.test(normalized) || EXPLICIT_MUTATION_PATTERN.test(query);
+
+  if (FEEDBACK_REQUEST_PATTERN.test(query) && !hasExplicitMutation) return true;
+  // A bare confirmation is only meaningful when it resolved to a prior request. Without a prior
+  // request, accepting a model mutation would let "yes" authorize an arbitrary operation.
+  if (isConversationalFollowup && effectiveQuery.trim() === query.trim() && !hasExplicitMutation) {
+    return true;
+  }
+
+  return READ_ONLY_REQUEST_PATTERN.test(normalized) && !hasExplicitMutation;
 }
 
 const CONVERSATIONAL_FOLLOWUP_PATTERN =
-  /^(?:perform(?:\s+then|\s+it)?|do\s+it(?:\s+then)?|run\s+it(?:\s+then)?|proceed(?:\s+then)?|go\s+ahead|yes|ok|sure|please\s+do|please\s+perform|execute(?:\s+it|\s+then)?|apply(?:\s+it|\s+then)?|clean\s+it(?:\s+then)?|structure\s+it(?:\s+then)?|do\s+that(?:\s+then)?|start(?:\s+then)?|\?)$/i;
+  /^(?:perform(?:\s+then|\s+it)?|do\s+it(?:\s+then)?|run\s+it(?:\s+then)?|proceed(?:\s+then)?|go\s+ahead|yes|yep|yeah|ok|okay|sure|please(?:\s+do)?|please\s+perform|execute(?:\s+it|\s+then)?|apply(?:\s+it|\s+then)?|clean\s+it(?:\s+then)?|structure\s+it(?:\s+then)?|do\s+that(?:\s+then)?|start(?:\s+then)?|continue(?:\s+why\s+you\s+failed|\s+please|\s+ahead)?|keep\s+going|retry|try\s+again|karo|kardo|kar\s+do|kar\s+de|kr\s+do|kr\s+de|bhai\s+karo|bhai\s+kardo|bhai\s+kr\s+de|aage\s+badho|chalo|chalne\s+do|theek\s+karo|sahi\s+karo|fix\s+it|sambhal\s+lo|sab\s+sambhal\s+lo|dekh\s+lo|laa\s+de\s+thara\s+bhai\s+sab\s+kr\s+dega|\?)$/i;
 
 interface ResolvedTurnIntent {
   effectiveQuery: string;
@@ -498,7 +504,8 @@ export class ExcelAgentOrchestrator {
           : 'Heuristic planner produced an informational answer.',
     });
 
-    if (!isComplexRequest(effectiveQuery) && heuristic.clarification) {
+    const hasLiveLlm = input.config && !isDemoKey(input.config.apiKey);
+    if (!hasLiveLlm && !isComplexRequest(effectiveQuery) && heuristic.clarification) {
       emitActivity(
         'status',
         'Conductor',
@@ -559,14 +566,14 @@ export class ExcelAgentOrchestrator {
     if (
       input.config &&
       sheet &&
-      isComplexRequest(input.query) &&
+      isComplexRequest(effectiveQuery) &&
       !mutationNotAuthorized &&
       !isDemoKey(input.config.apiKey)
     ) {
       try {
         const multi = await runMultiAgentTurn(
           {
-            query: input.query,
+            query: effectiveQuery,
             workbook: input.workbook,
             sheetName,
             config: input.signal ? { ...input.config, signal: input.signal } : input.config,
@@ -833,8 +840,10 @@ You MUST execute this workflow:
         let turns = 0;
         let currentToolCalls = response.toolCalls;
         let resolved = false;
+        const recentToolSignatures: string[] = [];
+        let consecutiveDuplicateCount = 0;
 
-        while (!resolved && currentToolCalls && currentToolCalls.length > 0 && turns < 30) {
+        while (!resolved && currentToolCalls && currentToolCalls.length > 0 && turns < 15) {
           throwIfCancelled(config.provider, config.signal);
           turns += 1;
           messages.push({
@@ -852,6 +861,31 @@ You MUST execute this workflow:
               fnArgs = JSON.parse(toolCall.function.arguments || '{}');
             } catch {
               fnArgs = {};
+            }
+
+            const callSig = `${fnName}:${JSON.stringify(fnArgs)}`;
+            if (
+              recentToolSignatures.length > 0 &&
+              recentToolSignatures[recentToolSignatures.length - 1] === callSig
+            ) {
+              consecutiveDuplicateCount += 1;
+            } else {
+              consecutiveDuplicateCount = 0;
+            }
+            recentToolSignatures.push(callSig);
+
+            if (consecutiveDuplicateCount >= 3) {
+              emitActivity('warning', 'Conductor', `Halting repeated duplicate call to ${fnName}.`);
+              messages.push({
+                role: 'tool',
+                name: fnName,
+                tool_call_id: toolCall.id,
+                content: untrustedToolOutput({
+                  error: `Repeated tool call: "${fnName}" with identical arguments was already executed. Do not call this tool with the same arguments. Please complete your analysis or propose your plan.`,
+                }),
+              });
+              resolved = true;
+              break;
             }
 
             // Check if this is a read tool
@@ -893,7 +927,9 @@ You MUST execute this workflow:
                   observationText = `Retrieved ${toolOutput.length} record(s).`;
                 } else {
                   const outputRecord = toolOutput as Record<string, unknown>;
-                  if (
+                  if (typeof outputRecord.error === 'string') {
+                    observationText = `Error: ${outputRecord.error}`;
+                  } else if (
                     'aggregates' in outputRecord &&
                     typeof outputRecord.aggregates === 'object' &&
                     outputRecord.aggregates !== null
@@ -901,6 +937,8 @@ You MUST execute this workflow:
                     observationText = `Computed aggregates: ${JSON.stringify(outputRecord.aggregates)}`;
                   } else if ('values' in outputRecord && Array.isArray(outputRecord.values)) {
                     observationText = `Extracted ${outputRecord.values.length} cell value(s).`;
+                  } else if ('totalMatchingRows' in outputRecord) {
+                    observationText = `Matched ${outputRecord.totalMatchingRows} row(s).`;
                   } else {
                     observationText = `Inspected schema with keys: ${Object.keys(outputRecord).slice(0, 5).join(', ')}.`;
                   }
@@ -1490,7 +1528,9 @@ You MUST execute this workflow:
         if (
           guardrail.preview &&
           guardrail.preview.affectedCells === 0 &&
-          candidate.category !== 'filter'
+          candidate.category !== 'filter' &&
+          candidate.name !== 'create_sheet' &&
+          candidate.name !== 'add_column'
         ) {
           emitActivity(
             'status',

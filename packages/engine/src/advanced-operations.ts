@@ -18,9 +18,12 @@ import {
   cloneWithValue,
   fullSheetRange,
   headerRowError,
+  headerRowSchema,
   issue,
   maxColumn,
   maxRow,
+  normalizeEditsInput,
+  positiveIntegerSchema,
   previewForTransition,
   transitionResult,
   uniqueSheetName,
@@ -79,7 +82,6 @@ const rangeColumn = z
   .trim()
   .min(1)
   .regex(/^[A-Za-z]+$/, 'Columns must be letters');
-const headerRowSchema = z.number().int().positive().default(1);
 
 function columnRange(
   workbook: Workbook,
@@ -1079,22 +1081,20 @@ const MAX_COLUMN_INDEX = EXCEL_MAX_COLUMNS - 1; // XFD
 /** A bound on one call, so a runaway paste fails loudly instead of allocating a million cells. */
 const MAX_EDITS_PER_OPERATION = MAX_BULK_OPERATION_CELLS;
 
+export const editCellSchema = z.object({
+  /** 1-based row. */
+  row: positiveIntegerSchema,
+  column: rangeColumn,
+  /** Omitted together with `formula` clears the cell. */
+  value: cellValueSchema.optional(),
+  /** Stored with its leading `=`, matching how every other operation writes formulas. */
+  formula: z.string().optional(),
+  numberFormat: z.string().optional(),
+});
+
 export const editCellsArgsSchema = z.object({
   sheet: z.string().trim().min(1),
-  edits: z
-    .array(
-      z.object({
-        /** 1-based row. */
-        row: z.number().int().positive(),
-        column: rangeColumn,
-        /** Omitted together with `formula` clears the cell. */
-        value: cellValueSchema.optional(),
-        /** Stored with its leading `=`, matching how every other operation writes formulas. */
-        formula: z.string().optional(),
-        numberFormat: z.string().optional(),
-      }),
-    )
-    .min(1),
+  edits: z.preprocess(normalizeEditsInput, z.array(editCellSchema).min(1)),
 });
 export type EditCellsArgs = z.infer<typeof editCellsArgsSchema>;
 export type CellEdit = EditCellsArgs['edits'][number];

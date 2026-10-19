@@ -163,6 +163,15 @@ describe('engine operations', () => {
     expect(values(result.workbook, 1)).toEqual(['A', 'Inserted', 'B']);
     expect(values(result.workbook, 3)).toEqual([3, 'pending', 4]);
     expect(result.report.addedColumns).toBe(1);
+
+    // Verify string headerRow coercion (e.g. from LLM output)
+    const stringHeaderRowArgs = addColumnOperation.schema.parse({
+      sheet: 'Data',
+      column: 'B',
+      headerName: 'Inserted2',
+      headerRow: '1',
+    });
+    expect(stringHeaderRowArgs.headerRow).toBe(1);
   });
 
   it('normalize_text trims, collapses whitespace, and applies case conversion', () => {

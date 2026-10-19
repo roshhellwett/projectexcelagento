@@ -5,6 +5,7 @@ import { createWorkbookValueReader } from './formula/workbook-reader.js';
 import { runInvariants } from './invariants.js';
 import {
   cellValueSchema,
+  headerRowSchema,
   issue,
   maxRow,
   previewForTransition,
@@ -76,7 +77,6 @@ const rangeColumn = z
   .trim()
   .min(1)
   .regex(/^[A-Za-z]+$/, 'Columns must be letters');
-const headerRowSchema = z.number().int().positive().default(1);
 
 function columnRange(
   workbook: Workbook,

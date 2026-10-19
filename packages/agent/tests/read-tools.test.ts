@@ -210,6 +210,41 @@ describe('read tools for workbook inspection', () => {
     }
   });
 
+  it('supports valueless and extended operators like is_blank, not_blank, is_number, and gte', () => {
+    const wb = sampleWorkbook();
+    // Test is_blank
+    const blankRes = querySheetRecords(wb, 'Sales', [
+      { column: 'B', operator: 'is_blank', value: '' },
+    ]);
+    expect('error' in blankRes).toBe(false);
+    if (!('error' in blankRes)) {
+      expect(blankRes.totalMatchingRows).toBe(0);
+    }
+
+    // Test not_blank
+    const notBlankRes = querySheetRecords(wb, 'Sales', [
+      { column: 'B', operator: 'not_blank', value: null },
+    ]);
+    expect('error' in notBlankRes).toBe(false);
+    if (!('error' in notBlankRes)) {
+      expect(notBlankRes.totalMatchingRows).toBe(4);
+    }
+
+    // Test is_number
+    const numRes = querySheetRecords(wb, 'Sales', [{ column: 'C', operator: 'is_number' }]);
+    expect('error' in numRes).toBe(false);
+    if (!('error' in numRes)) {
+      expect(numRes.totalMatchingRows).toBe(4);
+    }
+
+    // Test gte
+    const gteRes = querySheetRecords(wb, 'Sales', [{ column: 'C', operator: 'gte', value: 200 }]);
+    expect('error' in gteRes).toBe(false);
+    if (!('error' in gteRes)) {
+      expect(gteRes.totalMatchingRows).toBe(2);
+    }
+  });
+
   it('searches external knowledge base for formulas without network error', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
     const xlookupRes = await searchWebKnowledge('XLOOKUP syntax');

@@ -8,9 +8,12 @@ import {
   cloneWithValue,
   fullSheetRange,
   headerRowError,
+  headerRowSchema,
   issue,
   maxColumn,
   maxRow,
+  normalizeEditsInput,
+  positiveIntegerSchema,
   previewForTransition,
   rangeForColumns,
   textForCell,
@@ -138,14 +141,14 @@ const rangeColumn = z
   .string()
   .trim()
   .regex(/^[A-Za-z]+$/);
-const headerRow = z.number().int().positive().default(1);
+const headerRow = headerRowSchema;
 
 export const sortRangeArgsSchema = z.object({
   sheet: z.string().trim().min(1),
   column: rangeColumn,
   direction: z.enum(['asc', 'desc']).default('asc'),
-  startRow: z.number().int().positive().default(2),
-  endRow: z.number().int().positive().optional(),
+  startRow: positiveIntegerSchema.default(2),
+  endRow: positiveIntegerSchema.optional(),
   startColumn: rangeColumn.default('A'),
   endColumn: rangeColumn.optional(),
 });
@@ -995,7 +998,7 @@ export const normalizeTextOperation: Operation<NormalizeTextArgs> = {
 };
 
 const setCellArgsSchema = z.object({
-  row: z.number().int().positive(),
+  row: positiveIntegerSchema,
   column: rangeColumn,
   value: cellValueSchema,
   formula: z.string().optional(),
@@ -1003,15 +1006,18 @@ const setCellArgsSchema = z.object({
 });
 export const setCellsArgsSchema = z.object({
   sheet: z.string().trim().min(1),
-  cells: z
-    .array(setCellArgsSchema)
-    .min(1)
-    .refine(
-      (cells) =>
-        new Set(cells.map((cell) => `${cell.row}:${cell.column.toUpperCase()}`)).size ===
-        cells.length,
-      { message: 'Each cell address may only appear once.', path: ['cells'] },
-    ),
+  cells: z.preprocess(
+    normalizeEditsInput,
+    z
+      .array(setCellArgsSchema)
+      .min(1)
+      .refine(
+        (cells) =>
+          new Set(cells.map((cell) => `${cell.row}:${cell.column.toUpperCase()}`)).size ===
+          cells.length,
+        { message: 'Each cell address may only appear once.', path: ['cells'] },
+      ),
+  ),
 });
 export type SetCellsArgs = z.infer<typeof setCellsArgsSchema>;
 

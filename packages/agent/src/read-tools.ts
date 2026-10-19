@@ -393,8 +393,24 @@ export function calculateAggregate(
 export interface QuerySheetCondition {
   column?: string;
   header?: string;
-  operator?: 'equals' | 'contains' | 'startsWith' | 'endsWith' | 'gt' | 'lt';
-  value: string | number;
+  operator?:
+    | 'equals'
+    | 'contains'
+    | 'startsWith'
+    | 'endsWith'
+    | 'gt'
+    | 'lt'
+    | 'gte'
+    | 'lte'
+    | 'is_blank'
+    | 'not_blank'
+    | 'blank'
+    | 'empty'
+    | 'not_empty'
+    | 'is_number'
+    | 'numeric'
+    | 'is_text';
+  value?: string | number | null;
 }
 
 export interface QuerySheetRecordsResult {
@@ -405,6 +421,36 @@ export interface QuerySheetRecordsResult {
   sampleMatchingRows: { rowNumber: number; cells: Record<string, unknown> }[];
   summary: string;
 }
+
+const VALID_QUERY_OPERATORS = [
+  'equals',
+  'contains',
+  'startsWith',
+  'endsWith',
+  'gt',
+  'lt',
+  'gte',
+  'lte',
+  'is_blank',
+  'not_blank',
+  'blank',
+  'empty',
+  'not_empty',
+  'is_number',
+  'numeric',
+  'is_text',
+];
+
+const VALUELESS_QUERY_OPERATORS = new Set([
+  'is_blank',
+  'not_blank',
+  'blank',
+  'empty',
+  'not_empty',
+  'is_number',
+  'numeric',
+  'is_text',
+]);
 
 /**
  * Multi-criteria query and count tool.
@@ -432,18 +478,21 @@ export function querySheetRecords(
   // Resolve condition column indexes
   const resolvedConditions = [];
   for (const cond of conditions) {
-    if (
-      !cond ||
-      (typeof cond.value !== 'string' && typeof cond.value !== 'number') ||
-      (typeof cond.value === 'number' && !Number.isFinite(cond.value))
-    ) {
+    const op = cond?.operator ?? 'contains';
+    const isValueless = VALUELESS_QUERY_OPERATORS.has(op);
+    if (!cond || typeof cond !== 'object') {
+      return { error: 'Every condition must be an object.' };
+    }
+    if (!isValueless && typeof cond.value !== 'string' && typeof cond.value !== 'number') {
+      return { error: 'Every condition must supply a string or numeric value.' };
+    }
+    if (typeof cond.value === 'number' && !Number.isFinite(cond.value)) {
       return { error: 'Every condition must supply a string or numeric value.' };
     }
     if (
       (cond.column !== undefined && (typeof cond.column !== 'string' || !cond.column.trim())) ||
       (cond.header !== undefined && (typeof cond.header !== 'string' || !cond.header.trim())) ||
-      (cond.operator !== undefined &&
-        !['equals', 'contains', 'startsWith', 'endsWith', 'gt', 'lt'].includes(cond.operator))
+      (cond.operator !== undefined && !VALID_QUERY_OPERATORS.includes(cond.operator))
     ) {
       return { error: 'Condition columns, headers, and comparison operators must be valid.' };
     }
@@ -462,9 +511,10 @@ export function querySheetRecords(
         return { error: `Header "${cond.header}" is missing or ambiguous; use a column letter.` };
       colIdx = matches[0];
     }
-    const numVal = toNumericOrNull(cond.value);
+    const rawVal = cond.value ?? '';
+    const numVal = toNumericOrNull(rawVal);
     if (
-      (cond.operator === 'gt' || cond.operator === 'lt') &&
+      (op === 'gt' || op === 'lt' || op === 'gte' || op === 'lte') &&
       (colIdx === undefined || numVal === null)
     ) {
       return { error: 'Numeric comparisons require a valid column and numeric value.' };
@@ -472,8 +522,8 @@ export function querySheetRecords(
     resolvedConditions.push({
       ...cond,
       colIdx,
-      operator: cond.operator ?? 'contains',
-      strVal: String(cond.value).trim().toLowerCase(),
+      operator: op,
+      strVal: String(rawVal).trim().toLowerCase(),
       numVal,
     });
   }
@@ -504,6 +554,22 @@ export function querySheetRecords(
 
       let matchesCond = false;
       switch (cond.operator) {
+        case 'is_blank':
+        case 'blank':
+        case 'empty':
+          matchesCond = cellValStr === '';
+          break;
+        case 'not_blank':
+        case 'not_empty':
+          matchesCond = cellValStr !== '';
+          break;
+        case 'is_number':
+        case 'numeric':
+          matchesCond = cellNumVal !== null;
+          break;
+        case 'is_text':
+          matchesCond = cellValStr !== '' && cellNumVal === null;
+          break;
         case 'equals':
           matchesCond = cellValStr === cond.strVal;
           break;
@@ -516,8 +582,14 @@ export function querySheetRecords(
         case 'gt':
           matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal > cond.numVal;
           break;
+        case 'gte':
+          matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal >= cond.numVal;
+          break;
         case 'lt':
           matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal < cond.numVal;
+          break;
+        case 'lte':
+          matchesCond = cellNumVal !== null && cond.numVal !== null && cellNumVal <= cond.numVal;
           break;
         case 'contains':
         default:
@@ -723,15 +795,29 @@ export const READ_TOOL_DEFINITIONS: ToolDefinition[] = [
                 header: { type: 'string', description: 'Optional column header name' },
                 operator: {
                   type: 'string',
-                  enum: ['contains', 'equals', 'startsWith', 'endsWith', 'gt', 'lt'],
-                  description: 'Comparison operator (default "contains")',
+                  enum: [
+                    'contains',
+                    'equals',
+                    'startsWith',
+                    'endsWith',
+                    'gt',
+                    'gte',
+                    'lt',
+                    'lte',
+                    'is_blank',
+                    'not_blank',
+                    'is_number',
+                    'is_text',
+                  ],
+                  description:
+                    'Comparison operator (default "contains", also supports "is_blank", "not_blank", "is_number", "is_text", "gte", "lte")',
                 },
                 value: {
                   type: 'string',
-                  description: 'Value to search or match against',
+                  description:
+                    'Value to search or match against (optional or empty for is_blank, not_blank, is_number, is_text)',
                 },
               },
-              required: ['value'],
             },
             description: 'List of column criteria that must all match in each row',
           },

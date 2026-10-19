@@ -34,6 +34,75 @@ export const cellValueSchema = z.union([
   z.null(),
 ]);
 
+export const positiveIntegerSchema = z.preprocess((val) => {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+    const num = Number(val.trim());
+    return Number.isSafeInteger(num) ? num : val;
+  }
+  return val;
+}, z.number().int().positive());
+
+export const headerRowSchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === '') return 1;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+    const num = Number(val.trim());
+    return Number.isSafeInteger(num) ? num : val;
+  }
+  return val;
+}, z.number().int().positive().default(1));
+
+export function normalizeEditsInput(raw: unknown): unknown {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => {
+      if (item && typeof item === 'object') {
+        const row =
+          typeof (item as { row?: unknown }).row === 'string' &&
+          /^\d+$/.test((item as { row: string }).row.trim())
+            ? Number((item as { row: string }).row.trim())
+            : (item as { row?: unknown }).row;
+        return { ...item, row };
+      }
+      return item;
+    });
+  }
+  if (!raw || typeof raw !== 'object') return raw;
+
+  const obj = raw as Record<string, unknown>;
+
+  // If wrapped in an inner array property like { cells: [...] }, { edits: [...] }, or { items: [...] }
+  if (Array.isArray(obj.cells)) return normalizeEditsInput(obj.cells);
+  if (Array.isArray(obj.edits)) return normalizeEditsInput(obj.edits);
+  if (Array.isArray(obj.items)) return normalizeEditsInput(obj.items);
+
+  // If a single edit object: { row: 2, column: 'G', value: 1800 }
+  if ('row' in obj && 'column' in obj) {
+    const row =
+      typeof obj.row === 'string' && /^\d+$/.test(obj.row.trim())
+        ? Number(obj.row.trim())
+        : obj.row;
+    return [{ ...obj, row }];
+  }
+
+  // If map of cell addresses: { "G2": 1800, "G3": "text", "G4": { value: 100 } }
+  const cellAddressRegex = /^([A-Za-z]+)(\d+)$/;
+  const entries = Object.entries(obj);
+  if (entries.length > 0 && entries.every(([key]) => cellAddressRegex.test(key))) {
+    return entries.map(([key, val]) => {
+      const match = key.match(cellAddressRegex)!;
+      const column = match[1]!.toUpperCase();
+      const row = parseInt(match[2]!, 10);
+      if (val && typeof val === 'object' && ('value' in val || 'formula' in val)) {
+        return { column, row, ...(val as object) };
+      }
+      return { column, row, value: val };
+    });
+  }
+
+  return raw;
+}
+
 export const sheetSchema = z.object({ sheet: z.string().trim().min(1) });
 
 export function issue(code: string, message: string, location?: CellLocation): ValidationIssue {

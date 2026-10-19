@@ -225,6 +225,60 @@ describe('ExcelAgentOrchestrator', () => {
     expect(decision.message).not.toContain('Here are common things I can do for you:');
   });
 
+  it('resolves conversational followups like "continue", "continue why you failed", and "karo" using history', async () => {
+    const orchestrator = createOrchestrator({ registry });
+    const codeWorkbook: Workbook = {
+      sheets: [
+        {
+          name: 'Worksheet',
+          rows: [
+            [createCell('#!/usr/bin/env python3')],
+            [createCell('import os, sys')],
+            [createCell('def main(): pass')],
+          ],
+        },
+      ],
+    };
+
+    const followupQueries = [
+      'continue',
+      'continue why you failed',
+      'karo',
+      'theek karo',
+      'sab sambhal lo',
+    ];
+    for (const q of followupQueries) {
+      const decision = await orchestrator.decide({
+        query: q,
+        workbook: codeWorkbook,
+        sheetName: 'Worksheet',
+        conversationHistory: [
+          {
+            role: 'user',
+            content:
+              'can you make this sheet clean and structured so that it can be understandable',
+          },
+          { role: 'assistant', content: 'I am ready to perform...' },
+        ],
+      });
+
+      expect(decision.action).toBeDefined();
+      expect(decision.action?.name).toBe('clean_to_new_sheet');
+    }
+  });
+
+  it('authorizes mutations for colloquial plain English and Hinglish containing kuch bhi, galat, or shift', async () => {
+    const orchestrator = createOrchestrator({ registry });
+    const decision = await orchestrator.decide({
+      query: 'ye bekar duplicate rows hatao',
+      workbook: ordersWorkbook(),
+      sheetName: 'Orders',
+    });
+
+    expect(decision.action).toBeDefined();
+    expect(decision.action?.name).toBe('delete_duplicates');
+  });
+
   it('exposes a tool catalog derived from the engine registry', () => {
     const orchestrator = createOrchestrator({ registry });
     expect(orchestrator.tools.map((tool) => tool.name)).toEqual(registry.names);
